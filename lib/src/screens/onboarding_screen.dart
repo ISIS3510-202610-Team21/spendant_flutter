@@ -21,8 +21,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _greetingFuture = AuthMemoryStore.loadGreetingState();
   }
 
-  void _openAuth(BuildContext context) {
+  void _openLoginFlow(BuildContext context) {
     Navigator.of(context).pushNamed(AppRoutes.loading);
+  }
+
+  void _openFingerprint(BuildContext context) {
+    Navigator.of(context).pushNamed(AppRoutes.fingerprintAuth);
   }
 
   @override
@@ -68,11 +72,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         BlackPrimaryButton(
                           label: 'Login with FingerPrint',
                           width: 208,
-                          onPressed: () => _openAuth(context),
+                          onPressed: () => _openFingerprint(context),
                         ),
                         const SizedBox(height: 16),
                         TextButton(
-                          onPressed: () => _openAuth(context),
+                          onPressed: () => _openLoginFlow(context),
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.black,
                             textStyle: GoogleFonts.nunito(
@@ -81,55 +85,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             ),
                           ),
                           child: const Text('Login with other User'),
-                        ),
-                        const SizedBox(height: 16),
-                        // Demo buttons for new views
-                        GestureDetector(
-                          onTap: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.fingerprintAuth),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'View: Fingerprint Auth',
-                              style: GoogleFonts.nunito(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.setGoal),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'View: Set Goal',
-                              style: GoogleFonts.nunito(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
                         ),
                         SizedBox(height: constraints.maxHeight * 0.34),
                       ],

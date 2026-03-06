@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -32,106 +35,31 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickDate() async {
-    DateTime tempDate = _selectedDate;
-
-    final selected = await showModalBottomSheet<DateTime>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return _PickerSheet(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Select date',
-                    style: GoogleFonts.nunito(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    DateFormat('EEE, MMM d').format(tempDate),
-                    style: GoogleFonts.nunito(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      color: AppPalette.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  CalendarDatePicker(
-                    initialDate: tempDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2035),
-                    onDateChanged: (value) {
-                      setSheetState(() {
-                        tempDate = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Close'),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(tempDate),
-                        child: const Text('OK'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    final selected = await Navigator.of(context).push<DateTime>(
+      MaterialPageRoute(
+        builder: (_) => DateSelectionScreen(initialDate: _selectedDate),
+      ),
     );
 
-    if (selected == null) {
-      return;
+    if (selected != null) {
+      setState(() {
+        _selectedDate = selected;
+      });
     }
-
-    setState(() {
-      _selectedDate = selected;
-    });
   }
 
   Future<void> _pickTime() async {
-    final selected = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(
-              context,
-            ).colorScheme.copyWith(primary: AppPalette.green),
-          ),
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
+    final selected = await Navigator.of(context).push<TimeOfDay>(
+      MaterialPageRoute(
+        builder: (_) => TimeSelectionScreen(initialTime: _selectedTime),
+      ),
     );
 
-    if (selected == null) {
-      return;
+    if (selected != null) {
+      setState(() {
+        _selectedTime = selected;
+      });
     }
-
-    setState(() {
-      _selectedTime = selected;
-    });
   }
 
   Future<void> _pickLocation() async {
@@ -141,13 +69,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ),
     );
 
-    if (selected == null) {
-      return;
+    if (selected != null) {
+      setState(() {
+        _selectedLocation = selected;
+      });
     }
-
-    setState(() {
-      _selectedLocation = selected;
-    });
   }
 
   Future<void> _addLabel() async {
@@ -159,7 +85,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          title: const Text('New label'),
+          title: Text(
+            'New label',
+            style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+          ),
           content: TextField(
             controller: controller,
             autofocus: true,
@@ -181,14 +110,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
     controller.dispose();
 
-    if (label == null || label.isEmpty) {
+    if (label == null || label.isEmpty || _labels.contains(label)) {
       return;
     }
 
     setState(() {
-      if (!_labels.contains(label)) {
-        _labels.add(label);
-      }
+      _labels.add(label);
     });
   }
 
@@ -197,13 +124,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F3F3),
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           SafeArea(
             child: Column(
               children: [
                 _ExpenseHeader(
+                  title: 'New Expense',
                   onClose: () => Navigator.of(context).maybePop(),
                   onConfirm: () => Navigator.of(context).maybePop(),
                 ),
@@ -213,7 +141,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                       24,
                       28,
                       24,
-                      140 + keyboardInset,
+                      136 + keyboardInset,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,10 +319,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 decoration: const BoxDecoration(
-                  color: Color(0xFFF3F3F3),
+                  color: Colors.white,
                   border: Border(top: BorderSide(color: Colors.black12)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
                       child: _MetaChip(
@@ -437,6 +366,470 @@ class ExpenseLocationSelection {
   final String label;
 }
 
+enum _TimeDialMode { hour, minute }
+
+class DateSelectionScreen extends StatefulWidget {
+  const DateSelectionScreen({super.key, required this.initialDate});
+
+  final DateTime initialDate;
+
+  @override
+  State<DateSelectionScreen> createState() => _DateSelectionScreenState();
+}
+
+class _DateSelectionScreenState extends State<DateSelectionScreen> {
+  late DateTime _visibleMonth = DateTime(
+    widget.initialDate.year,
+    widget.initialDate.month,
+  );
+  late DateTime _selectedDate = widget.initialDate;
+
+  Future<void> _selectMonth() async {
+    final selectedMonth = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              final month = index + 1;
+              return ListTile(
+                title: Text(
+                  DateFormat('MMMM').format(DateTime(2026, month)),
+                  style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                onTap: () => Navigator.of(context).pop(month),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (selectedMonth == null) {
+      return;
+    }
+
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, selectedMonth);
+      _selectedDate = _clampDateToVisibleMonth(_selectedDate, _visibleMonth);
+    });
+  }
+
+  Future<void> _selectYear() async {
+    final years = List<int>.generate(21, (index) => 2020 + index);
+    final selectedYear = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final year in years)
+                ListTile(
+                  title: Text(
+                    '$year',
+                    style: GoogleFonts.nunito(
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop(year),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selectedYear == null) {
+      return;
+    }
+
+    setState(() {
+      _visibleMonth = DateTime(selectedYear, _visibleMonth.month);
+      _selectedDate = _clampDateToVisibleMonth(_selectedDate, _visibleMonth);
+    });
+  }
+
+  DateTime _clampDateToVisibleMonth(DateTime value, DateTime visibleMonth) {
+    final lastDay = DateUtils.getDaysInMonth(
+      visibleMonth.year,
+      visibleMonth.month,
+    );
+    return DateTime(
+      visibleMonth.year,
+      visibleMonth.month,
+      math.min(value.day, lastDay),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _ExpenseHeader(
+              title: 'Select Date',
+              onClose: () => Navigator.of(context).pop(),
+              onConfirm: () => Navigator.of(context).pop(_selectedDate),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                  decoration: BoxDecoration(
+                    color: AppPalette.field,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select date',
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppPalette.fieldHint,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        DateFormat('EEE, MMM d').format(_selectedDate),
+                        style: GoogleFonts.nunito(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _SelectionPill(
+                            label: DateFormat('MMMM').format(_visibleMonth),
+                            onTap: _selectMonth,
+                          ),
+                          const SizedBox(width: 8),
+                          _SelectionPill(
+                            label: '${_visibleMonth.year}',
+                            onTap: _selectYear,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _visibleMonth = DateTime(
+                                  _visibleMonth.year,
+                                  _visibleMonth.month - 1,
+                                );
+                                _selectedDate = _clampDateToVisibleMonth(
+                                  _selectedDate,
+                                  _visibleMonth,
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _visibleMonth = DateTime(
+                                  _visibleMonth.year,
+                                  _visibleMonth.month + 1,
+                                );
+                                _selectedDate = _clampDateToVisibleMonth(
+                                  _selectedDate,
+                                  _visibleMonth,
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: CalendarDatePicker(
+                          initialDate: _selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2040),
+                          currentDate: DateTime.now(),
+                          onDateChanged: (value) {
+                            setState(() {
+                              _selectedDate = value;
+                              _visibleMonth = DateTime(value.year, value.month);
+                            });
+                          },
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text(
+                              'Close',
+                              style: GoogleFonts.nunito(
+                                fontWeight: FontWeight.w800,
+                                color: AppPalette.green,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text(
+                              'Cancel',
+                              style: GoogleFonts.nunito(
+                                fontWeight: FontWeight.w800,
+                                color: AppPalette.green,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(context).pop(_selectedDate),
+                            child: Text(
+                              'OK',
+                              style: GoogleFonts.nunito(
+                                fontWeight: FontWeight.w900,
+                                color: AppPalette.green,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TimeSelectionScreen extends StatefulWidget {
+  const TimeSelectionScreen({super.key, required this.initialTime});
+
+  final TimeOfDay initialTime;
+
+  @override
+  State<TimeSelectionScreen> createState() => _TimeSelectionScreenState();
+}
+
+class _TimeSelectionScreenState extends State<TimeSelectionScreen> {
+  late int _hour = widget.initialTime.hourOfPeriod == 0
+      ? 12
+      : widget.initialTime.hourOfPeriod;
+  late int _minute = (widget.initialTime.minute ~/ 5) * 5;
+  late bool _isAm = widget.initialTime.period == DayPeriod.am;
+  _TimeDialMode _mode = _TimeDialMode.hour;
+
+  TimeOfDay get _selectedTime {
+    final hour24 = (_hour % 12) + (_isAm ? 0 : 12);
+    return TimeOfDay(hour: hour24, minute: _minute);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayStyle = Theme.of(context).textTheme.displayLarge?.copyWith(
+      fontSize: 58,
+      fontWeight: FontWeight.w500,
+      fontStyle: FontStyle.normal,
+      color: AppPalette.green,
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _ExpenseHeader(
+              title: 'Select Time',
+              onClose: () => Navigator.of(context).pop(),
+              onConfirm: () => Navigator.of(context).pop(_selectedTime),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  decoration: BoxDecoration(
+                    color: AppPalette.field,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select time',
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppPalette.fieldHint,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _mode = _TimeDialMode.hour;
+                                    });
+                                  },
+                                  child: Text(
+                                    _hour.toString().padLeft(2, '0'),
+                                    style: displayStyle?.copyWith(
+                                      color: _mode == _TimeDialMode.hour
+                                          ? AppPalette.green
+                                          : AppPalette.green.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                Text(' : ', style: displayStyle),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _mode = _TimeDialMode.minute;
+                                    });
+                                  },
+                                  child: Text(
+                                    _minute.toString().padLeft(2, '0'),
+                                    style: displayStyle?.copyWith(
+                                      color: _mode == _TimeDialMode.minute
+                                          ? AppPalette.green
+                                          : AppPalette.green.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            children: [
+                              _PeriodButton(
+                                label: 'AM',
+                                selected: _isAm,
+                                onTap: () {
+                                  setState(() {
+                                    _isAm = true;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              _PeriodButton(
+                                label: 'PM',
+                                selected: !_isAm,
+                                onTap: () {
+                                  setState(() {
+                                    _isAm = false;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      Expanded(
+                        child: Center(
+                          child: _TimeDial(
+                            mode: _mode,
+                            selectedHour: _hour,
+                            selectedMinute: _minute,
+                            onHourSelected: (value) {
+                              setState(() {
+                                _hour = value;
+                                _mode = _TimeDialMode.minute;
+                              });
+                            },
+                            onMinuteSelected: (value) {
+                              setState(() {
+                                _minute = value;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _mode == _TimeDialMode.hour
+                            ? 'Tap the clock to select the hour'
+                            : 'Tap the clock to select the minutes',
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppPalette.fieldHint,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text(
+                              'Cancel',
+                              style: GoogleFonts.nunito(
+                                fontWeight: FontWeight.w800,
+                                color: AppPalette.green,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(context).pop(_selectedTime),
+                            child: Text(
+                              'OK',
+                              style: GoogleFonts.nunito(
+                                fontWeight: FontWeight.w900,
+                                color: AppPalette.green,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LocationPickerScreen extends StatefulWidget {
   const LocationPickerScreen({super.key, this.initialValue});
 
@@ -453,88 +846,144 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final label =
+        '${_selectedPoint.latitude.toStringAsFixed(4)}, ${_selectedPoint.longitude.toStringAsFixed(4)}';
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Stack(
-              children: [
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _selectedPoint,
-                    zoom: 16,
+        child: Column(
+          children: [
+            _ExpenseHeader(
+              title: 'Select Location',
+              onClose: () => Navigator.of(context).pop(),
+              onConfirm: () {
+                Navigator.of(context).pop(
+                  ExpenseLocationSelection(
+                    position: _selectedPoint,
+                    label: label,
                   ),
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  onTap: (point) {
-                    setState(() {
-                      _selectedPoint = point;
-                    });
-                  },
-                  markers: {
-                    Marker(
-                      markerId: const MarkerId('selected-location'),
-                      position: _selectedPoint,
-                    ),
-                  },
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: TextField(
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      hintText: 'Search label',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(999),
-                        borderSide: BorderSide.none,
+                );
+              },
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                child: Column(
+                  children: [
+                    TextField(
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        hintText: 'Search label',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: const Icon(Icons.location_on_outlined),
+                        fillColor: Colors.white,
+                        filled: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(999),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                Positioned(
-                  left: 18,
-                  right: 18,
-                  bottom: 18,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop(
-                        ExpenseLocationSelection(
-                          position: _selectedPoint,
-                          label:
-                              '${_selectedPoint.latitude.toStringAsFixed(4)}, ${_selectedPoint.longitude.toStringAsFixed(4)}',
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          color: AppPalette.field,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(child: _buildMapSurface()),
+                              Positioned(
+                                left: 16,
+                                right: 16,
+                                bottom: 16,
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 120,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.of(context).pop(
+                                          ExpenseLocationSelection(
+                                            position: _selectedPoint,
+                                            label: label,
+                                          ),
+                                        );
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppPalette.green,
+                                        foregroundColor: AppPalette.ink,
+                                      ),
+                                      child: Text(
+                                        'Save',
+                                        style: GoogleFonts.nunito(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppPalette.green,
-                      foregroundColor: AppPalette.ink,
+                      ),
                     ),
-                    child: Text(
-                      'Save',
-                      style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
-                    ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMapSurface() {
+    if (kIsWeb) {
+      return Container(
+        color: const Color(0xFFEDEDED),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Text(
+          'Google Maps on web needs a configured JavaScript API key. The crash is blocked for now, and you can still save the current point.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.ink,
+          ),
+        ),
+      );
+    }
+
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(target: _selectedPoint, zoom: 16),
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      onTap: (point) {
+        setState(() {
+          _selectedPoint = point;
+        });
+      },
+      markers: {
+        Marker(
+          markerId: const MarkerId('selected-location'),
+          position: _selectedPoint,
+        ),
+      },
     );
   }
 }
 
 class _ExpenseHeader extends StatelessWidget {
-  const _ExpenseHeader({required this.onClose, required this.onConfirm});
+  const _ExpenseHeader({
+    required this.title,
+    required this.onClose,
+    required this.onConfirm,
+  });
 
+  final String title;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
 
@@ -551,7 +1000,7 @@ class _ExpenseHeader extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              'New Expense',
+              title,
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 19,
@@ -593,12 +1042,12 @@ class _ExpenseField extends StatelessWidget {
         hintText: hintText,
         fillColor: AppPalette.field,
         filled: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(0),
+        border: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(0),
+        enabledBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
       ),
@@ -627,24 +1076,29 @@ class _MetaChip extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: AppPalette.ink),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.nunito(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppPalette.ink,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: AppPalette.ink),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -685,23 +1139,218 @@ class _MiniActionButton extends StatelessWidget {
   }
 }
 
-class _PickerSheet extends StatelessWidget {
-  const _PickerSheet({required this.child});
+class _SelectionPill extends StatelessWidget {
+  const _SelectionPill({required this.label, required this.onTap});
 
-  final Widget child;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Material(
-        color: AppPalette.field,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-          child: child,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.ink,
+          ),
         ),
       ),
     );
+  }
+}
+
+class _PeriodButton extends StatelessWidget {
+  const _PeriodButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 44,
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFF3D5E7) : const Color(0xFFF8EAF2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppPalette.green : Colors.black12,
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimeDial extends StatelessWidget {
+  const _TimeDial({
+    required this.mode,
+    required this.selectedHour,
+    required this.selectedMinute,
+    required this.onHourSelected,
+    required this.onMinuteSelected,
+  });
+
+  final _TimeDialMode mode;
+  final int selectedHour;
+  final int selectedMinute;
+  final ValueChanged<int> onHourSelected;
+  final ValueChanged<int> onMinuteSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = mode == _TimeDialMode.hour
+        ? List<int>.generate(12, (index) => index + 1)
+        : List<int>.generate(12, (index) => index * 5);
+    final selectedValue = mode == _TimeDialMode.hour
+        ? selectedHour
+        : selectedMinute;
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest.shortestSide;
+          final radius = size / 2;
+          final itemRadius = radius - 26;
+          final center = Offset(radius, radius);
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FFFA),
+              shape: BoxShape.circle,
+            ),
+            child: Stack(
+              children: [
+                for (var index = 0; index < values.length; index++)
+                  Builder(
+                    builder: (context) {
+                      final value = values[index];
+                      final angle = ((index + 1 - 3) * 30) * math.pi / 180;
+                      final dx = center.dx + itemRadius * math.cos(angle);
+                      final dy = center.dy + itemRadius * math.sin(angle);
+                      final isSelected = value == selectedValue;
+
+                      return Positioned(
+                        left: dx - 18,
+                        top: dy - 18,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (mode == _TimeDialMode.hour) {
+                              onHourSelected(value);
+                              return;
+                            }
+                            onMinuteSelected(value);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 140),
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? AppPalette.green
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              mode == _TimeDialMode.hour
+                                  ? '$value'
+                                  : value.toString().padLeft(2, '0'),
+                              style: GoogleFonts.nunito(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: AppPalette.ink,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                CustomPaint(
+                  size: Size.square(size),
+                  painter: _DialHandPainter(
+                    mode: mode,
+                    selectedValue: selectedValue,
+                  ),
+                ),
+                Center(
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: AppPalette.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DialHandPainter extends CustomPainter {
+  const _DialHandPainter({required this.mode, required this.selectedValue});
+
+  final _TimeDialMode mode;
+  final int selectedValue;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final step = mode == _TimeDialMode.hour
+        ? selectedValue
+        : selectedValue ~/ 5;
+    final angle = ((step - 3) * 30) * math.pi / 180;
+    final handLength = size.width * 0.18;
+    final end = Offset(
+      center.dx + handLength * math.cos(angle),
+      center.dy + handLength * math.sin(angle),
+    );
+
+    final paint = Paint()
+      ..color = AppPalette.green
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(center, end, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DialHandPainter oldDelegate) {
+    return oldDelegate.selectedValue != selectedValue ||
+        oldDelegate.mode != mode;
   }
 }

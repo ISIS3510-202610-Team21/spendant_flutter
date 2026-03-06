@@ -29,7 +29,7 @@ class FingerprintAuthScreen extends StatelessWidget {
             onTap: () {
               Navigator.of(
                 context,
-              ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+              ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
             },
             child: Container(
               width: 120,

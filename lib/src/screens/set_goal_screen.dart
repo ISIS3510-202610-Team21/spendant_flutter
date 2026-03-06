@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para los formatters
 import 'package:google_fonts/google_fonts.dart';
-import '../../app.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
+import '../widgets/spendant_bottom_nav.dart';
 
 class SetGoalScreen extends StatefulWidget {
   const SetGoalScreen({super.key});
@@ -50,7 +50,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           Expanded(
             child: _viewState == 0 ? _buildProfileView() : _buildGoalsView(),
           ),
-          _buildBottomNav(),
+          const SpendAntBottomNav(currentItem: SpendAntNavItem.goals),
         ],
       ),
     );
@@ -437,36 +437,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           textAlign: TextAlign.center,
         ),
       ),
-    );
-  }
-
-  Widget _buildBottomNav() {
-    return Container(
-      height: 75,
-      color: AppPalette.green,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navIcon(Icons.person, 0),
-          _navIcon(Icons.home, -1),
-          IconButton(
-            onPressed: () =>
-                Navigator.of(context).pushNamed(AppRoutes.newExpense),
-            icon: const Icon(Icons.add_circle, color: Colors.black, size: 50),
-          ),
-          _navIcon(Icons.flag, 1),
-          _navIcon(Icons.grid_view, -1),
-        ],
-      ),
-    );
-  }
-
-  Widget _navIcon(IconData icon, int viewIndex) {
-    return IconButton(
-      onPressed: () {
-        if (viewIndex != -1) setState(() => _viewState = viewIndex);
-      },
-      icon: Icon(icon, color: Colors.black, size: 28),
     );
   }
 }

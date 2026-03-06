@@ -19,7 +19,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
     });
   }
 

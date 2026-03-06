@@ -7,6 +7,9 @@ abstract final class AppPalette {
   static const ink = Color(0xFF000000);
   static const fieldHint = Color(0xFF5E5E5E);
   static const white = Colors.white;
+  static const amber = Color(0xFFFCC34D);
+  static const amberField = Color(0xFFFCE8AB);
+  static const gray = Color(0xFFF5F5F5);
 }
 
 abstract final class SpendAntTheme {

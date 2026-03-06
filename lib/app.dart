@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
+import 'src/screens/new_expense_screen.dart';
 import 'src/screens/onboarding_screen.dart';
 import 'src/screens/register_screen.dart';
 import 'src/screens/set_goal_screen.dart';
@@ -15,6 +16,7 @@ abstract final class AppRoutes {
   static const register = '/register';
   static const fingerprintAuth = '/fingerprint-auth';
   static const setGoal = '/set-goal';
+  static const newExpense = '/new-expense';
 }
 
 class SpendAntApp extends StatelessWidget {
@@ -34,6 +36,7 @@ class SpendAntApp extends StatelessWidget {
         AppRoutes.register: (_) => const RegisterScreen(),
         AppRoutes.fingerprintAuth: (_) => const FingerprintAuthScreen(),
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
+        AppRoutes.newExpense: (_) => const NewExpenseScreen(),
       },
     );
   }

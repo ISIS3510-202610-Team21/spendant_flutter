@@ -13,6 +13,9 @@ class LoginScreen extends StatelessWidget {
       primaryLabel: 'Login',
       footerText: 'You got no account?',
       footerActionLabel: 'Register',
+      antLeft: -175,
+      antBottom: -300,
+      antHeight: 700,
       onFooterPressed: () =>
           Navigator.of(context).pushNamed(AppRoutes.register),
     );
@@ -25,6 +28,9 @@ class AuthCredentialsScreen extends StatefulWidget {
     required this.primaryLabel,
     required this.footerText,
     required this.footerActionLabel,
+    required this.antLeft,
+    required this.antBottom,
+    required this.antHeight,
     required this.onFooterPressed,
     this.showConfirmPassword = false,
   });
@@ -32,6 +38,9 @@ class AuthCredentialsScreen extends StatefulWidget {
   final String primaryLabel;
   final String footerText;
   final String footerActionLabel;
+  final double antLeft;
+  final double antBottom;
+  final double antHeight;
   final VoidCallback onFooterPressed;
   final bool showConfirmPassword;
 
@@ -62,10 +71,13 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
         builder: (context, constraints) {
           return Stack(
             children: [
-              const Positioned(
-                left: -175,
-                bottom: -225,
-                child: AntAsset('web/ant/Standing.svg', height: 700),
+              Positioned(
+                left: widget.antLeft,
+                bottom: widget.antBottom,
+                child: AntAsset(
+                  'web/ant/Standing.svg',
+                  height: widget.antHeight,
+                ),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(

@@ -42,7 +42,7 @@ class SpendAntWordmark extends StatelessWidget {
           child: Text(
             'Your Finance Pal',
             style: GoogleFonts.nunito(
-              fontSize: large ? 14 : 12,
+              fontSize: large ? 20 : 15,
               fontStyle: FontStyle.italic,
               fontWeight: FontWeight.w700,
               color: AppPalette.ink,

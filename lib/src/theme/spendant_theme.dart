@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 abstract final class AppPalette {
   static const green = Color(0xFF44C669);
-  static const field = Color(0xFFC8DDC8);
+  static const field = Color(0xFFE0FFE9);
   static const ink = Color(0xFF000000);
   static const fieldHint = Color(0xFF5E5E5E);
   static const white = Colors.white;
@@ -30,14 +30,14 @@ abstract final class SpendAntTheme {
     return base.copyWith(
       textTheme: nunitoTextTheme.copyWith(
         displayLarge: GoogleFonts.recursive(
-          fontSize: 41,
+          fontSize: 65,
           height: 0.95,
           fontWeight: FontWeight.w900,
           fontStyle: FontStyle.italic,
           color: AppPalette.ink,
         ),
         displaySmall: GoogleFonts.recursive(
-          fontSize: 34,
+          fontSize: 45,
           height: 0.95,
           fontWeight: FontWeight.w900,
           fontStyle: FontStyle.italic,

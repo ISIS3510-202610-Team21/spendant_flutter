@@ -13,6 +13,9 @@ class RegisterScreen extends StatelessWidget {
       showConfirmPassword: true,
       footerText: 'Already got an account?',
       footerActionLabel: 'Login',
+      antLeft: -175,
+      antBottom: -300,
+      antHeight: 700,
       onFooterPressed: () =>
           Navigator.of(context).pushReplacementNamed(AppRoutes.login),
     );

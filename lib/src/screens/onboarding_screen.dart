@@ -20,7 +20,7 @@ class OnboardingScreen extends StatelessWidget {
             children: [
               const Positioned(
                 left: -175,
-                bottom: -225,
+                bottom: -300,
                 child: AntAsset('web/ant/Standing.svg', height: 700),
               ),
               Positioned.fill(

@@ -82,6 +82,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                           child: const Text('Login with other User'),
                         ),
+                        const SizedBox(height: 16),
+                        // Demo buttons for new views
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pushNamed(AppRoutes.fingerprintAuth),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'View: Fingerprint Auth',
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pushNamed(AppRoutes.setGoal),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'View: Set Goal',
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                        ),
                         SizedBox(height: constraints.maxHeight * 0.34),
                       ],
                     ),

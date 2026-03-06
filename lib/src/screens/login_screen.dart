@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/auth_memory_store.dart';
 import '../widgets/auth_chrome.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -49,6 +50,7 @@ class AuthCredentialsScreen extends StatefulWidget {
 }
 
 class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
+  final TextEditingController _usernameController = TextEditingController();
   bool _isPasswordHidden = true;
   bool _isConfirmPasswordHidden = true;
 
@@ -62,6 +64,23 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     setState(() {
       _isConfirmPasswordHidden = !_isConfirmPasswordHidden;
     });
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final username = _usernameController.text.trim();
+    await AuthMemoryStore.saveLogin(username.isEmpty ? 'there' : username);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
   }
 
   @override
@@ -91,7 +110,10 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                         const SizedBox(height: 124),
                         const SpendAntWordmark(),
                         const SizedBox(height: 42),
-                        TextField(decoration: _fieldDecoration('Username')),
+                        TextField(
+                          controller: _usernameController,
+                          decoration: _fieldDecoration('Username'),
+                        ),
                         const SizedBox(height: 14),
                         TextField(
                           obscureText: _isPasswordHidden,
@@ -131,7 +153,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                           label: widget.primaryLabel,
                           width: widget.showConfirmPassword ? 128 : 103,
                           height: 46,
-                          onPressed: _noop,
+                          onPressed: _submit,
                         ),
                         const SizedBox(height: 18),
                         Wrap(
@@ -194,6 +216,4 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       suffixIcon: suffixIcon,
     );
   }
-
-  static void _noop() {}
 }

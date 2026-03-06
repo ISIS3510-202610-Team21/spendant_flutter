@@ -2,10 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/auth_memory_store.dart';
 import '../widgets/auth_chrome.dart';
 
-class OnboardingScreen extends StatelessWidget {
+class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  late final Future<AuthGreetingState> _greetingFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _greetingFuture = AuthMemoryStore.loadGreetingState();
+  }
 
   void _openAuth(BuildContext context) {
     Navigator.of(context).pushNamed(AppRoutes.loading);
@@ -35,13 +49,20 @@ class OnboardingScreen extends StatelessWidget {
                         const SizedBox(height: 120),
                         const SpendAntWordmark(),
                         const SizedBox(height: 112),
-                        Text(
-                          'Hi Bob.',
-                          style: GoogleFonts.nunito(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black,
-                          ),
+                        FutureBuilder<AuthGreetingState>(
+                          future: _greetingFuture,
+                          builder: (context, snapshot) {
+                            final greeting = _buildGreeting(snapshot.data);
+                            return Text(
+                              greeting,
+                              style: GoogleFonts.nunito(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black,
+                              ),
+                              textAlign: TextAlign.center,
+                            );
+                          },
                         ),
                         const SizedBox(height: 18),
                         BlackPrimaryButton(
@@ -72,5 +93,18 @@ class OnboardingScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  String _buildGreeting(AuthGreetingState? state) {
+    if (state == null || !state.hasLoggedInBefore) {
+      return 'Welcome to SpendAnt.';
+    }
+
+    final username = state.username?.trim();
+    if (username == null || username.isEmpty) {
+      return 'Welcome back.';
+    }
+
+    return 'Hi $username.';
   }
 }

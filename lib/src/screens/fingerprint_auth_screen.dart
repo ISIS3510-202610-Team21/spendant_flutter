@@ -27,10 +27,9 @@ class FingerprintAuthScreen extends StatelessWidget {
           GestureDetector(
             // Cambiamos el pop por una navegación al Onboarding/Home para el demo
             onTap: () {
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                AppRoutes.onboarding, 
-                (route) => false
-              );
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
             },
             child: Container(
               width: 120,
@@ -40,14 +39,18 @@ class FingerprintAuthScreen extends StatelessWidget {
                 shape: BoxShape.circle,
                 border: Border.all(color: AppPalette.ink, width: 2),
               ),
-              child: const Icon(Icons.fingerprint, size: 80, color: AppPalette.ink),
+              child: const Icon(
+                Icons.fingerprint,
+                size: 80,
+                color: AppPalette.ink,
+              ),
             ),
           ),
           const SizedBox(height: 40),
           Text(
             'Use your fingerprint to log in safely',
             style: GoogleFonts.nunito(
-              fontSize: 14, 
+              fontSize: 14,
               color: AppPalette.ink,
               fontWeight: FontWeight.w600,
             ),

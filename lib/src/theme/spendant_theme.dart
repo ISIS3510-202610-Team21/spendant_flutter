@@ -10,6 +10,11 @@ abstract final class AppPalette {
   static const amber = Color(0xFFFCC34D);
   static const amberField = Color(0xFFFCE8AB);
   static const gray = Color(0xFFF5F5F5);
+  static const food = Color(0xFF297DE7);
+  static const transport = Color(0xFFFF632D);
+  static const services = Color(0xFFF3BE28);
+  static const other = Color(0xFFFD8D8C);
+  static const expenseRed = Color(0xFFF04C4C);
 }
 
 abstract final class SpendAntTheme {

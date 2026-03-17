@@ -80,7 +80,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     }
     Navigator.of(
       context,
-    ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
   }
 
   @override

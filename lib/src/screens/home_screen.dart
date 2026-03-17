@@ -285,39 +285,43 @@ class _CategoryBarCard extends StatelessWidget {
     final progress = stat.amount / maxAmount;
     final height = minHeight + ((maxHeight - minHeight) * progress);
 
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: stat.color,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            SvgPicture.asset(
-              stat.iconAssetPath,
-              width: 30,
-              height: 30,
-              colorFilter: const ColorFilter.mode(
-                AppPalette.ink,
-                BlendMode.srcIn,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                stat.label,
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: AppPalette.ink,
+    return SizedBox(
+      height: maxHeight,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          width: double.infinity,
+          height: height,
+          decoration: BoxDecoration(
+            color: stat.color,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              SvgPicture.asset(
+                stat.iconAssetPath,
+                width: 30,
+                height: 30,
+                colorFilter: const ColorFilter.mode(
+                  AppPalette.ink,
+                  BlendMode.srcIn,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  stat.label,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

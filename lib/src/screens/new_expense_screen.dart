@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
@@ -409,8 +410,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       width: 148,
                                       child: ElevatedButton.icon(
                                         onPressed: () {},
-                                        icon: const Icon(
-                                          Icons.document_scanner_outlined,
+                                        icon: SvgPicture.asset(
+                                          'web/icons/Camera.svg',
+                                          width: 18,
+                                          height: 18,
+                                          colorFilter: const ColorFilter.mode(
+                                            AppPalette.white,
+                                            BlendMode.srcIn,
+                                          ),
                                         ),
                                         label: const Text('Scan Receipt'),
                                         style: ElevatedButton.styleFrom(
@@ -1210,6 +1217,8 @@ class _PrimaryCategoryChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  static const double chipHeight = 46;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -1220,17 +1229,21 @@ class _PrimaryCategoryChip extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          height: chipHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: selected ? color : AppPalette.green,
             borderRadius: BorderRadius.circular(999),
           ),
-          child: Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
+          child: Center(
+            widthFactor: 1,
+            child: Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
             ),
           ),
         ),
@@ -1346,20 +1359,35 @@ class _MiniActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 46,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: _PrimaryCategoryChip.chipHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          backgroundColor: AppPalette.green,
-          foregroundColor: AppPalette.ink,
-          elevation: 0,
-          textStyle: GoogleFonts.nunito(
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+          decoration: BoxDecoration(
+            color: AppPalette.green,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Center(
+            widthFactor: 1,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: AppPalette.ink),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

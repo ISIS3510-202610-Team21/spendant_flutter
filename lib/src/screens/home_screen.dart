@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/spendant_theme.dart';
@@ -12,25 +13,25 @@ class HomeScreen extends StatelessWidget {
       label: 'Food',
       amount: 320000,
       color: AppPalette.food,
-      icon: Icons.restaurant_outlined,
+      iconAssetPath: 'web/icons/Food.svg',
     ),
     _CategoryStat(
       label: 'Transport',
       amount: 265000,
       color: AppPalette.transport,
-      icon: Icons.directions_bus_outlined,
+      iconAssetPath: 'web/icons/Transport.svg',
     ),
     _CategoryStat(
       label: 'Services',
       amount: 218000,
       color: AppPalette.services,
-      icon: Icons.lightbulb_outline,
+      iconAssetPath: 'web/icons/Services.svg',
     ),
     _CategoryStat(
       label: 'Other',
       amount: 148000,
       color: AppPalette.other,
-      icon: Icons.storefront_outlined,
+      iconAssetPath: 'web/icons/Other.svg',
     ),
   ];
 
@@ -43,7 +44,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Food',
           amount: 'COP 23,000',
           color: Color(0xFFCFE2FF),
-          icon: Icons.restaurant_outlined,
+          iconAssetPath: 'web/icons/Food.svg',
           iconColor: AppPalette.food,
         ),
         _ExpenseEntry(
@@ -51,7 +52,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Transport',
           amount: 'COP 3,500',
           color: Color(0xFFF6D1C4),
-          icon: Icons.directions_bus_outlined,
+          iconAssetPath: 'web/icons/Transport.svg',
           iconColor: AppPalette.transport,
         ),
       ],
@@ -64,7 +65,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Services',
           amount: 'COP 3,500',
           color: Color(0xFFF7E5A8),
-          icon: Icons.lightbulb_outline,
+          iconAssetPath: 'web/icons/Services.svg',
           iconColor: AppPalette.services,
         ),
         _ExpenseEntry(
@@ -72,7 +73,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Food',
           amount: 'COP 23,000',
           color: Color(0xFFCFE2FF),
-          icon: Icons.restaurant_outlined,
+          iconAssetPath: 'web/icons/Food.svg',
           iconColor: AppPalette.food,
         ),
       ],
@@ -85,7 +86,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Other',
           amount: 'COP 18,000',
           color: Color(0xFFFBC5C4),
-          icon: Icons.storefront_outlined,
+          iconAssetPath: 'web/icons/Other.svg',
           iconColor: AppPalette.other,
         ),
         _ExpenseEntry(
@@ -93,7 +94,7 @@ class HomeScreen extends StatelessWidget {
           category: 'Transport',
           amount: 'COP 12,000',
           color: Color(0xFFF6D1C4),
-          icon: Icons.directions_bus_outlined,
+          iconAssetPath: 'web/icons/Transport.svg',
           iconColor: AppPalette.transport,
         ),
       ],
@@ -102,6 +103,10 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxCategoryAmount = _categoryStats
+        .map((stat) => stat.amount)
+        .reduce((current, next) => current > next ? current : next);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -156,7 +161,7 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   'Your Budget for today',
                   style: GoogleFonts.nunito(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
@@ -168,7 +173,7 @@ class HomeScreen extends StatelessWidget {
                       TextSpan(
                         text: '\$25,500 ',
                         style: GoogleFonts.nunito(
-                          fontSize: 34,
+                          fontSize: 44,
                           fontWeight: FontWeight.w900,
                           color: AppPalette.green,
                         ),
@@ -176,7 +181,7 @@ class HomeScreen extends StatelessWidget {
                       TextSpan(
                         text: 'COP',
                         style: GoogleFonts.nunito(
-                          fontSize: 18,
+                          fontSize: 24,
                           fontWeight: FontWeight.w900,
                           color: AppPalette.ink,
                         ),
@@ -184,34 +189,31 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 Text(
                   'This month you have expended',
                   style: GoogleFonts.nunito(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 RichText(
                   text: TextSpan(
                     children: [
                       TextSpan(
                         text: '\$750,000 ',
                         style: GoogleFonts.nunito(
-                          fontSize: 28,
+                          fontSize: 40,
                           fontWeight: FontWeight.w900,
                           color: AppPalette.expenseRed,
-                          decoration: TextDecoration.underline,
-                          decorationColor: AppPalette.food,
-                          decorationThickness: 3,
                         ),
                       ),
                       TextSpan(
                         text: 'COP',
                         style: GoogleFonts.nunito(
-                          fontSize: 16,
+                          fontSize: 24,
                           fontWeight: FontWeight.w900,
                           color: AppPalette.ink,
                         ),
@@ -221,10 +223,10 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
-                  height: 170,
+                  height: 260,
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      const gap = 12.0;
+                      const gap = 18.0;
                       final width = (constraints.maxWidth - (gap * 3)) / 4;
 
                       return Row(
@@ -234,7 +236,10 @@ class HomeScreen extends StatelessWidget {
                           for (final stat in _categoryStats)
                             SizedBox(
                               width: width,
-                              child: _CategoryBarCard(stat: stat),
+                              child: _CategoryBarCard(
+                                stat: stat,
+                                maxAmount: maxCategoryAmount,
+                              ),
                             ),
                         ],
                       );
@@ -268,31 +273,45 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _CategoryBarCard extends StatelessWidget {
-  const _CategoryBarCard({required this.stat});
+  const _CategoryBarCard({required this.stat, required this.maxAmount});
 
   final _CategoryStat stat;
+  final int maxAmount;
 
   @override
   Widget build(BuildContext context) {
+    const minHeight = 112.0;
+    const maxHeight = 248.0;
+    final progress = stat.amount / maxAmount;
+    final height = minHeight + ((maxHeight - minHeight) * progress);
+
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
-        height: 128,
+        height: height,
         decoration: BoxDecoration(
           color: stat.color,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Icon(stat.icon, color: AppPalette.ink, size: 24),
-            const SizedBox(height: 4),
+            SvgPicture.asset(
+              stat.iconAssetPath,
+              width: 30,
+              height: 30,
+              colorFilter: const ColorFilter.mode(
+                AppPalette.ink,
+                BlendMode.srcIn,
+              ),
+            ),
+            const SizedBox(height: 8),
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 stat.label,
                 style: GoogleFonts.nunito(
-                  fontSize: 11,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                   color: AppPalette.ink,
                 ),
@@ -324,9 +343,17 @@ class _ExpenseListTile extends StatelessWidget {
       child: Row(
         children: [
           CircleAvatar(
-            radius: 16,
+            radius: 24,
             backgroundColor: entry.iconColor,
-            child: Icon(entry.icon, size: 18, color: AppPalette.ink),
+            child: SvgPicture.asset(
+              entry.iconAssetPath,
+              width: 24,
+              height: 24,
+              colorFilter: const ColorFilter.mode(
+                AppPalette.ink,
+                BlendMode.srcIn,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -336,7 +363,7 @@ class _ExpenseListTile extends StatelessWidget {
                 Text(
                   entry.name,
                   style: GoogleFonts.nunito(
-                    fontSize: 15,
+                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                     color: AppPalette.ink,
                   ),
@@ -345,7 +372,7 @@ class _ExpenseListTile extends StatelessWidget {
                 Text(
                   entry.category,
                   style: GoogleFonts.nunito(
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: Colors.black54,
                   ),
@@ -357,7 +384,7 @@ class _ExpenseListTile extends StatelessWidget {
           Text(
             entry.amount,
             style: GoogleFonts.nunito(
-              fontSize: 12,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
               color: Colors.black54,
             ),
@@ -373,13 +400,13 @@ class _CategoryStat {
     required this.label,
     required this.amount,
     required this.color,
-    required this.icon,
+    required this.iconAssetPath,
   });
 
   final String label;
   final int amount;
   final Color color;
-  final IconData icon;
+  final String iconAssetPath;
 }
 
 class _ExpenseDayGroup {
@@ -395,7 +422,7 @@ class _ExpenseEntry {
     required this.category,
     required this.amount,
     required this.color,
-    required this.icon,
+    required this.iconAssetPath,
     required this.iconColor,
   });
 
@@ -403,6 +430,6 @@ class _ExpenseEntry {
   final String category;
   final String amount;
   final Color color;
-  final IconData icon;
+  final String iconAssetPath;
   final Color iconColor;
 }

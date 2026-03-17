@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +6,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../theme/spendant_theme.dart';
+
+class _ExpenseLabelOption {
+  const _ExpenseLabelOption({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+}
 
 class NewExpenseScreen extends StatefulWidget {
   const NewExpenseScreen({super.key});
@@ -19,13 +24,20 @@ class NewExpenseScreen extends StatefulWidget {
 class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
-  final List<String> _labels = <String>[];
+  final List<String> _selectedLabels = <String>[];
+  final List<String> _customLabels = <String>[];
+
+  static const List<_ExpenseLabelOption> _predefinedLabels =
+      <_ExpenseLabelOption>[
+        _ExpenseLabelOption(label: 'Food', color: AppPalette.food),
+        _ExpenseLabelOption(label: 'Transport', color: AppPalette.transport),
+        _ExpenseLabelOption(label: 'Services', color: AppPalette.services),
+        _ExpenseLabelOption(label: 'Other', color: AppPalette.other),
+      ];
 
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
-  bool _isRecurring = false;
-  String _recurringFrequency = 'Monthly';
 
   @override
   void dispose() {
@@ -49,10 +61,27 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
-    final selected = await Navigator.of(context).push<TimeOfDay>(
-      MaterialPageRoute(
-        builder: (_) => TimeSelectionScreen(initialTime: _selectedTime),
-      ),
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+      builder: (context, child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+
+        final theme = Theme.of(context);
+        return Theme(
+          data: theme.copyWith(
+            colorScheme: theme.colorScheme.copyWith(
+              primary: AppPalette.green,
+              onPrimary: AppPalette.ink,
+              surface: Colors.white,
+              onSurface: AppPalette.ink,
+            ),
+          ),
+          child: child,
+        );
+      },
     );
 
     if (selected != null) {
@@ -74,6 +103,37 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         _selectedLocation = selected;
       });
     }
+  }
+
+  String _normalizeLabel(String value) => value.trim().toLowerCase();
+
+  bool _containsLabel(List<String> labels, String candidate) {
+    final normalizedCandidate = _normalizeLabel(candidate);
+    return labels.any((label) => _normalizeLabel(label) == normalizedCandidate);
+  }
+
+  _ExpenseLabelOption? _matchingPredefinedLabel(String label) {
+    for (final option in _predefinedLabels) {
+      if (_normalizeLabel(option.label) == _normalizeLabel(label)) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  bool _isLabelSelected(String label) => _containsLabel(_selectedLabels, label);
+
+  void _togglePredefinedLabel(String label) {
+    final isSelected = _isLabelSelected(label);
+    setState(() {
+      if (isSelected) {
+        _selectedLabels.removeWhere(
+          (selected) => _normalizeLabel(selected) == _normalizeLabel(label),
+        );
+        return;
+      }
+      _selectedLabels.add(label);
+    });
   }
 
   Future<void> _addLabel() async {
@@ -110,12 +170,23 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
     controller.dispose();
 
-    if (label == null || label.isEmpty || _labels.contains(label)) {
+    if (label == null || label.isEmpty) {
+      return;
+    }
+
+    final predefinedMatch = _matchingPredefinedLabel(label);
+    final resolvedLabel = predefinedMatch?.label ?? label;
+
+    if (_containsLabel(_selectedLabels, resolvedLabel)) {
       return;
     }
 
     setState(() {
-      _labels.add(label);
+      if (predefinedMatch == null &&
+          !_containsLabel(_customLabels, resolvedLabel)) {
+        _customLabels.add(resolvedLabel);
+      }
+      _selectedLabels.add(resolvedLabel);
     });
   }
 
@@ -193,17 +264,48 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            for (final label in _labels)
+                            for (final option in _predefinedLabels)
+                              FilterChip(
+                                label: Text(option.label),
+                                selected: _isLabelSelected(option.label),
+                                showCheckmark: false,
+                                onSelected: (_) =>
+                                    _togglePredefinedLabel(option.label),
+                                backgroundColor: option.color.withValues(
+                                  alpha: 0.16,
+                                ),
+                                selectedColor: option.color.withValues(
+                                  alpha: 0.72,
+                                ),
+                                side: BorderSide(
+                                  color: option.color.withValues(alpha: 0.5),
+                                ),
+                                labelStyle: GoogleFonts.nunito(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppPalette.ink,
+                                ),
+                              ),
+                            for (final label in _customLabels)
                               Chip(
                                 label: Text(label),
                                 onDeleted: () {
                                   setState(() {
-                                    _labels.remove(label);
+                                    _customLabels.removeWhere(
+                                      (customLabel) =>
+                                          _normalizeLabel(customLabel) ==
+                                          _normalizeLabel(label),
+                                    );
+                                    _selectedLabels.removeWhere(
+                                      (selectedLabel) =>
+                                          _normalizeLabel(selectedLabel) ==
+                                          _normalizeLabel(label),
+                                    );
                                   });
                                 },
-                                backgroundColor: AppPalette.green.withValues(
-                                  alpha: 0.85,
+                                backgroundColor: AppPalette.other.withValues(
+                                  alpha: 0.72,
                                 ),
+                                deleteIconColor: AppPalette.ink,
                                 labelStyle: GoogleFonts.nunito(
                                   fontWeight: FontWeight.w800,
                                   color: AppPalette.ink,
@@ -215,70 +317,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                               onPressed: _addLabel,
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 22),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppPalette.field,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Recurring expense',
-                                      style: GoogleFonts.nunito(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppPalette.ink,
-                                      ),
-                                    ),
-                                  ),
-                                  Switch.adaptive(
-                                    value: _isRecurring,
-                                    activeThumbColor: AppPalette.green,
-                                    activeTrackColor: AppPalette.green
-                                        .withValues(alpha: 0.45),
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _isRecurring = value;
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                              if (_isRecurring)
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      for (final frequency in const [
-                                        'Daily',
-                                        'Weekly',
-                                        'Monthly',
-                                      ])
-                                        ChoiceChip(
-                                          selected:
-                                              _recurringFrequency == frequency,
-                                          label: Text(frequency),
-                                          onSelected: (_) {
-                                            setState(() {
-                                              _recurringFrequency = frequency;
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
                         ),
                         const SizedBox(height: 22),
                         Center(
@@ -365,8 +403,6 @@ class ExpenseLocationSelection {
   final LatLng position;
   final String label;
 }
-
-enum _TimeDialMode { hour, minute }
 
 class DateSelectionScreen extends StatefulWidget {
   const DateSelectionScreen({super.key, required this.initialDate});
@@ -604,210 +640,6 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                           TextButton(
                             onPressed: () =>
                                 Navigator.of(context).pop(_selectedDate),
-                            child: Text(
-                              'OK',
-                              style: GoogleFonts.nunito(
-                                fontWeight: FontWeight.w900,
-                                color: AppPalette.green,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class TimeSelectionScreen extends StatefulWidget {
-  const TimeSelectionScreen({super.key, required this.initialTime});
-
-  final TimeOfDay initialTime;
-
-  @override
-  State<TimeSelectionScreen> createState() => _TimeSelectionScreenState();
-}
-
-class _TimeSelectionScreenState extends State<TimeSelectionScreen> {
-  late int _hour = widget.initialTime.hourOfPeriod == 0
-      ? 12
-      : widget.initialTime.hourOfPeriod;
-  late int _minute = (widget.initialTime.minute ~/ 5) * 5;
-  late bool _isAm = widget.initialTime.period == DayPeriod.am;
-  _TimeDialMode _mode = _TimeDialMode.hour;
-
-  TimeOfDay get _selectedTime {
-    final hour24 = (_hour % 12) + (_isAm ? 0 : 12);
-    return TimeOfDay(hour: hour24, minute: _minute);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final displayStyle = Theme.of(context).textTheme.displayLarge?.copyWith(
-      fontSize: 58,
-      fontWeight: FontWeight.w500,
-      fontStyle: FontStyle.normal,
-      color: AppPalette.green,
-    );
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _ExpenseHeader(
-              title: 'Select Time',
-              onClose: () => Navigator.of(context).pop(),
-              onConfirm: () => Navigator.of(context).pop(_selectedTime),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  decoration: BoxDecoration(
-                    color: AppPalette.field,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Select time',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppPalette.fieldHint,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _mode = _TimeDialMode.hour;
-                                    });
-                                  },
-                                  child: Text(
-                                    _hour.toString().padLeft(2, '0'),
-                                    style: displayStyle?.copyWith(
-                                      color: _mode == _TimeDialMode.hour
-                                          ? AppPalette.green
-                                          : AppPalette.green.withValues(
-                                              alpha: 0.45,
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                                Text(' : ', style: displayStyle),
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _mode = _TimeDialMode.minute;
-                                    });
-                                  },
-                                  child: Text(
-                                    _minute.toString().padLeft(2, '0'),
-                                    style: displayStyle?.copyWith(
-                                      color: _mode == _TimeDialMode.minute
-                                          ? AppPalette.green
-                                          : AppPalette.green.withValues(
-                                              alpha: 0.45,
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            children: [
-                              _PeriodButton(
-                                label: 'AM',
-                                selected: _isAm,
-                                onTap: () {
-                                  setState(() {
-                                    _isAm = true;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 8),
-                              _PeriodButton(
-                                label: 'PM',
-                                selected: !_isAm,
-                                onTap: () {
-                                  setState(() {
-                                    _isAm = false;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      Expanded(
-                        child: Center(
-                          child: _TimeDial(
-                            mode: _mode,
-                            selectedHour: _hour,
-                            selectedMinute: _minute,
-                            onHourSelected: (value) {
-                              setState(() {
-                                _hour = value;
-                                _mode = _TimeDialMode.minute;
-                              });
-                            },
-                            onMinuteSelected: (value) {
-                              setState(() {
-                                _minute = value;
-                              });
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _mode == _TimeDialMode.hour
-                            ? 'Tap the clock to select the hour'
-                            : 'Tap the clock to select the minutes',
-                        style: GoogleFonts.nunito(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.fieldHint,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: Text(
-                              'Cancel',
-                              style: GoogleFonts.nunito(
-                                fontWeight: FontWeight.w800,
-                                color: AppPalette.green,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.of(context).pop(_selectedTime),
                             child: Text(
                               'OK',
                               style: GoogleFonts.nunito(
@@ -1166,191 +998,5 @@ class _SelectionPill extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _PeriodButton extends StatelessWidget {
-  const _PeriodButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: 44,
-        padding: const EdgeInsets.symmetric(vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF3D5E7) : const Color(0xFFF8EAF2),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? AppPalette.green : Colors.black12,
-          ),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TimeDial extends StatelessWidget {
-  const _TimeDial({
-    required this.mode,
-    required this.selectedHour,
-    required this.selectedMinute,
-    required this.onHourSelected,
-    required this.onMinuteSelected,
-  });
-
-  final _TimeDialMode mode;
-  final int selectedHour;
-  final int selectedMinute;
-  final ValueChanged<int> onHourSelected;
-  final ValueChanged<int> onMinuteSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final values = mode == _TimeDialMode.hour
-        ? List<int>.generate(12, (index) => index + 1)
-        : List<int>.generate(12, (index) => index * 5);
-    final selectedValue = mode == _TimeDialMode.hour
-        ? selectedHour
-        : selectedMinute;
-
-    return AspectRatio(
-      aspectRatio: 1,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = constraints.biggest.shortestSide;
-          final radius = size / 2;
-          final itemRadius = radius - 26;
-          final center = Offset(radius, radius);
-
-          return Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FFFA),
-              shape: BoxShape.circle,
-            ),
-            child: Stack(
-              children: [
-                for (var index = 0; index < values.length; index++)
-                  Builder(
-                    builder: (context) {
-                      final value = values[index];
-                      final angle = ((index + 1 - 3) * 30) * math.pi / 180;
-                      final dx = center.dx + itemRadius * math.cos(angle);
-                      final dy = center.dy + itemRadius * math.sin(angle);
-                      final isSelected = value == selectedValue;
-
-                      return Positioned(
-                        left: dx - 18,
-                        top: dy - 18,
-                        child: GestureDetector(
-                          onTap: () {
-                            if (mode == _TimeDialMode.hour) {
-                              onHourSelected(value);
-                              return;
-                            }
-                            onMinuteSelected(value);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 140),
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppPalette.green
-                                  : Colors.transparent,
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              mode == _TimeDialMode.hour
-                                  ? '$value'
-                                  : value.toString().padLeft(2, '0'),
-                              style: GoogleFonts.nunito(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: AppPalette.ink,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                CustomPaint(
-                  size: Size.square(size),
-                  painter: _DialHandPainter(
-                    mode: mode,
-                    selectedValue: selectedValue,
-                  ),
-                ),
-                Center(
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: AppPalette.green,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _DialHandPainter extends CustomPainter {
-  const _DialHandPainter({required this.mode, required this.selectedValue});
-
-  final _TimeDialMode mode;
-  final int selectedValue;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final step = mode == _TimeDialMode.hour
-        ? selectedValue
-        : selectedValue ~/ 5;
-    final angle = ((step - 3) * 30) * math.pi / 180;
-    final handLength = size.width * 0.18;
-    final end = Offset(
-      center.dx + handLength * math.cos(angle),
-      center.dy + handLength * math.sin(angle),
-    );
-
-    final paint = Paint()
-      ..color = AppPalette.green
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(center, end, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DialHandPainter oldDelegate) {
-    return oldDelegate.selectedValue != selectedValue ||
-        oldDelegate.mode != mode;
   }
 }

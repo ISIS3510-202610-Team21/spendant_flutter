@@ -317,6 +317,9 @@ class _ExpenseListTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: entry.color,
         borderRadius: BorderRadius.circular(2),
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+        ),
       ),
       child: Row(
         children: [

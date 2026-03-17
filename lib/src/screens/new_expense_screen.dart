@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +16,46 @@ class _ExpenseLabelOption {
   final Color color;
 }
 
+class _ExpenseLabelGroup {
+  const _ExpenseLabelGroup({required this.label, required this.sublabels});
+
+  final String label;
+  final List<String> sublabels;
+}
+
+const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
+  _ExpenseLabelGroup(
+    label: 'Academic Essentials',
+    sublabels: <String>[
+      'University Fees',
+      'Learning Materials',
+      'Commute',
+    ],
+  ),
+  _ExpenseLabelGroup(
+    label: 'Lifestyle & Social',
+    sublabels: <String>[
+      'Social/Group Hangouts',
+      'Food Delivery',
+      'Entertainment',
+      'Subscriptions',
+    ],
+  ),
+  _ExpenseLabelGroup(
+    label: 'Living Expenses',
+    sublabels: <String>['Rent & Utilities', 'Groceries', 'Personal Care'],
+  ),
+  _ExpenseLabelGroup(
+    label: 'Strategic & Utility Tags',
+    sublabels: <String>[
+      'Social Ledger (Owed)',
+      'Goal Savings',
+      'Impulse/Emotional',
+      'Emergency',
+    ],
+  ),
+];
+
 class NewExpenseScreen extends StatefulWidget {
   const NewExpenseScreen({super.key});
 
@@ -24,8 +66,6 @@ class NewExpenseScreen extends StatefulWidget {
 class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
-  final List<String> _selectedLabels = <String>[];
-  final List<String> _customLabels = <String>[];
 
   static const List<_ExpenseLabelOption> _predefinedLabels =
       <_ExpenseLabelOption>[
@@ -35,6 +75,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         _ExpenseLabelOption(label: 'Other', color: AppPalette.other),
       ];
 
+  String? _selectedCategory;
+  List<String> _selectedDetailLabels = <String>[];
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
@@ -61,9 +103,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
+    final materialTextTheme =
+        Typography.material2021(platform: defaultTargetPlatform).black;
+    const timeDisplayHeight = 64 / 57;
     final selected = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
+      helpText: 'Select time',
+      cancelText: 'Cancel',
+      confirmText: 'OK',
       builder: (context, child) {
         if (child == null) {
           return const SizedBox.shrink();
@@ -75,8 +123,121 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             colorScheme: theme.colorScheme.copyWith(
               primary: AppPalette.green,
               onPrimary: AppPalette.ink,
-              surface: Colors.white,
+              surface: AppPalette.field,
               onSurface: AppPalette.ink,
+            ),
+            timePickerTheme: TimePickerThemeData(
+              backgroundColor: AppPalette.field,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+              helpTextStyle: materialTextTheme.labelMedium?.copyWith(
+                color: AppPalette.fieldHint,
+              ),
+              hourMinuteShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              hourMinuteColor: WidgetStateColor.resolveWith((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return AppPalette.field;
+                }
+                return const Color(0xFFD7F6DE);
+              }),
+              hourMinuteTextColor: WidgetStateColor.resolveWith((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return AppPalette.ink;
+                }
+                return AppPalette.green;
+              }),
+              hourMinuteTextStyle: materialTextTheme.displayLarge?.copyWith(
+                fontSize: 57,
+                height: timeDisplayHeight,
+                color: AppPalette.ink,
+              ),
+              timeSelectorSeparatorColor: const WidgetStatePropertyAll<Color?>(
+                AppPalette.ink,
+              ),
+              timeSelectorSeparatorTextStyle:
+                  WidgetStatePropertyAll<TextStyle?>(
+                    materialTextTheme.displayLarge?.copyWith(
+                      fontSize: 57,
+                      height: timeDisplayHeight,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+              dayPeriodShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: const BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
+              ),
+              dayPeriodColor: WidgetStateColor.resolveWith((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return const Color(0xFFF6D0DB);
+                }
+                return const Color(0xFFECE6F0);
+              }),
+              dayPeriodTextColor: WidgetStateColor.resolveWith((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return AppPalette.fieldHint;
+                }
+                return AppPalette.ink;
+              }),
+              dayPeriodTextStyle: materialTextTheme.labelMedium?.copyWith(
+                color: AppPalette.fieldHint,
+              ),
+              dialBackgroundColor: Colors.white.withValues(alpha: 0.8),
+              dialHandColor: AppPalette.green,
+              dialTextColor: WidgetStateColor.resolveWith((
+                Set<WidgetState> states,
+              ) {
+                if (states.contains(WidgetState.selected)) {
+                  return Colors.white;
+                }
+                return AppPalette.ink;
+              }),
+              dialTextStyle: materialTextTheme.bodyLarge?.copyWith(
+                color: AppPalette.ink,
+              ),
+              entryModeIconColor: AppPalette.fieldHint,
+              cancelButtonStyle: TextButton.styleFrom(
+                foregroundColor: AppPalette.green,
+                textStyle: GoogleFonts.nunito(fontWeight: FontWeight.w800),
+              ),
+              confirmButtonStyle: TextButton.styleFrom(
+                foregroundColor: AppPalette.green,
+                textStyle: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+              ),
+              inputDecorationTheme: InputDecorationTheme(
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppPalette.green,
+                    width: 1.5,
+                  ),
+                ),
+              ),
             ),
           ),
           child: child,
@@ -105,96 +266,37 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
-  String _normalizeLabel(String value) => value.trim().toLowerCase();
-
-  bool _containsLabel(List<String> labels, String candidate) {
-    final normalizedCandidate = _normalizeLabel(candidate);
-    return labels.any((label) => _normalizeLabel(label) == normalizedCandidate);
-  }
-
-  _ExpenseLabelOption? _matchingPredefinedLabel(String label) {
-    for (final option in _predefinedLabels) {
-      if (_normalizeLabel(option.label) == _normalizeLabel(label)) {
-        return option;
-      }
-    }
-    return null;
-  }
-
-  bool _isLabelSelected(String label) => _containsLabel(_selectedLabels, label);
-
-  void _togglePredefinedLabel(String label) {
-    final isSelected = _isLabelSelected(label);
+  void _selectCategory(String label) {
     setState(() {
-      if (isSelected) {
-        _selectedLabels.removeWhere(
-          (selected) => _normalizeLabel(selected) == _normalizeLabel(label),
-        );
-        return;
-      }
-      _selectedLabels.add(label);
+      _selectedCategory = _selectedCategory == label ? null : label;
     });
   }
 
-  Future<void> _addLabel() async {
-    final controller = TextEditingController();
-    final label = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          title: Text(
-            'New label',
-            style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'e.g. Transport'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(controller.text.trim()),
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
+  Future<void> _pickLabels() async {
+    final selected = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        builder: (_) => LabelSelectionScreen(
+          initialSelection: _selectedDetailLabels,
+        ),
+      ),
     );
-    controller.dispose();
 
-    if (label == null || label.isEmpty) {
-      return;
-    }
-
-    final predefinedMatch = _matchingPredefinedLabel(label);
-    final resolvedLabel = predefinedMatch?.label ?? label;
-
-    if (_containsLabel(_selectedLabels, resolvedLabel)) {
+    if (selected == null) {
       return;
     }
 
     setState(() {
-      if (predefinedMatch == null &&
-          !_containsLabel(_customLabels, resolvedLabel)) {
-        _customLabels.add(resolvedLabel);
-      }
-      _selectedLabels.add(resolvedLabel);
+      _selectedDetailLabels = selected;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final formBottomPadding = 116.0 + keyboardInset;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white,
       body: Stack(
         children: [
@@ -207,140 +309,130 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   onConfirm: () => Navigator.of(context).maybePop(),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      24,
-                      28,
-                      24,
-                      136 + keyboardInset,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Align(
-                          alignment: Alignment.center,
-                          child: OutlinedButton(
-                            onPressed: _pickDate,
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.black26),
-                              backgroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 4,
-                              ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: Text(
-                              'Today',
-                              style: GoogleFonts.nunito(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black87,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final centeredMinHeight = math.max(
+                        0.0,
+                        constraints.maxHeight - formBottomPadding,
+                      );
+
+                      return SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          24,
+                          24,
+                          formBottomPadding,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: centeredMinHeight,
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 420),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _ExpenseField(
+                                    controller: _expenseNameController,
+                                    hintText: 'Expense name',
+                                  ),
+                                  const SizedBox(height: 22),
+                                  _ExpenseField(
+                                    controller: _expenseValueController,
+                                    hintText: r'$ 0',
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: const [
+                                      _CurrencyThousandsFormatter(),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 18),
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: [
+                                      for (final option in _predefinedLabels)
+                                        _PrimaryCategoryChip(
+                                          label: option.label,
+                                          color: option.color,
+                                          selected:
+                                              _selectedCategory == option.label,
+                                          onTap: () =>
+                                              _selectCategory(option.label),
+                                        ),
+                                    ],
+                                  ),
+                                  if (_selectedDetailLabels.isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    Wrap(
+                                      alignment: WrapAlignment.center,
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        for (final label
+                                            in _selectedDetailLabels)
+                                          Chip(
+                                            label: Text(label),
+                                            backgroundColor:
+                                                const Color(0xFFD1D1D1),
+                                            deleteIconColor: AppPalette.ink,
+                                            onDeleted: () {
+                                              setState(() {
+                                                _selectedDetailLabels.remove(
+                                                  label,
+                                                );
+                                              });
+                                            },
+                                            labelStyle: GoogleFonts.nunito(
+                                              fontWeight: FontWeight.w800,
+                                              color: AppPalette.ink,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                  const SizedBox(height: 16),
+                                  Center(
+                                    child: _MiniActionButton(
+                                      icon: Icons.add,
+                                      label: 'Label',
+                                      onPressed: _pickLabels,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Center(
+                                    child: SizedBox(
+                                      width: 148,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {},
+                                        icon: const Icon(
+                                          Icons.document_scanner_outlined,
+                                        ),
+                                        label: const Text('Scan Receipt'),
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                            horizontal: 14,
+                                          ),
+                                          textStyle: GoogleFonts.nunito(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        _ExpenseField(
-                          controller: _expenseNameController,
-                          hintText: 'Expense name',
-                        ),
-                        const SizedBox(height: 10),
-                        _ExpenseField(
-                          controller: _expenseValueController,
-                          hintText: r'$ 0.00',
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final option in _predefinedLabels)
-                              FilterChip(
-                                label: Text(option.label),
-                                selected: _isLabelSelected(option.label),
-                                showCheckmark: false,
-                                onSelected: (_) =>
-                                    _togglePredefinedLabel(option.label),
-                                backgroundColor: option.color.withValues(
-                                  alpha: 0.16,
-                                ),
-                                selectedColor: option.color.withValues(
-                                  alpha: 0.72,
-                                ),
-                                side: BorderSide(
-                                  color: option.color.withValues(alpha: 0.5),
-                                ),
-                                labelStyle: GoogleFonts.nunito(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppPalette.ink,
-                                ),
-                              ),
-                            for (final label in _customLabels)
-                              Chip(
-                                label: Text(label),
-                                onDeleted: () {
-                                  setState(() {
-                                    _customLabels.removeWhere(
-                                      (customLabel) =>
-                                          _normalizeLabel(customLabel) ==
-                                          _normalizeLabel(label),
-                                    );
-                                    _selectedLabels.removeWhere(
-                                      (selectedLabel) =>
-                                          _normalizeLabel(selectedLabel) ==
-                                          _normalizeLabel(label),
-                                    );
-                                  });
-                                },
-                                backgroundColor: AppPalette.other.withValues(
-                                  alpha: 0.72,
-                                ),
-                                deleteIconColor: AppPalette.ink,
-                                labelStyle: GoogleFonts.nunito(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppPalette.ink,
-                                ),
-                              ),
-                            _MiniActionButton(
-                              icon: Icons.add,
-                              label: 'Label',
-                              onPressed: _addLabel,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 22),
-                        Center(
-                          child: SizedBox(
-                            width: 136,
-                            child: ElevatedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(Icons.document_scanner_outlined),
-                              label: const Text('Scan Receipt'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                  horizontal: 12,
-                                ),
-                                textStyle: GoogleFonts.nunito(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -414,106 +506,13 @@ class DateSelectionScreen extends StatefulWidget {
 }
 
 class _DateSelectionScreenState extends State<DateSelectionScreen> {
-  late DateTime _visibleMonth = DateTime(
-    widget.initialDate.year,
-    widget.initialDate.month,
-  );
   late DateTime _selectedDate = widget.initialDate;
-
-  Future<void> _selectMonth() async {
-    final selectedMonth = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: 12,
-            itemBuilder: (context, index) {
-              final month = index + 1;
-              return ListTile(
-                title: Text(
-                  DateFormat('MMMM').format(DateTime(2026, month)),
-                  style: GoogleFonts.nunito(
-                    fontWeight: FontWeight.w800,
-                    color: AppPalette.ink,
-                  ),
-                ),
-                onTap: () => Navigator.of(context).pop(month),
-              );
-            },
-          ),
-        );
-      },
-    );
-
-    if (selectedMonth == null) {
-      return;
-    }
-
-    setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, selectedMonth);
-      _selectedDate = _clampDateToVisibleMonth(_selectedDate, _visibleMonth);
-    });
-  }
-
-  Future<void> _selectYear() async {
-    final years = List<int>.generate(21, (index) => 2020 + index);
-    final selectedYear = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              for (final year in years)
-                ListTile(
-                  title: Text(
-                    '$year',
-                    style: GoogleFonts.nunito(
-                      fontWeight: FontWeight.w800,
-                      color: AppPalette.ink,
-                    ),
-                  ),
-                  onTap: () => Navigator.of(context).pop(year),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (selectedYear == null) {
-      return;
-    }
-
-    setState(() {
-      _visibleMonth = DateTime(selectedYear, _visibleMonth.month);
-      _selectedDate = _clampDateToVisibleMonth(_selectedDate, _visibleMonth);
-    });
-  }
-
-  DateTime _clampDateToVisibleMonth(DateTime value, DateTime visibleMonth) {
-    final lastDay = DateUtils.getDaysInMonth(
-      visibleMonth.year,
-      visibleMonth.month,
-    );
-    return DateTime(
-      visibleMonth.year,
-      visibleMonth.month,
-      math.min(value.day, lastDay),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
+    final materialTextTheme =
+        Typography.material2021(platform: defaultTargetPlatform).black;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -548,58 +547,13 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                       const SizedBox(height: 10),
                       Text(
                         DateFormat('EEE, MMM d').format(_selectedDate),
-                        style: GoogleFonts.nunito(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
+                        style: materialTextTheme.displayLarge?.copyWith(
+                          fontSize: 32,
+                          height: 40 / 32,
                           color: AppPalette.ink,
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          _SelectionPill(
-                            label: DateFormat('MMMM').format(_visibleMonth),
-                            onTap: _selectMonth,
-                          ),
-                          const SizedBox(width: 8),
-                          _SelectionPill(
-                            label: '${_visibleMonth.year}',
-                            onTap: _selectYear,
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _visibleMonth = DateTime(
-                                  _visibleMonth.year,
-                                  _visibleMonth.month - 1,
-                                );
-                                _selectedDate = _clampDateToVisibleMonth(
-                                  _selectedDate,
-                                  _visibleMonth,
-                                );
-                              });
-                            },
-                            icon: const Icon(Icons.chevron_left),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _visibleMonth = DateTime(
-                                  _visibleMonth.year,
-                                  _visibleMonth.month + 1,
-                                );
-                                _selectedDate = _clampDateToVisibleMonth(
-                                  _selectedDate,
-                                  _visibleMonth,
-                                );
-                              });
-                            },
-                            icon: const Icon(Icons.chevron_right),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 14),
                       Expanded(
                         child: CalendarDatePicker(
                           initialDate: _selectedDate,
@@ -609,7 +563,6 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                           onDateChanged: (value) {
                             setState(() {
                               _selectedDate = value;
-                              _visibleMonth = DateTime(value.year, value.month);
                             });
                           },
                         ),
@@ -808,6 +761,305 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 }
 
+class LabelSelectionScreen extends StatefulWidget {
+  const LabelSelectionScreen({super.key, required this.initialSelection});
+
+  final List<String> initialSelection;
+
+  @override
+  State<LabelSelectionScreen> createState() => _LabelSelectionScreenState();
+}
+
+class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  late List<String> _selectedLabels;
+  String _query = '';
+  String? _expandedGroupLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedLabels = <String>[...widget.initialSelection];
+    _expandedGroupLabel = _groupLabelForSelection(widget.initialSelection);
+    _searchController.addListener(_handleSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController
+      ..removeListener(_handleSearchChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleSearchChanged() {
+    setState(() {
+      _query = _searchController.text.trim().toLowerCase();
+    });
+  }
+
+  String? _groupLabelForSelection(List<String> selection) {
+    for (final label in selection) {
+      for (final group in _expenseLabelGroups) {
+        if (group.sublabels.contains(label)) {
+          return group.label;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _matchesQuery(String value) {
+    if (_query.isEmpty) {
+      return true;
+    }
+    return value.toLowerCase().contains(_query);
+  }
+
+  List<_ExpenseLabelGroup> _visibleGroups() {
+    if (_query.isEmpty) {
+      return _expenseLabelGroups;
+    }
+
+    return _expenseLabelGroups.where((group) {
+      return _matchesQuery(group.label) ||
+          group.sublabels.any((label) => _matchesQuery(label));
+    }).toList();
+  }
+
+  List<String> _visibleSublabels(_ExpenseLabelGroup group) {
+    if (_query.isEmpty) {
+      if (_expandedGroupLabel != group.label) {
+        return const <String>[];
+      }
+      return group.sublabels;
+    }
+
+    final matchingSublabels =
+        group.sublabels.where((label) => _matchesQuery(label)).toList();
+
+    if (matchingSublabels.isNotEmpty) {
+      return matchingSublabels;
+    }
+
+    if (_matchesQuery(group.label)) {
+      return group.sublabels;
+    }
+
+    return const <String>[];
+  }
+
+  void _toggleGroup(String label) {
+    setState(() {
+      _expandedGroupLabel = _expandedGroupLabel == label ? null : label;
+    });
+  }
+
+  void _toggleSublabel(String label) {
+    setState(() {
+      if (_selectedLabels.contains(label)) {
+        _selectedLabels.remove(label);
+      } else {
+        _selectedLabels = <String>[..._selectedLabels, label];
+      }
+    });
+  }
+
+  List<String> _orderedSelection() {
+    final ordered = <String>[];
+
+    for (final group in _expenseLabelGroups) {
+      for (final label in group.sublabels) {
+        if (_selectedLabels.contains(label)) {
+          ordered.add(label);
+        }
+      }
+    }
+
+    return ordered;
+  }
+
+  void _save() {
+    Navigator.of(context).pop(_orderedSelection());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = 124.0 + keyboardInset;
+    final visibleGroups = _visibleGroups();
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _ExpenseHeader(
+                  title: 'Labels',
+                  onClose: () => Navigator.of(context).pop(),
+                  onConfirm: _save,
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final minHeight = math.max(
+                        0.0,
+                        constraints.maxHeight - bottomPadding,
+                      );
+
+                      return SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          14,
+                          24,
+                          bottomPadding,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: minHeight),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: AppPalette.field,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Search Label',
+                                    prefixIconConstraints:
+                                        const BoxConstraints(minWidth: 16),
+                                    suffixIcon: const Icon(
+                                      Icons.search,
+                                      color: AppPalette.fieldHint,
+                                    ),
+                                    fillColor: Colors.transparent,
+                                    filled: true,
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                          vertical: 16,
+                                        ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(999),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(999),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(999),
+                                      borderSide: const BorderSide(
+                                        color: AppPalette.green,
+                                      ),
+                                    ),
+                                  ),
+                                  style: GoogleFonts.nunito(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppPalette.ink,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 10,
+                                children: [
+                                  for (final group in visibleGroups) ...[
+                                    _LabelGroupChip(
+                                      label: group.label,
+                                      active: _expandedGroupLabel == group.label,
+                                      onTap: () => _toggleGroup(group.label),
+                                    ),
+                                    for (final label in _visibleSublabels(group))
+                                      _SublabelChip(
+                                        label: label,
+                                        selected:
+                                            _selectedLabels.contains(label),
+                                        onTap: () => _toggleSublabel(label),
+                                      ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            left: 0,
+            right: 0,
+            bottom: 22 + keyboardInset,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: SizedBox(
+                  width: 88,
+                  height: 42,
+                  child: ElevatedButton(
+                    onPressed: _selectedLabels.isEmpty ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppPalette.ink,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFA6A6A6),
+                      disabledForegroundColor: Colors.white,
+                      textStyle: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    child: const Text('Save'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CurrencyThousandsFormatter extends TextInputFormatter {
+  const _CurrencyThousandsFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (digitsOnly.isEmpty) {
+      return const TextEditingValue();
+    }
+
+    final formatted = NumberFormat('#,###', 'en_US').format(
+      int.parse(digitsOnly),
+    );
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _ExpenseHeader extends StatelessWidget {
   const _ExpenseHeader({
     required this.title,
@@ -866,27 +1118,35 @@ class _ExpenseField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      decoration: InputDecoration(
-        hintText: hintText,
-        fillColor: AppPalette.field,
-        filled: true,
-        border: const OutlineInputBorder(
-          borderRadius: BorderRadius.zero,
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: const OutlineInputBorder(
-          borderRadius: BorderRadius.zero,
-          borderSide: BorderSide.none,
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppPalette.field,
+        border: Border(
+          bottom: BorderSide(color: AppPalette.ink, width: 1.5),
         ),
       ),
-      style: GoogleFonts.nunito(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: AppPalette.ink,
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
+        decoration: InputDecoration(
+          hintText: hintText,
+          fillColor: Colors.transparent,
+          filled: true,
+          border: const OutlineInputBorder(
+            borderRadius: BorderRadius.zero,
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: const OutlineInputBorder(
+            borderRadius: BorderRadius.zero,
+            borderSide: BorderSide.none,
+          ),
+        ),
+        style: GoogleFonts.nunito(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: AppPalette.ink,
+        ),
       ),
     );
   }
@@ -937,6 +1197,142 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
+class _PrimaryCategoryChip extends StatelessWidget {
+  const _PrimaryCategoryChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? color : AppPalette.green,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.nunito(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LabelGroupChip extends StatelessWidget {
+  const _LabelGroupChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  static const double _chipHeight = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    final foregroundColor = active ? AppPalette.green : AppPalette.ink;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        height: _chipHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? Colors.white : const Color(0xFFE4E4E4),
+          borderRadius: BorderRadius.circular(10),
+          border: active
+              ? Border.all(color: AppPalette.green, width: 1.5)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 14, color: foregroundColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: foregroundColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SublabelChip extends StatelessWidget {
+  const _SublabelChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static const double _chipHeight = _LabelGroupChip._chipHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        height: _chipHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppPalette.green : const Color(0xFFD1D1D1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MiniActionButton extends StatelessWidget {
   const _MiniActionButton({
     required this.icon,
@@ -951,18 +1347,18 @@ class _MiniActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 28,
+      height: 46,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: 14),
+        icon: Icon(icon, size: 18),
         label: Text(label),
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           backgroundColor: AppPalette.green,
           foregroundColor: AppPalette.ink,
           elevation: 0,
           textStyle: GoogleFonts.nunito(
-            fontSize: 11,
+            fontSize: 14,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -971,32 +1367,3 @@ class _MiniActionButton extends StatelessWidget {
   }
 }
 
-class _SelectionPill extends StatelessWidget {
-  const _SelectionPill({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.nunito(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
-          ),
-        ),
-      ),
-    );
-  }
-}

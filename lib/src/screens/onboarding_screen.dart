@@ -21,12 +21,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _greetingFuture = AuthMemoryStore.loadGreetingState();
   }
 
-  void _openLoginFlow(BuildContext context) {
-    Navigator.of(context).pushNamed(AppRoutes.loading);
+  void _openLoginFlow() {
+    Navigator.of(context).pushNamed(AppRoutes.login);
   }
 
-  void _openFingerprint(BuildContext context) {
-    Navigator.of(context).pushNamed(AppRoutes.fingerprintAuth);
+  Future<void> _openFingerprint() async {
+    final authState = await _greetingFuture;
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushNamed(
+      authState.hasLoggedInBefore ? AppRoutes.fingerprintAuth : AppRoutes.login,
+    );
   }
 
   @override
@@ -72,11 +79,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         BlackPrimaryButton(
                           label: 'Login with FingerPrint',
                           width: 208,
-                          onPressed: () => _openFingerprint(context),
+                          onPressed: _openFingerprint,
                         ),
                         const SizedBox(height: 16),
                         TextButton(
-                          onPressed: () => _openLoginFlow(context),
+                          onPressed: _openLoginFlow,
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.black,
                             textStyle: GoogleFonts.nunito(

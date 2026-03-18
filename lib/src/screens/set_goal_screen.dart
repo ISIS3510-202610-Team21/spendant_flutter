@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para los formatters
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'new_expense_screen.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
 import '../widgets/spendant_bottom_nav.dart';
@@ -15,11 +17,27 @@ class SetGoalScreen extends StatefulWidget {
 class _SetGoalScreenState extends State<SetGoalScreen> {
   int _currentStep = -1;
   int _viewState = 0;
+  bool _didLoadInitialView = false;
 
   // Controllers para que no se borre el texto al cambiar de pantalla
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_didLoadInitialView) {
+      return;
+    }
+
+    final initialView = ModalRoute.of(context)?.settings.arguments as int?;
+    if (initialView != null) {
+      _viewState = initialView;
+    }
+    _didLoadInitialView = true;
+  }
 
   @override
   void dispose() {
@@ -50,7 +68,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           Expanded(
             child: _viewState == 0 ? _buildProfileView() : _buildGoalsView(),
           ),
-          const SpendAntBottomNav(currentItem: SpendAntNavItem.goals),
+          SpendAntBottomNav(
+            currentItem: _viewState == 0
+                ? SpendAntNavItem.profile
+                : SpendAntNavItem.goals,
+            onProfileTap: () => setState(() => _viewState = 0),
+            onGoalsTap: () => setState(() => _viewState = 1),
+          ),
         ],
       ),
     );
@@ -62,7 +86,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.only(top: 80, bottom: 40),
+          padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
           decoration: const BoxDecoration(
             color: AppPalette.green,
             borderRadius: BorderRadius.only(
@@ -72,6 +96,27 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ),
           child: Column(
             children: [
+              Row(
+                children: [
+                  const SizedBox(width: 32, height: 32),
+                  Expanded(
+                    child: Text(
+                      'Profile',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunito(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
               const CircleAvatar(
                 radius: 40,
                 backgroundColor: Color(0xFFFFCCBB),
@@ -93,17 +138,19 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ),
         ),
         const SizedBox(height: 30),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Wrap(
-            spacing: 15,
-            runSpacing: 15,
-            alignment: WrapAlignment.center,
-            children: [
-              _profileActionButton('Income', Icons.attach_money),
-              _profileActionButton('Goals', Icons.flag, isGoalBtn: true),
-              _profileActionButton('Set Bank Account', Icons.account_balance),
-            ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _profileActionButton('Income', Icons.attach_money),
+            const SizedBox(width: 16),
+            _profileActionButton('Goals', Icons.flag_outlined, isGoalBtn: true),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Center(
+          child: _profileActionButton(
+            'Set Bank Account',
+            Icons.account_balance_outlined,
           ),
         ),
         const Spacer(),
@@ -133,7 +180,8 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       label: Text(label, style: const TextStyle(color: Colors.white)),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.black,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        minimumSize: const Size(0, 38),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
     );
@@ -399,7 +447,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
       inputFormatters: isNum
-          ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))]
+          ? const [_GoalAmountFormatter()]
           : [],
       decoration: InputDecoration(
         hintText: hint,
@@ -416,13 +464,14 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   Widget _setupDatePicker() {
     return GestureDetector(
       onTap: () async {
-        final d = await showDatePicker(
-          context: context,
-          initialDate: _goalDeadline,
-          firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 3650)),
+        final selected = await Navigator.of(context).push<DateTime>(
+          MaterialPageRoute(
+            builder: (_) => DateSelectionScreen(initialDate: _goalDeadline),
+          ),
         );
-        if (d != null) setState(() => _goalDeadline = d);
+        if (selected != null) {
+          setState(() => _goalDeadline = selected);
+        }
       },
       child: Container(
         width: double.infinity,
@@ -432,11 +481,40 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(
-          "${_goalDeadline.day}/${_goalDeadline.month}/${_goalDeadline.year}",
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          DateFormat('d/M/y').format(_goalDeadline),
+          style: GoogleFonts.nunito(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.ink,
+          ),
           textAlign: TextAlign.center,
         ),
       ),
+    );
+  }
+}
+
+class _GoalAmountFormatter extends TextInputFormatter {
+  const _GoalAmountFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (digitsOnly.isEmpty) {
+      return const TextEditingValue();
+    }
+
+    final formatted = NumberFormat('#,###', 'en_US').format(
+      int.parse(digitsOnly),
+    );
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

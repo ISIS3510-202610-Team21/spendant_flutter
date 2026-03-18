@@ -5,6 +5,7 @@ import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
 import 'src/screens/new_expense_screen.dart';
+import 'src/screens/notifications_screen.dart';
 import 'src/screens/onboarding_screen.dart';
 import 'src/screens/register_screen.dart';
 import 'src/screens/set_goal_screen.dart';
@@ -17,6 +18,7 @@ abstract final class AppRoutes {
   static const register = '/register';
   static const fingerprintAuth = '/fingerprint-auth';
   static const home = '/home';
+  static const notifications = '/notifications';
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
 }
@@ -38,6 +40,7 @@ class SpendAntApp extends StatelessWidget {
         AppRoutes.register: (_) => const RegisterScreen(),
         AppRoutes.fingerprintAuth: (_) => const FingerprintAuthScreen(),
         AppRoutes.home: (_) => const HomeScreen(),
+        AppRoutes.notifications: (_) => const NotificationsScreen(),
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
       },

@@ -2,11 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../app.dart';
+import '../services/notifications_store.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _hasUnreadNotifications = true;
 
   static const _categoryStats = <_CategoryStat>[
     _CategoryStat(
@@ -102,16 +111,49 @@ class HomeScreen extends StatelessWidget {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadUnreadNotifications();
+  }
+
+  Future<void> _loadUnreadNotifications() async {
+    final hasUnread = await NotificationsStore.hasUnreadNotifications();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _hasUnreadNotifications = hasUnread;
+    });
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).pushNamed(AppRoutes.notifications);
+    await _loadUnreadNotifications();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final maxCategoryAmount = _categoryStats
         .map((stat) => stat.amount)
         .reduce((current, next) => current > next ? current : next);
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          Container(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            Container(
             width: double.infinity,
             color: AppPalette.green,
             padding: const EdgeInsets.fromLTRB(16, 58, 16, 14),
@@ -120,27 +162,35 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(
-                        Icons.notifications_none_outlined,
-                        color: AppPalette.ink,
-                        size: 28,
-                      ),
-                      Positioned(
-                        right: 1,
-                        top: 2,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppPalette.expenseRed,
-                            shape: BoxShape.circle,
+                  child: InkWell(
+                    onTap: _openNotifications,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(
+                            Icons.notifications_none_outlined,
+                            color: AppPalette.ink,
+                            size: 28,
                           ),
-                        ),
+                          if (_hasUnreadNotifications)
+                            Positioned(
+                              right: 1,
+                              top: 2,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF7A2F),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 Text(
@@ -154,10 +204,10 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-              children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                children: [
                 Text(
                   'Your Budget for today',
                   style: GoogleFonts.nunito(
@@ -262,11 +312,12 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                   ],
                 ],
-              ],
+                ],
+              ),
             ),
-          ),
-          const SpendAntBottomNav(currentItem: SpendAntNavItem.home),
-        ],
+            const SpendAntBottomNav(currentItem: SpendAntNavItem.home),
+          ],
+        ),
       ),
     );
   }

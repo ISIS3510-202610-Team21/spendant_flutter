@@ -86,6 +86,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
   @override
   Widget build(BuildContext context) {
     return GreenScreenScaffold(
+      resizeToAvoidBottomInset: false,
       child: LayoutBuilder(
         builder: (context, constraints) {
           return Stack(

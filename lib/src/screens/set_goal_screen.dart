@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Para los formatters
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
-import 'new_expense_screen.dart';
+
+import '../models/goal_model.dart';
+import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
 import '../widgets/spendant_bottom_nav.dart';
+import 'new_expense_screen.dart';
 
 class SetGoalScreen extends StatefulWidget {
   const SetGoalScreen({super.key});
@@ -15,11 +19,13 @@ class SetGoalScreen extends StatefulWidget {
 }
 
 class _SetGoalScreenState extends State<SetGoalScreen> {
+  static const int _defaultUserId = 1;
+  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+
   int _currentStep = -1;
   int _viewState = 0;
   bool _didLoadInitialView = false;
 
-  // Controllers para que no se borre el texto al cambiar de pantalla
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
@@ -46,13 +52,106 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     super.dispose();
   }
 
+  void _startGoalSetup() {
+    FocusScope.of(context).unfocus();
+    _resetGoalForm();
+    setState(() {
+      _currentStep = 0;
+    });
+  }
+
   void _closeGoalSetup() {
-    setState(() => _currentStep = -1);
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _currentStep = -1;
+    });
+  }
+
+  void _resetGoalForm() {
+    _nameController.clear();
+    _amountController.clear();
+    _goalDeadline = DateTime.now().add(const Duration(days: 30));
+  }
+
+  double? _parsedGoalAmount() {
+    final amountText = _amountController.text.replaceAll(',', '').trim();
+    return double.tryParse(amountText);
+  }
+
+  Future<void> _continueGoalSetup() async {
+    FocusScope.of(context).unfocus();
+
+    if (_currentStep == 0) {
+      if (_nameController.text.trim().isEmpty) {
+        _showMessage('Please enter a goal name');
+        return;
+      }
+    } else if (_currentStep == 1) {
+      final amount = _parsedGoalAmount();
+      if (amount == null || amount <= 0) {
+        _showMessage('Please enter a valid target amount');
+        return;
+      }
+    } else if (_currentStep == 2) {
+      final today = DateUtils.dateOnly(DateTime.now());
+      if (DateUtils.dateOnly(_goalDeadline).isBefore(today)) {
+        _showMessage('Please choose a deadline from today onward');
+        return;
+      }
+    }
+
+    setState(() {
+      _currentStep++;
+    });
+  }
+
+  Future<void> _finishGoalSetup() async {
+    FocusScope.of(context).unfocus();
+
+    final amount = _parsedGoalAmount();
+    if (_nameController.text.trim().isEmpty || amount == null || amount <= 0) {
+      _showMessage('Please complete all fields');
+      return;
+    }
+
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (DateUtils.dateOnly(_goalDeadline).isBefore(today)) {
+      _showMessage('Please choose a valid deadline');
+      return;
+    }
+
+    final goal = GoalModel()
+      ..userId = _defaultUserId
+      ..name = _nameController.text.trim()
+      ..targetAmount = amount
+      ..currentAmount = 0
+      ..deadline = _goalDeadline
+      ..isCompleted = false
+      ..createdAt = DateTime.now()
+      ..isSynced = false;
+
+    await LocalStorageService().saveGoal(goal);
+
+    if (!mounted) {
+      return;
+    }
+
+    _showMessage('Goal saved locally');
+    _resetGoalForm();
+    setState(() {
+      _currentStep = -1;
+      _viewState = 1;
+    });
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    // SECCIÓN AMARILLA: SET GOAL
     if (_currentStep >= 0) {
       return Scaffold(
         backgroundColor: AppPalette.amber,
@@ -60,7 +159,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       );
     }
 
-    // VISTA PRINCIPAL (PROFILE / GOALS)
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -80,7 +178,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     );
   }
 
-  // --- ÁREA DE PROFILE ---
   Widget _buildProfileView() {
     return Column(
       children: [
@@ -154,7 +251,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ),
         ),
         const Spacer(),
-        // Hormiga Centrada
         const Center(
           child: SizedBox(
             width: 150,
@@ -174,7 +270,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }) {
     return ElevatedButton.icon(
       onPressed: () {
-        if (isGoalBtn) setState(() => _viewState = 1);
+        if (isGoalBtn) {
+          setState(() => _viewState = 1);
+        }
       },
       icon: Icon(icon, size: 20, color: Colors.white),
       label: Text(label, style: const TextStyle(color: Colors.white)),
@@ -187,13 +285,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     );
   }
 
-  // --- ÁREA DE GOALS ---
   Widget _buildGoalsView() {
     return SafeArea(
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -219,99 +316,40 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                _buildGoalTile("FEP 2026", "50%", "04/03/2026", 0.5),
-                _buildGoalTile("New Laptop", "15%", "15/12/2026", 0.15),
-                const SizedBox(height: 30),
-                ElevatedButton(
-                  onPressed: () => setState(() => _currentStep = 0),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    minimumSize: const Size(double.infinity, 55),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
-                  child: const Text(
-                    'New Goal',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+            child: ValueListenableBuilder<Box<GoalModel>>(
+              valueListenable: LocalStorageService.goalsListenable,
+              builder: (context, box, _) {
+                final goals = box.values
+                    .where((goal) => goal.userId == _defaultUserId)
+                    .toList()
+                  ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
 
-  Widget _buildGoalTile(
-    String title,
-    String percent,
-    String date,
-    double progress,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      height: 75,
-      child: Stack(
-        children: [
-          // Fondo Gris Ovalado
-          Container(
-            decoration: BoxDecoration(
-              color: AppPalette.gray,
-              borderRadius: BorderRadius.circular(25),
-            ),
-          ),
-          // Barra de Progreso Interna (Llena el fondo según el porcentaje)
-          FractionallySizedBox(
-            widthFactor: progress,
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppPalette.green.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-          ),
-          // Contenido de la Meta
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                return ListView(
+                  padding: const EdgeInsets.all(24),
                   children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.nunito(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+                    if (goals.isEmpty) const _EmptyGoalsCard(),
+                    for (final goal in goals) _GoalTile(goal: goal),
+                    const SizedBox(height: 30),
+                    ElevatedButton(
+                      onPressed: _startGoalSetup,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        minimumSize: const Size(double.infinity, 55),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Deadline: $date',
-                      style: GoogleFonts.nunito(
-                        fontSize: 12,
-                        color: Colors.black54,
+                      child: const Text(
+                        'New Goal',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ],
-                ),
-                Text(
-                  percent,
-                  style: GoogleFonts.nunito(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ],
@@ -319,24 +357,23 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     );
   }
 
-  // --- FLUJO DE SETUP (AMARILLO) ---
   Widget _buildGoalSetupFlow() {
     switch (_currentStep) {
       case 0:
         return _setupStepLayout(
-          "What are you saving for?",
-          _setupTextField(_nameController, "e.g. A new car"),
+          'What are you saving for?',
+          _setupTextField(_nameController, 'e.g. A new car'),
           'web/ant/Presenting.svg',
         );
       case 1:
         return _setupStepLayout(
-          "How much money do you want to save?",
-          _setupTextField(_amountController, "\$0.00", isNum: true),
+          'How much money do you want to save?',
+          _setupTextField(_amountController, '\$0', isNum: true),
           'web/ant/Standing.svg',
         );
       case 2:
         return _setupStepLayout(
-          "When is the deadline?",
+          'When is the deadline?',
           _setupDatePicker(),
           'web/ant/Surprised.svg',
         );
@@ -350,7 +387,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   Widget _setupStepLayout(String title, Widget content, String asset) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(32.0),
+        padding: const EdgeInsets.all(32),
         child: Column(
           children: [
             Align(
@@ -375,12 +412,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             SizedBox(height: 150, child: AntAsset(asset)),
             const Spacer(),
             ElevatedButton(
-              onPressed: () => setState(() => _currentStep++),
+              onPressed: _continueGoalSetup,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
               child: const Text(
-                "Continue",
+                'Continue',
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -391,9 +428,15 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   Widget _buildStepPlan() {
+    final amount = _parsedGoalAmount() ?? 0;
+    final rawDaysLeft =
+        _goalDeadline.difference(DateUtils.dateOnly(DateTime.now())).inDays;
+    final daysLeft = rawDaysLeft < 1 ? 1 : rawDaysLeft;
+    final suggestedDailySaving = amount / daysLeft;
+
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(32.0),
+        padding: const EdgeInsets.all(32),
         child: Column(
           children: [
             Align(
@@ -413,19 +456,24 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'To save \$${_amountController.text} for ${_nameController.text}, let\'s start today.',
+              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${DateFormat('d/M/y').format(_goalDeadline)}.',
               textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.ink,
+              ),
             ),
             const SizedBox(height: 40),
             const SizedBox(height: 180, child: AntAsset('web/ant/Ok.svg')),
             const Spacer(),
             ElevatedButton(
-              onPressed: _closeGoalSetup,
+              onPressed: _finishGoalSetup,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
               child: const Text(
-                "Alright!",
+                'Alright!',
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -435,7 +483,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     );
   }
 
-  // --- WIDGETS AUXILIARES ---
   Widget _setupTextField(
     TextEditingController controller,
     String hint, {
@@ -446,9 +493,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       keyboardType: isNum
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
-      inputFormatters: isNum
-          ? const [_GoalAmountFormatter()]
-          : [],
+      inputFormatters: isNum ? const [_GoalAmountFormatter()] : [],
       decoration: InputDecoration(
         hintText: hint,
         fillColor: Colors.white,
@@ -488,6 +533,115 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             color: AppPalette.ink,
           ),
           textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalTile extends StatelessWidget {
+  const _GoalTile({required this.goal});
+
+  final GoalModel goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = goal.getProgressPercent() / 100;
+    final widthFactor = progress.clamp(0.0, 1.0).toDouble();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      height: 86,
+      child: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: AppPalette.gray,
+              borderRadius: BorderRadius.circular(25),
+            ),
+          ),
+          FractionallySizedBox(
+            widthFactor: widthFactor,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppPalette.green.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(25),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        goal.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Deadline: ${DateFormat('d/M/y').format(goal.deadline)}',
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      Text(
+                        'Saved: COP ${NumberFormat('#,###', 'en_US').format(goal.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${goal.getProgressPercent()}%',
+                  style: GoogleFonts.nunito(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyGoalsCard extends StatelessWidget {
+  const _EmptyGoalsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppPalette.field,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Text(
+        'No local goals yet. Create one and it will stay available offline until you sync it.',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.nunito(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: AppPalette.ink,
         ),
       ),
     );

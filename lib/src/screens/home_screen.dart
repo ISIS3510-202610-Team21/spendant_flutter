@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../app.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
 
@@ -107,11 +108,22 @@ class HomeScreen extends StatelessWidget {
         .map((stat) => stat.amount)
         .reduce((current, next) => current > next ? current : next);
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          Container(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            Container(
             width: double.infinity,
             color: AppPalette.green,
             padding: const EdgeInsets.fromLTRB(16, 58, 16, 14),
@@ -154,10 +166,10 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-              children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                children: [
                 Text(
                   'Your Budget for today',
                   style: GoogleFonts.nunito(
@@ -262,11 +274,12 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                   ],
                 ],
-              ],
+                ],
+              ),
             ),
-          ),
-          const SpendAntBottomNav(currentItem: SpendAntNavItem.home),
-        ],
+            const SpendAntBottomNav(currentItem: SpendAntNavItem.home),
+          ],
+        ),
       ),
     );
   }

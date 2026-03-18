@@ -59,16 +59,19 @@ class GreenScreenScaffold extends StatelessWidget {
     super.key,
     required this.child,
     this.useSafeArea = true,
+    this.resizeToAvoidBottomInset = true,
   });
 
   final Widget child;
   final bool useSafeArea;
+  final bool resizeToAvoidBottomInset;
 
   @override
   Widget build(BuildContext context) {
     final content = SizedBox.expand(child: child);
     return Scaffold(
       backgroundColor: AppPalette.green,
+      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       body: useSafeArea ? SafeArea(child: content) : content,
     );
   }

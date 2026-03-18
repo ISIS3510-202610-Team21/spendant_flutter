@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Spendant needs camera access to scan expense receipts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Spendant needs photo library access to import receipt images.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Spendant may save captured receipt images to your photo library.</string>
 </dict>
 </plist>

@@ -1,13 +1,18 @@
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../services/platform_configuration_service.dart';
+import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
 
 class _ExpenseLabelOption {
@@ -57,6 +62,22 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   ),
 ];
 
+enum _ReceiptSourceOption { camera, gallery, file }
+
+class _ReceiptImportPayload {
+  const _ReceiptImportPayload({
+    required this.fileName,
+    required this.bytes,
+    this.path,
+    this.lastModified,
+  });
+
+  final String fileName;
+  final Uint8List bytes;
+  final String? path;
+  final DateTime? lastModified;
+}
+
 class NewExpenseScreen extends StatefulWidget {
   const NewExpenseScreen({super.key});
 
@@ -67,6 +88,8 @@ class NewExpenseScreen extends StatefulWidget {
 class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
+  final ReceiptScanService _receiptScanService = ReceiptScanService();
 
   static const List<_ExpenseLabelOption> _predefinedLabels =
       <_ExpenseLabelOption>[
@@ -81,9 +104,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
+  bool _isScanningReceipt = false;
 
   @override
   void dispose() {
+    _receiptScanService.dispose();
     _expenseNameController.dispose();
     _expenseValueController.dispose();
     super.dispose();
@@ -291,6 +316,258 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
+  Future<void> _scanReceipt() async {
+    if (kIsWeb) {
+      _showScanMessage(
+        'Receipt scan is available on Android and iOS because OCR uses ML Kit.',
+      );
+      return;
+    }
+
+    final source = await _showReceiptSourceSheet();
+    if (source == null) {
+      return;
+    }
+
+    final hasPermission = await _ensureReceiptPermission(source);
+    if (!hasPermission) {
+      return;
+    }
+
+    final payload = await _pickReceiptPayload(source);
+    if (payload == null) {
+      return;
+    }
+
+    setState(() {
+      _isScanningReceipt = true;
+    });
+
+    try {
+      final result = await _receiptScanService.scanReceipt(
+        fileName: payload.fileName,
+        bytes: payload.bytes,
+        path: payload.path,
+        fallbackTimestamp: payload.lastModified,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _applyReceiptScanResult(result);
+      _showScanMessage(
+        result.hasDetectedData
+            ? 'Receipt scanned. Review the detected fields before saving.'
+            : 'No clear receipt data was detected from that file.',
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showScanMessage(
+        'The selected receipt could not be processed. Try a clearer image or another file.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanningReceipt = false;
+        });
+      }
+    }
+  }
+
+  Future<_ReceiptSourceOption?> _showReceiptSourceSheet() {
+    return showModalBottomSheet<_ReceiptSourceOption>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _ReceiptSourceSheet(
+          onSelected: (source) => Navigator.of(context).pop(source),
+        );
+      },
+    );
+  }
+
+  Future<_ReceiptImportPayload?> _pickReceiptPayload(
+    _ReceiptSourceOption source,
+  ) async {
+    switch (source) {
+      case _ReceiptSourceOption.camera:
+        final image = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 88,
+        );
+        if (image == null) {
+          return null;
+        }
+        return _ReceiptImportPayload(
+          fileName: image.name,
+          path: image.path,
+          bytes: await image.readAsBytes(),
+          lastModified: await image.lastModified(),
+        );
+      case _ReceiptSourceOption.gallery:
+        final image = await _imagePicker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 90,
+        );
+        if (image == null) {
+          return null;
+        }
+        return _ReceiptImportPayload(
+          fileName: image.name,
+          path: image.path,
+          bytes: await image.readAsBytes(),
+          lastModified: await image.lastModified(),
+        );
+      case _ReceiptSourceOption.file:
+        final file = await FilePicker.platform.pickFiles(
+          allowMultiple: false,
+          withData: true,
+          type: FileType.custom,
+          allowedExtensions: <String>[
+            'pdf',
+            'png',
+            'jpg',
+            'jpeg',
+            'webp',
+            'heic',
+            'heif',
+          ],
+        );
+        if (file == null || file.files.isEmpty) {
+          return null;
+        }
+
+        final selectedFile = file.files.single;
+        final bytes = selectedFile.bytes;
+        if (bytes == null) {
+          _showScanMessage('The selected file could not be opened.');
+          return null;
+        }
+
+        return _ReceiptImportPayload(
+          fileName: selectedFile.name,
+          path: selectedFile.path,
+          bytes: bytes,
+        );
+    }
+  }
+
+  Future<bool> _ensureReceiptPermission(_ReceiptSourceOption source) async {
+    switch (source) {
+      case _ReceiptSourceOption.camera:
+        final status = await Permission.camera.request();
+        return _handlePermissionStatus(
+          status,
+          deniedMessage:
+              'Camera permission is required to capture a receipt photo.',
+        );
+      case _ReceiptSourceOption.gallery:
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          final photoStatus = await Permission.photos.request();
+          if (photoStatus.isGranted || photoStatus.isLimited) {
+            return true;
+          }
+
+          final storageStatus = await Permission.storage.request();
+          return _handlePermissionStatus(
+            storageStatus,
+            deniedMessage:
+                'Photos permission is required to pick a receipt from the gallery.',
+          );
+        }
+
+        final status = await Permission.photos.request();
+        return _handlePermissionStatus(
+          status,
+          deniedMessage:
+              'Photos permission is required to pick a receipt from the gallery.',
+        );
+      case _ReceiptSourceOption.file:
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          final manageStatus = await Permission.manageExternalStorage.request();
+          if (manageStatus.isGranted) {
+            return true;
+          }
+
+          final storageStatus = await Permission.storage.request();
+          return _handlePermissionStatus(
+            storageStatus,
+            deniedMessage:
+                'Files permission is required to import a receipt document.',
+          );
+        }
+
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
+          _showScanMessage(
+            'iOS does not expose a separate Files permission. The document picker will open directly.',
+          );
+        }
+        return true;
+    }
+  }
+
+  Future<bool> _handlePermissionStatus(
+    PermissionStatus status, {
+    required String deniedMessage,
+  }) async {
+    if (status.isGranted || status.isLimited) {
+      return true;
+    }
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      _showScanMessage('$deniedMessage Open app settings to enable it.');
+      await openAppSettings();
+      return false;
+    }
+
+    _showScanMessage(deniedMessage);
+    return false;
+  }
+
+  void _applyReceiptScanResult(ReceiptScanResult result) {
+    setState(() {
+      if (result.name != null && result.name!.trim().isNotEmpty) {
+        _expenseNameController.text = result.name!.trim();
+      }
+
+      if (result.formattedAmount != null &&
+          result.formattedAmount!.trim().isNotEmpty) {
+        _expenseValueController.text = result.formattedAmount!.trim();
+      }
+
+      if (result.date != null) {
+        _selectedDate = result.date!;
+      }
+
+      if (result.time != null) {
+        _selectedTime = TimeOfDay.fromDateTime(result.time!);
+      }
+
+      if (result.location != null) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: result.location!.label,
+          position:
+              result.location!.latitude != null &&
+                  result.location!.longitude != null
+              ? LatLng(
+                  result.location!.latitude!,
+                  result.location!.longitude!,
+                )
+              : null,
+        );
+      }
+    });
+  }
+
+  void _showScanMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
@@ -409,17 +686,37 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                     child: SizedBox(
                                       width: 148,
                                       child: ElevatedButton.icon(
-                                        onPressed: () {},
-                                        icon: SvgPicture.asset(
-                                          'web/icons/Camera.svg',
-                                          width: 18,
-                                          height: 18,
-                                          colorFilter: const ColorFilter.mode(
-                                            AppPalette.white,
-                                            BlendMode.srcIn,
-                                          ),
+                                        onPressed: _isScanningReceipt
+                                            ? null
+                                            : _scanReceipt,
+                                        icon: _isScanningReceipt
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      valueColor:
+                                                          AlwaysStoppedAnimation<
+                                                            Color
+                                                          >(AppPalette.white),
+                                                    ),
+                                              )
+                                            : SvgPicture.asset(
+                                                'web/icons/Camera.svg',
+                                                width: 18,
+                                                height: 18,
+                                                colorFilter:
+                                                    const ColorFilter.mode(
+                                                      AppPalette.white,
+                                                      BlendMode.srcIn,
+                                                    ),
+                                              ),
+                                        label: Text(
+                                          _isScanningReceipt
+                                              ? 'Scanning...'
+                                              : 'Scan Receipt',
                                         ),
-                                        label: const Text('Scan Receipt'),
                                         style: ElevatedButton.styleFrom(
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 12,
@@ -497,10 +794,119 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 }
 
 class ExpenseLocationSelection {
-  const ExpenseLocationSelection({required this.position, required this.label});
+  const ExpenseLocationSelection({required this.label, this.position});
 
-  final LatLng position;
   final String label;
+  final LatLng? position;
+}
+
+class _ReceiptSourceSheet extends StatelessWidget {
+  const _ReceiptSourceSheet({required this.onSelected});
+
+  final ValueChanged<_ReceiptSourceOption> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 28),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF6D6D6D),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Text(
+              'New Receipt',
+              style: GoogleFonts.nunito(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppPalette.ink,
+              ),
+            ),
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ReceiptSourceTile(
+                  icon: Icons.photo_camera_outlined,
+                  label: 'Camera',
+                  onTap: () => onSelected(_ReceiptSourceOption.camera),
+                ),
+                _ReceiptSourceTile(
+                  icon: Icons.image_outlined,
+                  label: 'Gallery',
+                  onTap: () => onSelected(_ReceiptSourceOption.gallery),
+                ),
+                _ReceiptSourceTile(
+                  icon: Icons.file_copy_outlined,
+                  label: 'File',
+                  onTap: () => onSelected(_ReceiptSourceOption.file),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptSourceTile extends StatelessWidget {
+  const _ReceiptSourceTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppPalette.green,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(icon, size: 30, color: AppPalette.ink),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class DateSelectionScreen extends StatefulWidget {
@@ -635,6 +1041,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   static const LatLng _defaultCenter = LatLng(4.60971, -74.08175);
 
   late LatLng _selectedPoint = widget.initialValue?.position ?? _defaultCenter;
+  late final Future<bool> _hasGoogleMapsApiKeyFuture =
+      PlatformConfigurationService.hasGoogleMapsApiKey();
 
   @override
   Widget build(BuildContext context) {
@@ -733,37 +1141,60 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   Widget _buildMapSurface() {
     if (kIsWeb) {
-      return Container(
-        color: const Color(0xFFEDEDED),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Text(
-          'Google Maps on web needs a configured JavaScript API key. The crash is blocked for now, and you can still save the current point.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
-          ),
-        ),
+      return _buildMapFallback(
+        'Google Maps on web needs a configured JavaScript API key. The crash is blocked for now, and you can still save the current point.',
       );
     }
 
-    return GoogleMap(
-      initialCameraPosition: CameraPosition(target: _selectedPoint, zoom: 16),
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: false,
-      onTap: (point) {
-        setState(() {
-          _selectedPoint = point;
-        });
+    return FutureBuilder<bool>(
+      future: _hasGoogleMapsApiKeyFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppPalette.green),
+          );
+        }
+
+        if (snapshot.data != true) {
+          return _buildMapFallback(
+            'Google Maps needs a configured native API key on this app. The map was not opened to avoid the Android crash, but you can still save the current point.',
+          );
+        }
+
+        return GoogleMap(
+          initialCameraPosition: CameraPosition(target: _selectedPoint, zoom: 16),
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          onTap: (point) {
+            setState(() {
+              _selectedPoint = point;
+            });
+          },
+          markers: {
+            Marker(
+              markerId: const MarkerId('selected-location'),
+              position: _selectedPoint,
+            ),
+          },
+        );
       },
-      markers: {
-        Marker(
-          markerId: const MarkerId('selected-location'),
-          position: _selectedPoint,
+    );
+  }
+
+  Widget _buildMapFallback(String message) {
+    return Container(
+      color: const Color(0xFFEDEDED),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.nunito(
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          color: AppPalette.ink,
         ),
-      },
+      ),
     );
   }
 }

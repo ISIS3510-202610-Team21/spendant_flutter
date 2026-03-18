@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/auth_memory_store.dart';
 import '../widgets/auth_chrome.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -15,12 +16,20 @@ class _LoadingScreenState extends State<LoadingScreen> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 1600), () {
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
-    });
+    _navigateNext();
+  }
+
+  Future<void> _navigateNext() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    final authState = await AuthMemoryStore.loadGreetingState();
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushReplacementNamed(
+      authState.hasLoggedInBefore ? AppRoutes.home : AppRoutes.login,
+    );
   }
 
   @override

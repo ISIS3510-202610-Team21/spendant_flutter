@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../models/expense_draft.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
@@ -79,7 +80,14 @@ class _ReceiptImportPayload {
 }
 
 class NewExpenseScreen extends StatefulWidget {
-  const NewExpenseScreen({super.key});
+  const NewExpenseScreen({
+    super.key,
+    this.initialDraft,
+    this.headerTitle = 'New Expense',
+  });
+
+  final ExpenseDraft? initialDraft;
+  final String headerTitle;
 
   @override
   State<NewExpenseScreen> createState() => _NewExpenseScreenState();
@@ -108,11 +116,40 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   bool _isScanningReceipt = false;
 
   @override
+  void initState() {
+    super.initState();
+    _applyInitialDraft();
+  }
+
+  @override
   void dispose() {
     _receiptScanService.dispose();
     _expenseNameController.dispose();
     _expenseValueController.dispose();
     super.dispose();
+  }
+
+  void _applyInitialDraft() {
+    final draft = widget.initialDraft;
+    if (draft == null) {
+      return;
+    }
+
+    _expenseNameController.text = draft.name;
+    _expenseValueController.text = draft.amount;
+    _selectedCategory = draft.primaryCategory;
+    _selectedDetailLabels = <String>[...draft.detailLabels];
+    _selectedDate = draft.date;
+    _selectedTime = draft.time;
+
+    if (draft.locationLabel != null && draft.locationLabel!.trim().isNotEmpty) {
+      _selectedLocation = ExpenseLocationSelection(
+        label: draft.locationLabel!.trim(),
+        position: draft.latitude != null && draft.longitude != null
+            ? LatLng(draft.latitude!, draft.longitude!)
+            : null,
+      );
+    }
   }
 
   Future<void> _pickDate() async {
@@ -571,6 +608,86 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
   }
 
+  Future<void> _handleConfirm() async {
+    if (_selectedDetailLabels.isEmpty) {
+      await _showMissingLabelWarning();
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).maybePop();
+  }
+
+  Future<void> _showMissingLabelWarning() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(
+              color: AppPalette.field,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Where does this one go?',
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "I don't recognize this expense yet. Give it a label so I can learn for next time.",
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.fieldHint,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'Continue',
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
@@ -585,9 +702,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             child: Column(
               children: [
                 _ExpenseHeader(
-                  title: 'New Expense',
+                  title: widget.headerTitle,
                   onClose: () => Navigator.of(context).maybePop(),
-                  onConfirm: () => Navigator.of(context).maybePop(),
+                  onConfirm: () {
+                    _handleConfirm();
+                  },
                 ),
                 Expanded(
                   child: LayoutBuilder(

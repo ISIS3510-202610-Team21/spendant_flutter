@@ -134,6 +134,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   ExpenseLocationSelection? _selectedLocation;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
+  ReceiptScanResult? _lastReceiptScanResult;
 
   @override
   void initState() {
@@ -431,19 +432,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _scanReceipt() async {
-    if (kIsWeb) {
-      final result = await Navigator.of(context).push<ReceiptScanResult>(
-        MaterialPageRoute(builder: (_) => const _MockReceiptScannerScreen()),
-      );
-      if (result != null && mounted) {
-        _applyReceiptScanResult(result);
-        _showScanMessage(
-          'Receipt scanned. Review the detected fields before saving.',
-        );
-      }
-      return;
-    }
-
     final source = await _showReceiptSourceSheet();
     if (source == null) {
       return;
@@ -514,6 +502,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   ) async {
     switch (source) {
       case _ReceiptSourceOption.camera:
+        if (kIsWeb ||
+            (defaultTargetPlatform != TargetPlatform.android &&
+                defaultTargetPlatform != TargetPlatform.iOS)) {
+          _showScanMessage(
+            'Camera capture is only available on phones. Use Gallery or File instead.',
+          );
+          return null;
+        }
+
         final image = await _imagePicker.pickImage(
           source: ImageSource.camera,
           imageQuality: 88,
@@ -578,6 +575,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   Future<bool> _ensureReceiptPermission(_ReceiptSourceOption source) async {
     switch (source) {
       case _ReceiptSourceOption.camera:
+        if (kIsWeb ||
+            (defaultTargetPlatform != TargetPlatform.android &&
+                defaultTargetPlatform != TargetPlatform.iOS)) {
+          _showScanMessage(
+            'Camera capture is only available on phones. Use Gallery or File instead.',
+          );
+          return false;
+        }
+
         final status = await Permission.camera.request();
         return _handlePermissionStatus(
           status,
@@ -649,6 +655,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   void _applyReceiptScanResult(ReceiptScanResult result) {
     setState(() {
+      _lastReceiptScanResult = result;
+
       if (result.name != null && result.name!.trim().isNotEmpty) {
         _expenseNameController.text = result.name!.trim();
       }
@@ -728,10 +736,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _isSavingExpense = true;
     });
 
+    final editingExpense = widget.editingExpense;
+
     // Create expense model
     final expense = ExpenseModel()
       ..userId =
-          1 // TODO: Get actual user ID from auth
+          editingExpense?.userId ?? 1 // TODO: Get actual user ID from auth
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -740,12 +750,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
       ..locationName = _selectedLocation?.label
-      ..source = expense.source.isEmpty ? 'MANUAL' : expense.source
-      ..receiptImagePath = expense.receiptImagePath
+      ..source =
+          (editingExpense?.source.trim().isNotEmpty ?? false)
+          ? editingExpense!.source
+          : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
+      ..receiptImagePath = editingExpense?.receiptImagePath
       ..isPendingCategory = false
-      ..isRecurring = expense.isRecurring
+      ..isRecurring = editingExpense?.isRecurring ?? false
       ..isSynced = false
-      ..createdAt = widget.editingExpense?.createdAt ?? DateTime.now()
+      ..createdAt = editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
@@ -1184,7 +1197,7 @@ class _ReceiptReviewRow extends StatelessWidget {
       ],
     );
   }
-} */
+}
 
 // ─────────────────────────────────────────────────────────
 // MOCK RECEIPT SCANNER (web / demo)
@@ -1923,70 +1936,6 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
   @override
   void dispose() {
     super.dispose();
-  }
-
-  void _handleSearchChanged() {
-    setState(() {
-      _query = _searchController.text.trim().toLowerCase();
-    });
-  }
-
-  String? _groupLabelForSelection(List<String> selection) {
-    for (final label in selection) {
-      for (final group in _expenseLabelGroups) {
-        if (group.sublabels.contains(label)) {
-          return group.label;
-        }
-      }
-    }
-    return null;
-  }
-
-  bool _matchesQuery(String value) {
-    if (_query.isEmpty) {
-      return true;
-    }
-    return value.toLowerCase().contains(_query);
-  }
-
-  List<_ExpenseLabelGroup> _visibleGroups() {
-    if (_query.isEmpty) {
-      return _expenseLabelGroups;
-    }
-
-    return _expenseLabelGroups.where((group) {
-      return _matchesQuery(group.label) ||
-          group.sublabels.any((label) => _matchesQuery(label));
-    }).toList();
-  }
-
-  List<String> _visibleSublabels(_ExpenseLabelGroup group) {
-    if (_query.isEmpty) {
-      if (_expandedGroupLabel != group.label) {
-        return const <String>[];
-      }
-      return group.sublabels;
-    }
-
-    final matchingSublabels = group.sublabels
-        .where((label) => _matchesQuery(label))
-        .toList();
-
-    if (matchingSublabels.isNotEmpty) {
-      return matchingSublabels;
-    }
-
-    if (_matchesQuery(group.label)) {
-      return group.sublabels;
-    }
-
-    return const <String>[];
-  }
-
-  void _toggleGroup(String label) {
-    setState(() {
-      _expandedGroupLabel = _expandedGroupLabel == label ? null : label;
-    });
   }
 
   void _toggleSublabel(String label) {

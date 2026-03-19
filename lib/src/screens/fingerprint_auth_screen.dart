@@ -37,7 +37,8 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     if (authState.hasLoggedInBefore) {
       availability = await _biometricAuthService.getAvailability();
 
-      if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
+      if (!availability.isDeviceSupported ||
+          !availability.canCheckBiometrics) {
         statusMessage =
             'This device does not support fingerprint authentication.';
       } else if (!availability.supportsFingerprintLogin) {
@@ -47,7 +48,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
         statusMessage = null;
       }
     } else {
-      statusMessage =
+        statusMessage =
           'Log in with your account first before enabling biometric access.';
     }
 
@@ -121,7 +122,8 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
         : !hasLoggedInBefore
         ? 'Login required'
         : 'Touch the sensor';
-    final subtitle = _statusMessage ?? 'Use your fingerprint to log in safely.';
+    final subtitle =
+        _statusMessage ?? 'Use your fingerprint to log in safely.';
     final buttonLabel = !hasLoggedInBefore
         ? 'Go to Login'
         : _isAuthenticating
@@ -129,127 +131,107 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
         : 'Continue';
 
     return GreenScreenScaffold(
-      resizeToAvoidBottomInset: false,
-      child: LayoutBuilder(
-        builder: (context, _) {
-          return Stack(
+      child: Stack(
+        children: [
+          Positioned(
+            left: -20,
+            bottom: -40,
+            child: AntAsset('web/ant/Standing.svg', height: 200),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Positioned(
-                left: -24,
-                bottom: -18,
-                child: IgnorePointer(
-                  child: AntAsset('web/ant/Standing.svg', height: 210),
+              const SpendAntWordmark(large: false),
+              const SizedBox(height: 60),
+              Text(
+                title,
+                style: GoogleFonts.nunito(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppPalette.ink,
                 ),
               ),
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(30, 28, 30, 32),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 26),
-                      const SpendAntWordmark(),
-                      const SizedBox(height: 108),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.nunito(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
+              const SizedBox(height: 40),
+              GestureDetector(
+                onTap: _handlePrimaryAction,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: AppPalette.field,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppPalette.ink, width: 2),
+                  ),
+                  child: _isLoading || _isAuthenticating
+                      ? const Center(
+                          child: SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: AppPalette.ink,
+                            ),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.fingerprint,
+                          size: 78,
                           color: AppPalette.ink,
                         ),
-                      ),
-                      const SizedBox(height: 38),
-                      GestureDetector(
-                        onTap: _handlePrimaryAction,
-                        child: Container(
-                          width: 182,
-                          height: 182,
-                          decoration: BoxDecoration(
-                            color: AppPalette.field,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppPalette.ink, width: 2),
-                          ),
-                          child: _isLoading || _isAuthenticating
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 38,
-                                    height: 38,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: AppPalette.ink,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.fingerprint,
-                                  size: 92,
-                                  color: AppPalette.ink,
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 42),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          subtitle,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.nunito(
-                            fontSize: 15,
-                            color: AppPalette.ink,
-                            fontWeight: FontWeight.w700,
-                            height: 1.25,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      BlackPrimaryButton(
-                        label: buttonLabel,
-                        width: 190,
-                        height: 50,
-                        onPressed: _isLoading ? () {} : _handlePrimaryAction,
-                      ),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: () => Navigator.of(
-                          context,
-                        ).pushReplacementNamed(AppRoutes.login),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppPalette.ink,
-                        ),
-                        child: Text(
-                          hasLoggedInBefore
-                              ? 'Use password instead'
-                              : 'Open login screen',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      if (hasLoggedInBefore &&
-                          !_isLoading &&
-                          availability != null) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          availability.supportsFingerprint ||
-                                  availability.supportsFingerprintLogin
-                              ? 'Detected method: fingerprint'
-                              : 'Detected method: unavailable',
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppPalette.ink.withValues(alpha: 0.72),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                    ],
+                ),
+              ),
+              const SizedBox(height: 40),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    color: AppPalette.ink,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+              const SizedBox(height: 24),
+              BlackPrimaryButton(
+                label: buttonLabel,
+                width: 170,
+                onPressed: _isLoading ? () {} : _handlePrimaryAction,
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.of(context).pushReplacementNamed(
+                  AppRoutes.login,
+                ),
+                style: TextButton.styleFrom(foregroundColor: AppPalette.ink),
+                child: Text(
+                  hasLoggedInBefore
+                      ? 'Use password instead'
+                      : 'Open login screen',
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (hasLoggedInBefore && !_isLoading && availability != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  availability.supportsFingerprint ||
+                          availability.supportsFingerprintLogin
+                      ? 'Detected method: fingerprint'
+                      : 'Detected method: unavailable',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.ink.withValues(alpha: 0.72),
+                  ),
+                ),
+              ],
             ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }

@@ -37,8 +37,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     if (authState.hasLoggedInBefore) {
       availability = await _biometricAuthService.getAvailability();
 
-      if (!availability.isDeviceSupported ||
-          !availability.canCheckBiometrics) {
+      if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
         statusMessage =
             'This device does not support fingerprint authentication.';
       } else if (!availability.supportsFingerprintLogin) {
@@ -48,7 +47,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
         statusMessage = null;
       }
     } else {
-        statusMessage =
+      statusMessage =
           'Log in with your account first before enabling biometric access.';
     }
 
@@ -122,8 +121,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
         : !hasLoggedInBefore
         ? 'Login required'
         : 'Touch the sensor';
-    final subtitle =
-        _statusMessage ?? 'Use your fingerprint to log in safely.';
+    final subtitle = _statusMessage ?? 'Use your fingerprint to log in safely.';
     final buttonLabel = !hasLoggedInBefore
         ? 'Go to Login'
         : _isAuthenticating

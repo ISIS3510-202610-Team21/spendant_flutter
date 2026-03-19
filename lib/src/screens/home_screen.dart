@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../app.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
@@ -75,6 +76,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final homeDependencies = Listenable.merge(<Listenable>[
+      LocalStorageService.expensesListenable,
+      LocalStorageService.incomesListenable,
+      LocalStorageService.goalsListenable,
+    ]);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -92,19 +99,23 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _buildHeader(),
             Expanded(
-              child: ValueListenableBuilder<Box<ExpenseModel>>(
-                valueListenable: LocalStorageService.expensesListenable,
-                builder: (context, box, _) {
-                  final expenses = box.values
-                      .where((expense) => expense.userId == _defaultUserId)
-                      .toList()
-                    ..sort(
-                      (left, right) => _expenseDateTime(
-                        right,
-                      ).compareTo(_expenseDateTime(left)),
-                    );
+              child: AnimatedBuilder(
+                animation: homeDependencies,
+                builder: (context, _) {
+                  final box = LocalStorageService.expenseBox;
+                  final expenses =
+                      box.values
+                          .where((expense) => expense.userId == _defaultUserId)
+                          .toList()
+                        ..sort(
+                          (left, right) => _expenseDateTime(
+                            right,
+                          ).compareTo(_expenseDateTime(left)),
+                        );
+                  final summary = DailyBudgetService.buildSummaryForUser(
+                    _defaultUserId,
+                  );
 
-                  final todayTotal = _sumForDay(expenses, DateTime.now());
                   final monthTotal = _sumForMonth(expenses, DateTime.now());
                   final categoryStats = _buildCategoryStats(expenses);
                   final expenseGroups = _buildExpenseGroups(expenses);
@@ -118,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
                     children: [
                       Text(
-                        'Your expenses for today',
+                        'Your Budget for today',
                         style: GoogleFonts.nunito(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -127,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       _AmountHeadline(
-                        amount: todayTotal,
+                        amount: summary.spendableDailyBudget,
                         amountColor: AppPalette.green,
                       ),
                       const SizedBox(height: 20),
@@ -151,7 +162,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             const gap = 18.0;
-                            final width = (constraints.maxWidth - (gap * 3)) / 4;
+                            final width =
+                                (constraints.maxWidth - (gap * 3)) / 4;
 
                             return Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -253,12 +265,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  double _sumForDay(List<ExpenseModel> expenses, DateTime day) {
-    return expenses
-        .where((expense) => _isSameDay(expense.date, day))
-        .fold(0, (total, expense) => total + expense.amount);
-  }
-
   double _sumForMonth(List<ExpenseModel> expenses, DateTime day) {
     return expenses
         .where(
@@ -312,9 +318,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return orderedDates.take(6).map((date) {
       final dayExpenses = grouped[date]!
         ..sort(
-          (left, right) => _expenseDateTime(
-            right,
-          ).compareTo(_expenseDateTime(left)),
+          (left, right) =>
+              _expenseDateTime(right).compareTo(_expenseDateTime(left)),
         );
 
       return _ExpenseDayGroup(
@@ -407,9 +412,10 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = NumberFormat('#,###', 'en_US').format(
-      amount.round(),
-    );
+    final formattedAmount = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(amount.round());
 
     return RichText(
       text: TextSpan(

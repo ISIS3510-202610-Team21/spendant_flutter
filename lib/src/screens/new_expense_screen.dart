@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
@@ -131,6 +133,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
   bool _isScanningReceipt = false;
+  bool _isSavingExpense = false;
 
   @override
   void initState() {
@@ -238,8 +241,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
-    final materialTextTheme =
-        Typography.material2021(platform: defaultTargetPlatform).black;
+    final materialTextTheme = Typography.material2021(
+      platform: defaultTargetPlatform,
+    ).black;
     const timeDisplayHeight = 64 / 57;
     final selected = await showTimePicker(
       context: context,
@@ -404,9 +408,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   Future<void> _pickLabels() async {
     final selected = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
-        builder: (_) => LabelSelectionScreen(
-          initialSelection: _selectedDetailLabels,
-        ),
+        builder: (_) =>
+            LabelSelectionScreen(initialSelection: _selectedDetailLabels),
       ),
     );
 
@@ -669,10 +672,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           position:
               result.location!.latitude != null &&
                   result.location!.longitude != null
-              ? LatLng(
-                  result.location!.latitude!,
-                  result.location!.longitude!,
-                )
+              ? LatLng(result.location!.latitude!, result.location!.longitude!)
               : null,
         );
       }
@@ -680,12 +680,28 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _showScanMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _syncPendingDataInBackground() {
+    unawaited(_runPendingCloudSync());
+  }
+
+  Future<void> _runPendingCloudSync() async {
+    try {
+      await CloudSyncService().syncAllPendingData();
+    } catch (_) {
+      // Keep the local save as the source of truth and retry cloud sync later.
+    }
   }
 
   Future<void> _handleConfirm() async {
+    if (_isSavingExpense) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
 
     if (_selectedDetailLabels.isEmpty) {
@@ -708,9 +724,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    final expense = widget.editingExpense ?? ExpenseModel();
-    expense
-      ..userId = expense.userId == 0 ? 1 : expense.userId
+    setState(() {
+      _isSavingExpense = true;
+    });
+
+    // Create expense model
+    final expense = ExpenseModel()
+      ..userId =
+          1 // TODO: Get actual user ID from auth
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -728,22 +749,32 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
-    if (widget.editingExpense != null) {
-      await expense.save();
-    } else {
+    try {
       await LocalStorageService().saveExpense(expense);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSavingExpense = false;
+      });
+      _showScanMessage('The expense could not be saved');
+      return;
     }
 
     if (!mounted) {
       return;
     }
 
-    _showScanMessage(
-      widget.editingExpense != null
-          ? 'Expense updated locally'
-          : 'Expense saved locally',
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Expense saved locally')),
     );
-    Navigator.of(context).pop(true);
+    navigator.pop(true);
+    _syncPendingDataInBackground();
   }
 
   Future<void> _showMissingLabelWarning() {
@@ -828,6 +859,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               children: [
                 _ExpenseHeader(
                   title: widget.headerTitle,
+                  isSubmitting: _isSavingExpense,
                   onClose: () => Navigator.of(context).maybePop(),
                   onConfirm: () {
                     _handleConfirm();
@@ -905,14 +937,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                             ? const SizedBox(
                                                 width: 16,
                                                 height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      valueColor:
-                                                          AlwaysStoppedAnimation<
-                                                            Color
-                                                          >(AppPalette.white),
-                                                    ),
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(AppPalette.white),
+                                                ),
                                               )
                                             : SvgPicture.asset(
                                                 'web/icons/Camera.svg',
@@ -942,6 +973,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       ),
                                     ),
                                   ),
+                                  if (_lastReceiptScanResult != null &&
+                                      _lastReceiptScanResult!
+                                          .hasDetectedData) ...[
+                                    const SizedBox(height: 20),
+                                    _ReceiptReviewCard(
+                                      result: _lastReceiptScanResult!,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -1012,7 +1051,92 @@ class ExpenseLocationSelection {
   final LatLng? position;
 }
 
-/* class _ReceiptReviewRow extends StatelessWidget {
+class _ReceiptReviewCard extends StatelessWidget {
+  const _ReceiptReviewCard({required this.result});
+
+  final ReceiptScanResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <({IconData icon, String label, String value})>[
+      if (result.name != null && result.name!.trim().isNotEmpty)
+        (
+          icon: Icons.storefront_outlined,
+          label: 'Expense name',
+          value: result.name!.trim(),
+        ),
+      if (result.formattedAmount != null &&
+          result.formattedAmount!.trim().isNotEmpty)
+        (
+          icon: Icons.payments_outlined,
+          label: 'Amount',
+          value: '\$ ${result.formattedAmount!.trim()}',
+        ),
+      if (result.date != null)
+        (
+          icon: Icons.calendar_today_outlined,
+          label: 'Date',
+          value: DateFormat('d/M/y').format(result.date!),
+        ),
+      if (result.time != null)
+        (
+          icon: Icons.access_time,
+          label: 'Time',
+          value: TimeOfDay.fromDateTime(
+            result.time!,
+          ).format(context).toLowerCase(),
+        ),
+      if (result.location != null && result.location!.label.trim().isNotEmpty)
+        (
+          icon: Icons.location_on_outlined,
+          label: 'Location',
+          value: result.location!.label.trim(),
+        ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: AppPalette.field,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppPalette.green, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Receipt added to manual logging',
+            style: GoogleFonts.nunito(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Review the detected values below and confirm the expense when everything looks right.',
+            style: GoogleFonts.nunito(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.fieldHint,
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final row in rows) ...[
+            _ReceiptReviewRow(
+              icon: row.icon,
+              label: row.label,
+              value: row.value,
+            ),
+            if (row != rows.last) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceiptReviewRow extends StatelessWidget {
   const _ReceiptReviewRow({
     required this.icon,
     required this.label,
@@ -1496,8 +1620,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final materialTextTheme =
-        Typography.material2021(platform: defaultTargetPlatform).black;
+    final materialTextTheme = Typography.material2021(
+      platform: defaultTargetPlatform,
+    ).black;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1505,6 +1630,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
         child: Column(
           children: [
             _ExpenseHeader(
+              isSubmitting: false,
               title: 'Select Date',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
@@ -1628,6 +1754,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         child: Column(
           children: [
             _ExpenseHeader(
+              isSubmitting: false,
               title: 'Select Location',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () {
@@ -1735,7 +1862,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         }
 
         return GoogleMap(
-          initialCameraPosition: CameraPosition(target: _selectedPoint, zoom: 16),
+          initialCameraPosition: CameraPosition(
+            target: _selectedPoint,
+            zoom: 16,
+          ),
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           onTap: (point) {
@@ -1795,6 +1925,70 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
     super.dispose();
   }
 
+  void _handleSearchChanged() {
+    setState(() {
+      _query = _searchController.text.trim().toLowerCase();
+    });
+  }
+
+  String? _groupLabelForSelection(List<String> selection) {
+    for (final label in selection) {
+      for (final group in _expenseLabelGroups) {
+        if (group.sublabels.contains(label)) {
+          return group.label;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _matchesQuery(String value) {
+    if (_query.isEmpty) {
+      return true;
+    }
+    return value.toLowerCase().contains(_query);
+  }
+
+  List<_ExpenseLabelGroup> _visibleGroups() {
+    if (_query.isEmpty) {
+      return _expenseLabelGroups;
+    }
+
+    return _expenseLabelGroups.where((group) {
+      return _matchesQuery(group.label) ||
+          group.sublabels.any((label) => _matchesQuery(label));
+    }).toList();
+  }
+
+  List<String> _visibleSublabels(_ExpenseLabelGroup group) {
+    if (_query.isEmpty) {
+      if (_expandedGroupLabel != group.label) {
+        return const <String>[];
+      }
+      return group.sublabels;
+    }
+
+    final matchingSublabels = group.sublabels
+        .where((label) => _matchesQuery(label))
+        .toList();
+
+    if (matchingSublabels.isNotEmpty) {
+      return matchingSublabels;
+    }
+
+    if (_matchesQuery(group.label)) {
+      return group.sublabels;
+    }
+
+    return const <String>[];
+  }
+
+  void _toggleGroup(String label) {
+    setState(() {
+      _expandedGroupLabel = _expandedGroupLabel == label ? null : label;
+    });
+  }
+
   void _toggleSublabel(String label) {
     setState(() {
       if (_selectedLabels.contains(label)) {
@@ -1835,6 +2029,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
             child: Column(
               children: [
                 _ExpenseHeader(
+                  isSubmitting: false,
                   title: 'Labels',
                   onClose: () => Navigator.of(context).pop(),
                   onConfirm: _save,
@@ -1928,9 +2123,10 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat('#,###', 'en_US').format(
-      int.parse(digitsOnly),
-    );
+    final formatted = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(int.parse(digitsOnly));
 
     return TextEditingValue(
       text: formatted,
@@ -1942,12 +2138,14 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
 class _ExpenseHeader extends StatelessWidget {
   const _ExpenseHeader({
     required this.title,
+    required this.isSubmitting,
     required this.onClose,
     required this.onConfirm,
     this.showConfirm = true,
   });
 
   final String title;
+  final bool isSubmitting;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
   final bool showConfirm;
@@ -1960,7 +2158,7 @@ class _ExpenseHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: onClose,
+            onPressed: isSubmitting ? null : onClose,
             icon: const Icon(Icons.close, color: AppPalette.ink),
           ),
           Expanded(
@@ -2007,9 +2205,7 @@ class _ExpenseField extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: AppPalette.field,
-        border: Border(
-          bottom: BorderSide(color: AppPalette.ink, width: 1.5),
-        ),
+        border: Border(bottom: BorderSide(color: AppPalette.ink, width: 1.5)),
       ),
       child: TextField(
         controller: controller,
@@ -2227,4 +2423,3 @@ class _MiniActionButton extends StatelessWidget {
     );
   }
 }
-

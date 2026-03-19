@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
@@ -297,6 +300,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   String _type = 'JUST_ONCE';
   String _recurrenceUnit = 'WEEKS';
   DateTime _selectedDate = DateTime.now();
+  bool _isSavingIncome = false;
 
   bool get _isEditing => widget.editingIncome != null;
 
@@ -352,6 +356,10 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   }
 
   Future<void> _handleConfirm() async {
+    if (_isSavingIncome) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
 
     if (_nameController.text.trim().isEmpty) {
@@ -445,7 +453,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
     } catch (_) {
       // Keep the local save as the source of truth and retry cloud sync later.
     }
-
+  }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(

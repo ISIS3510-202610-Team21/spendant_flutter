@@ -114,7 +114,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
-  ReceiptScanResult? _lastReceiptScanResult;
   bool _isScanningReceipt = false;
 
   @override
@@ -575,8 +574,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   void _applyReceiptScanResult(ReceiptScanResult result) {
     setState(() {
-      _lastReceiptScanResult = result;
-
       if (result.name != null && result.name!.trim().isNotEmpty) {
         _expenseNameController.text = result.name!.trim();
       }
@@ -904,13 +901,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (_lastReceiptScanResult != null &&
-                                      _lastReceiptScanResult!.hasDetectedData) ...[
-                                    const SizedBox(height: 20),
-                                    _ReceiptReviewCard(
-                                      result: _lastReceiptScanResult!,
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),
@@ -981,90 +971,7 @@ class ExpenseLocationSelection {
   final LatLng? position;
 }
 
-class _ReceiptReviewCard extends StatelessWidget {
-  const _ReceiptReviewCard({required this.result});
-
-  final ReceiptScanResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <({IconData icon, String label, String value})>[
-      if (result.name != null && result.name!.trim().isNotEmpty)
-        (
-          icon: Icons.storefront_outlined,
-          label: 'Expense name',
-          value: result.name!.trim(),
-        ),
-      if (result.formattedAmount != null &&
-          result.formattedAmount!.trim().isNotEmpty)
-        (
-          icon: Icons.payments_outlined,
-          label: 'Amount',
-          value: '\$ ${result.formattedAmount!.trim()}',
-        ),
-      if (result.date != null)
-        (
-          icon: Icons.calendar_today_outlined,
-          label: 'Date',
-          value: DateFormat('d/M/y').format(result.date!),
-        ),
-      if (result.time != null)
-        (
-          icon: Icons.access_time,
-          label: 'Time',
-          value: TimeOfDay.fromDateTime(result.time!).format(context).toLowerCase(),
-        ),
-      if (result.location != null && result.location!.label.trim().isNotEmpty)
-        (
-          icon: Icons.location_on_outlined,
-          label: 'Location',
-          value: result.location!.label.trim(),
-        ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppPalette.green, width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Receipt added to manual logging',
-            style: GoogleFonts.nunito(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Review the detected values below and confirm the expense when everything looks right.',
-            style: GoogleFonts.nunito(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-          const SizedBox(height: 14),
-          for (final row in rows) ...[
-            _ReceiptReviewRow(
-              icon: row.icon,
-              label: row.label,
-              value: row.value,
-            ),
-            if (row != rows.last) const SizedBox(height: 10),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiptReviewRow extends StatelessWidget {
+/* class _ReceiptReviewRow extends StatelessWidget {
   const _ReceiptReviewRow({
     required this.icon,
     required this.label,
@@ -1112,7 +1019,7 @@ class _ReceiptReviewRow extends StatelessWidget {
       ],
     );
   }
-}
+} */
 
 // ─────────────────────────────────────────────────────────
 // MOCK RECEIPT SCANNER (web / demo)

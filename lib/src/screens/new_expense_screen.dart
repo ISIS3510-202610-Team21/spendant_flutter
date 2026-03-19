@@ -85,10 +85,12 @@ class NewExpenseScreen extends StatefulWidget {
   const NewExpenseScreen({
     super.key,
     this.initialDraft,
+    this.editingExpense,
     this.headerTitle = 'New Expense',
   });
 
   final ExpenseDraft? initialDraft;
+  final ExpenseModel? editingExpense;
   final String headerTitle;
 
   @override
@@ -131,6 +133,35 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _applyInitialDraft() {
+    final editingExpense = widget.editingExpense;
+    if (editingExpense != null) {
+      _expenseNameController.text = editingExpense.name;
+      _expenseValueController.text = NumberFormat(
+        '#,###',
+        'en_US',
+      ).format(editingExpense.amount.round());
+      _selectedCategory = editingExpense.primaryCategory;
+      _selectedDetailLabels = <String>[...editingExpense.detailLabels];
+      _selectedDate = editingExpense.date;
+
+      final timeParts = editingExpense.time.split(':');
+      _selectedTime = TimeOfDay(
+        hour: timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0,
+        minute: timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0,
+      );
+
+      if ((editingExpense.locationName ?? '').trim().isNotEmpty) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: editingExpense.locationName!.trim(),
+          position:
+              editingExpense.latitude != null && editingExpense.longitude != null
+              ? LatLng(editingExpense.latitude!, editingExpense.longitude!)
+              : null,
+        );
+      }
+      return;
+    }
+
     final draft = widget.initialDraft;
     if (draft == null) {
       return;
@@ -639,9 +670,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    // Create expense model
-    final expense = ExpenseModel()
-      ..userId = 1 // TODO: Get actual user ID from auth
+    final expense = widget.editingExpense ?? ExpenseModel();
+    expense
+      ..userId = expense.userId == 0 ? 1 : expense.userId
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -650,23 +681,30 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
       ..locationName = _selectedLocation?.label
-      ..source = 'MANUAL'
-      ..receiptImagePath = null
+      ..source = expense.source.isEmpty ? 'MANUAL' : expense.source
+      ..receiptImagePath = expense.receiptImagePath
       ..isPendingCategory = false
-      ..isRecurring = false
+      ..isRecurring = expense.isRecurring
       ..isSynced = false
-      ..createdAt = DateTime.now()
+      ..createdAt = widget.editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
-    // Save to local storage
-    await LocalStorageService().saveExpense(expense);
+    if (widget.editingExpense != null) {
+      await expense.save();
+    } else {
+      await LocalStorageService().saveExpense(expense);
+    }
 
     if (!mounted) {
       return;
     }
 
-    _showScanMessage('Expense saved locally');
+    _showScanMessage(
+      widget.editingExpense != null
+          ? 'Expense updated locally'
+          : 'Expense saved locally',
+    );
     Navigator.of(context).pop(true);
   }
 

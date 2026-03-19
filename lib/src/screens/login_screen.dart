@@ -14,9 +14,10 @@ class LoginScreen extends StatelessWidget {
       primaryLabel: 'Login',
       footerText: 'You got no account?',
       footerActionLabel: 'Register',
-      antLeft: -20,
-      antBottom: -60,
-      antHeight: 300,
+      antAssetPath: 'web/ant/ant_login.svg',
+      antLeft: -28,
+      antBottom: -56,
+      antHeight: 460,
       onFooterPressed: () =>
           Navigator.of(context).pushNamed(AppRoutes.register),
     );
@@ -29,6 +30,7 @@ class AuthCredentialsScreen extends StatefulWidget {
     required this.primaryLabel,
     required this.footerText,
     required this.footerActionLabel,
+    required this.antAssetPath,
     required this.antLeft,
     required this.antBottom,
     required this.antHeight,
@@ -39,6 +41,7 @@ class AuthCredentialsScreen extends StatefulWidget {
   final String primaryLabel;
   final String footerText;
   final String footerActionLabel;
+  final String antAssetPath;
   final double antLeft;
   final double antBottom;
   final double antHeight;
@@ -95,7 +98,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                 left: widget.antLeft,
                 bottom: widget.antBottom,
                 child: AntAsset(
-                  'web/ant/Standing.svg',
+                  widget.antAssetPath,
                   height: widget.antHeight,
                 ),
               ),

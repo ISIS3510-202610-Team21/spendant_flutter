@@ -36,17 +36,19 @@ class SpendAntWordmark extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('SpendAnt', style: titleStyle),
-        Transform.translate(
-          offset: const Offset(0, -6),
-          child: Text(
-            'Your Finance Pal',
-            style: GoogleFonts.nunito(
-              fontSize: large ? 20 : 15,
-              fontStyle: FontStyle.italic,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.ink,
-            ),
+        Text(
+          'SpendAnt',
+          textAlign: TextAlign.center,
+          style: titleStyle,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Your Finance Pal',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: large ? 18 : 16,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.ink,
           ),
         ),
       ],

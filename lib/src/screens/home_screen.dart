@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,7 +7,9 @@ import 'package:intl/intl.dart';
 
 import '../../app.dart';
 import '../models/expense_model.dart';
+import '../models/goal_model.dart';
 import '../services/local_storage_service.dart';
+import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
@@ -23,15 +26,39 @@ class _HomeScreenState extends State<HomeScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   bool _hasUnreadNotifications = true;
+  late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
+  late final ValueListenable<Box<GoalModel>> _goalsListenable;
 
   @override
   void initState() {
     super.initState();
+    _expensesListenable = LocalStorageService.expensesListenable;
+    _goalsListenable = LocalStorageService.goalsListenable;
+    _expensesListenable.addListener(_handleNotificationSourcesChanged);
+    _goalsListenable.addListener(_handleNotificationSourcesChanged);
+    _loadUnreadNotifications();
+  }
+
+  @override
+  void dispose() {
+    _expensesListenable.removeListener(_handleNotificationSourcesChanged);
+    _goalsListenable.removeListener(_handleNotificationSourcesChanged);
+    super.dispose();
+  }
+
+  void _handleNotificationSourcesChanged() {
     _loadUnreadNotifications();
   }
 
   Future<void> _loadUnreadNotifications() async {
-    final hasUnread = await NotificationsStore.hasUnreadNotifications();
+    final notifications = NotificationFeedService.buildFeed(
+      expenses: LocalStorageService.expenseBox.values,
+      goals: LocalStorageService.goalBox.values,
+      userId: _defaultUserId,
+    );
+    final hasUnread = await NotificationsStore.hasUnreadNotifications(
+      notificationIds: notifications.map((notification) => notification.id),
+    );
     if (!mounted) {
       return;
     }
@@ -440,10 +467,6 @@ class _CategoryBarCard extends StatelessWidget {
                 stat.iconAssetPath,
                 width: 30,
                 height: 30,
-                colorFilter: const ColorFilter.mode(
-                  AppPalette.ink,
-                  BlendMode.srcIn,
-                ),
               ),
               const SizedBox(height: 8),
               Padding(
@@ -490,10 +513,6 @@ class _ExpenseListTile extends StatelessWidget {
               entry.iconAssetPath,
               width: 24,
               height: 24,
-              colorFilter: const ColorFilter.mode(
-                AppPalette.ink,
-                BlendMode.srcIn,
-              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -641,7 +660,7 @@ abstract final class _CategoryVisuals {
     'Other': _CategoryVisual(
       color: AppPalette.other,
       tileColor: Color(0xFFFBC5C4),
-      iconAssetPath: 'web/icons/Other.svg',
+      iconAssetPath: 'web/icons/Gifts.svg',
     ),
   };
 

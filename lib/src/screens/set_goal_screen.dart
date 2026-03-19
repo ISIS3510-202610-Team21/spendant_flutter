@@ -256,7 +256,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           child: SizedBox(
             width: 150,
             height: 180,
-            child: AntAsset('web/ant/Standing.svg'),
+            child: AntAsset('web/ant/ant_idle.svg'),
           ),
         ),
         const SizedBox(height: 20),
@@ -367,19 +367,19 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         return _setupStepLayout(
           'What are you saving for?',
           _setupTextField(_nameController, 'e.g. A new car'),
-          'web/ant/Presenting.svg',
+          'web/ant/ant_presenting.svg',
         );
       case 1:
         return _setupStepLayout(
           'How much money do you want to save?',
           _setupTextField(_amountController, '\$0', isNum: true),
-          'web/ant/Standing.svg',
+          'web/ant/ant_idle.svg',
         );
       case 2:
         return _setupStepLayout(
           'When is the deadline?',
           _setupDatePicker(),
-          'web/ant/Surprised.svg',
+          'web/ant/ant_suprised.svg',
         );
       case 3:
         return _buildStepPlan();
@@ -469,7 +469,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               ),
             ),
             const SizedBox(height: 40),
-            const SizedBox(height: 180, child: AntAsset('web/ant/Ok.svg')),
+            const SizedBox(height: 180, child: AntAsset('web/ant/ant_thumb.svg')),
             const Spacer(),
             ElevatedButton(
               onPressed: _finishGoalSetup,

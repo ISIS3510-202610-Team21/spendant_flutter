@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../app.dart';
 import '../theme/spendant_theme.dart';
@@ -11,11 +12,13 @@ class SpendAntBottomNav extends StatelessWidget {
     required this.currentItem,
     this.onProfileTap,
     this.onGoalsTap,
+    this.onIncomeTap,
   });
 
   final SpendAntNavItem currentItem;
   final VoidCallback? onProfileTap;
   final VoidCallback? onGoalsTap;
+  final VoidCallback? onIncomeTap;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,7 @@ class SpendAntBottomNav extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _NavIconButton(
-              icon: Icons.person_outline,
+              assetPath: 'web/icons/Profile.svg',
               selected: currentItem == SpendAntNavItem.profile,
               onTap: () {
                 if (onProfileTap != null) {
@@ -46,7 +49,7 @@ class SpendAntBottomNav extends StatelessWidget {
               },
             ),
             _NavIconButton(
-              icon: Icons.home_outlined,
+              assetPath: 'web/icons/Home.svg',
               selected: currentItem == SpendAntNavItem.home,
               onTap: () {
                 if (currentItem != SpendAntNavItem.home) {
@@ -68,7 +71,7 @@ class SpendAntBottomNav extends StatelessWidget {
               ),
             ),
             _NavIconButton(
-              icon: Icons.flag_outlined,
+              assetPath: 'web/icons/Goals.svg',
               selected: currentItem == SpendAntNavItem.goals,
               onTap: () {
                 if (onGoalsTap != null) {
@@ -84,9 +87,17 @@ class SpendAntBottomNav extends StatelessWidget {
               },
             ),
             _NavIconButton(
-              icon: Icons.credit_card_outlined,
+              assetPath: 'web/icons/Income.svg',
               selected: currentItem == SpendAntNavItem.cards,
-              onTap: () {},
+              onTap: () {
+                if (onIncomeTap != null) {
+                  onIncomeTap!();
+                  return;
+                }
+                if (currentItem != SpendAntNavItem.cards) {
+                  Navigator.of(context).pushReplacementNamed(AppRoutes.budget);
+                }
+              },
             ),
           ],
         ),
@@ -97,12 +108,12 @@ class SpendAntBottomNav extends StatelessWidget {
 
 class _NavIconButton extends StatelessWidget {
   const _NavIconButton({
-    required this.icon,
+    required this.assetPath,
     required this.selected,
     required this.onTap,
   });
 
-  final IconData icon;
+  final String assetPath;
   final bool selected;
   final VoidCallback onTap;
 
@@ -130,7 +141,11 @@ class _NavIconButton extends StatelessWidget {
         onPressed: onTap,
         padding: EdgeInsets.zero,
         splashRadius: 20,
-        icon: Icon(icon, color: AppPalette.ink, size: selected ? 24 : 22),
+        icon: SvgPicture.asset(
+          assetPath,
+          width: selected ? 24 : 22,
+          height: selected ? 24 : 22,
+        ),
       ),
     );
   }

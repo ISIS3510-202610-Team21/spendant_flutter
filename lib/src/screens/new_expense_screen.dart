@@ -1164,7 +1164,8 @@ class _MockReceiptScannerScreen extends StatefulWidget {
       _MockReceiptScannerScreenState();
 }
 
-class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
+class _MockReceiptScannerScreenState
+    extends State<_MockReceiptScannerScreen> {
   bool _scanning = false;
 
   static final ReceiptScanResult _mockResult = ReceiptScanResult(
@@ -1172,7 +1173,9 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
     formattedAmount: '25,020',
     date: DateTime(2026, 3, 19),
     time: DateTime(2026, 3, 19, 13, 45),
-    location: const ReceiptScanLocation(label: 'Calle 20 #6-76, Bogotá'),
+    location: const ReceiptScanLocation(
+      label: 'Calle 20 #6-76, Bogotá',
+    ),
     rawText: '',
   );
 
@@ -1302,7 +1305,11 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                     ),
 
                   // Corner guides
-                  Positioned(top: 60, left: 40, child: _CornerGuide(rotate: 0)),
+                  Positioned(
+                    top: 60,
+                    left: 40,
+                    child: _CornerGuide(rotate: 0),
+                  ),
                   Positioned(
                     top: 60,
                     right: 40,
@@ -2078,18 +2085,22 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                                       _LabelGroupChip(
                                         label: group.label,
                                         active:
-                                            _expandedGroupLabel == group.label,
-                                        onTap: () => _toggleGroup(group.label),
+                                           
+                                          _expandedGroupLabel == group.label,
+                                        onTap: () =>
+                                            _toggleGroup(group.label),
                                       ),
-                                      for (final label in _visibleSublabels(
-                                        group,
-                                      ))
+                                      for (final label
+                                          in _visibleSublabels(
+                                      group,
+                                    ))
                                         _SublabelChip(
                                           label: label,
                                           selected: _selectedLabels.contains(
                                             label,
-                                          ),
-                                          onTap: () => _toggleSublabel(label),
+                                        ),
+                                          onTap: () =>
+                                              _toggleSublabel(label),
                                         ),
                                     ],
                                   ],

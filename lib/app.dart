@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'src/screens/budget_screen.dart';
 import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
@@ -21,6 +22,7 @@ abstract final class AppRoutes {
   static const notifications = '/notifications';
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
+  static const budget = '/budget';
 }
 
 class SpendAntApp extends StatelessWidget {
@@ -43,6 +45,7 @@ class SpendAntApp extends StatelessWidget {
         AppRoutes.notifications: (_) => const NotificationsScreen(),
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
+        AppRoutes.budget: (_) => const BudgetScreen(),
       },
     );
   }

@@ -358,9 +358,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   Future<void> _scanReceipt() async {
     if (kIsWeb) {
-      _showScanMessage(
-        'Receipt scan is available on Android and iOS because OCR uses ML Kit.',
+      final result = await Navigator.of(context).push<ReceiptScanResult>(
+        MaterialPageRoute(builder: (_) => const _MockReceiptScannerScreen()),
       );
+      if (result != null && mounted) {
+        _applyReceiptScanResult(result);
+        _showScanMessage(
+          'Receipt scanned. Review the detected fields before saving.',
+        );
+      }
       return;
     }
 
@@ -1108,6 +1114,317 @@ class _ReceiptReviewRow extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// MOCK RECEIPT SCANNER (web / demo)
+// ─────────────────────────────────────────────────────────
+
+class _MockReceiptScannerScreen extends StatefulWidget {
+  const _MockReceiptScannerScreen();
+
+  @override
+  State<_MockReceiptScannerScreen> createState() =>
+      _MockReceiptScannerScreenState();
+}
+
+class _MockReceiptScannerScreenState
+    extends State<_MockReceiptScannerScreen> {
+  bool _scanning = false;
+
+  static final ReceiptScanResult _mockResult = ReceiptScanResult(
+    name: 'Ajiaco y Frijoles Centro Histórico',
+    formattedAmount: '25,020',
+    date: DateTime(2026, 3, 19),
+    time: DateTime(2026, 3, 19, 13, 45),
+    location: const ReceiptScanLocation(
+      label: 'Calle 20 #6-76, Bogotá',
+    ),
+    rawText: '',
+  );
+
+  Future<void> _capture() async {
+    setState(() => _scanning = true);
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    Navigator.of(context).pop(_mockResult);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              color: AppPalette.green,
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 14),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: AppPalette.ink),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'New Receipt',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunito(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                ],
+              ),
+            ),
+
+            // Viewfinder
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Camera background
+                  Container(color: const Color(0xFF2A1F1A)),
+
+                  // Mock receipt in center
+                  Center(
+                    child: Transform.rotate(
+                      angle: -0.03,
+                      child: Container(
+                        width: 220,
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black45,
+                              blurRadius: 20,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'AJIACO Y FRIJOLES\nCENTRO HISTÓRICO SAS',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'NIT: 902619477-5\nCalle 20 #6-76, Bogotá',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.nunito(
+                                fontSize: 8,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const Divider(height: 16),
+                            _MockReceiptRow('Ajiaco Mix', '22,900'),
+                            const Divider(height: 12),
+                            _MockReceiptRow('Total bruto', '21,201.70'),
+                            _MockReceiptRow('Impoconsumo 8%', '1,698.57'),
+                            _MockReceiptRow('Propina vol.', '2,120.37'),
+                            const Divider(height: 12),
+                            _MockReceiptRow(
+                              'Total a pagar:',
+                              '25,020.37',
+                              bold: true,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Fecha: 19/03/2026  13:45',
+                              style: GoogleFonts.nunito(
+                                fontSize: 7,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Scanning overlay
+                  if (_scanning)
+                    Container(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: AppPalette.green,
+                          strokeWidth: 3,
+                        ),
+                      ),
+                    ),
+
+                  // Corner guides
+                  Positioned(
+                    top: 60,
+                    left: 40,
+                    child: _CornerGuide(rotate: 0),
+                  ),
+                  Positioned(
+                    top: 60,
+                    right: 40,
+                    child: _CornerGuide(rotate: 1),
+                  ),
+                  Positioned(
+                    bottom: 30,
+                    left: 40,
+                    child: _CornerGuide(rotate: 3),
+                  ),
+                  Positioned(
+                    bottom: 30,
+                    right: 40,
+                    child: _CornerGuide(rotate: 2),
+                  ),
+                ],
+              ),
+            ),
+
+            // Bottom action bar
+            Container(
+              color: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _CameraActionButton(
+                    icon: Icons.photo_library,
+                    onTap: _scanning ? null : _capture,
+                  ),
+                  // Shutter button (main)
+                  GestureDetector(
+                    onTap: _scanning ? null : _capture,
+                    child: Container(
+                      width: 68,
+                      height: 68,
+                      decoration: const BoxDecoration(
+                        color: AppPalette.green,
+                        shape: BoxShape.circle,
+                      ),
+                      child: _scanning
+                          ? const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt,
+                              color: AppPalette.ink,
+                              size: 32,
+                            ),
+                    ),
+                  ),
+                  _CameraActionButton(
+                    icon: Icons.file_copy,
+                    onTap: _scanning ? null : _capture,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MockReceiptRow extends StatelessWidget {
+  const _MockReceiptRow(this.label, this.value, {this.bold = false});
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = GoogleFonts.nunito(
+      fontSize: bold ? 9 : 8,
+      fontWeight: bold ? FontWeight.w900 : FontWeight.w500,
+      color: Colors.black,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: style),
+          Text(value, style: style),
+        ],
+      ),
+    );
+  }
+}
+
+class _CornerGuide extends StatelessWidget {
+  const _CornerGuide({required this.rotate});
+
+  final int rotate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: rotate * 3.14159 / 2,
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: CustomPaint(painter: _CornerPainter()),
+      ),
+    );
+  }
+}
+
+class _CornerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppPalette.green
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset.zero, Offset(size.width, 0), paint);
+    canvas.drawLine(Offset.zero, Offset(0, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CameraActionButton extends StatelessWidget {
+  const _CameraActionButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: const BoxDecoration(
+          color: AppPalette.green,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: AppPalette.ink, size: 24),
+      ),
+    );
+  }
+}
+
 class _ReceiptSourceSheet extends StatelessWidget {
   const _ReceiptSourceSheet({required this.onSelected});
 
@@ -1148,17 +1465,17 @@ class _ReceiptSourceSheet extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _ReceiptSourceTile(
-                  icon: Icons.photo_camera_outlined,
+                  icon: Icons.photo_camera,
                   label: 'Camera',
                   onTap: () => onSelected(_ReceiptSourceOption.camera),
                 ),
                 _ReceiptSourceTile(
-                  icon: Icons.image_outlined,
+                  icon: Icons.image,
                   label: 'Gallery',
                   onTap: () => onSelected(_ReceiptSourceOption.gallery),
                 ),
                 _ReceiptSourceTile(
-                  icon: Icons.file_copy_outlined,
+                  icon: Icons.file_copy,
                   label: 'File',
                   onTap: () => onSelected(_ReceiptSourceOption.file),
                 ),
@@ -1195,9 +1512,9 @@ class _ReceiptSourceTile extends StatelessWidget {
             Container(
               width: 64,
               height: 64,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: AppPalette.green,
-                borderRadius: BorderRadius.circular(18),
+                shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 30, color: AppPalette.ink),
             ),
@@ -1715,25 +2032,34 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 10,
-                                children: [
-                                  for (final group in visibleGroups) ...[
-                                    _LabelGroupChip(
-                                      label: group.label,
-                                      active: _expandedGroupLabel == group.label,
-                                      onTap: () => _toggleGroup(group.label),
-                                    ),
-                                    for (final label in _visibleSublabels(group))
-                                      _SublabelChip(
-                                        label: label,
-                                        selected:
-                                            _selectedLabels.contains(label),
-                                        onTap: () => _toggleSublabel(label),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeInOut,
+                                alignment: Alignment.topLeft,
+                                child: Wrap(
+                                  spacing: 7,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final group in visibleGroups) ...[
+                                      _LabelGroupChip(
+                                        label: group.label,
+                                        active:
+                                            _expandedGroupLabel == group.label,
+                                        onTap: () =>
+                                            _toggleGroup(group.label),
                                       ),
+                                      for (final label
+                                          in _visibleSublabels(group))
+                                        _SublabelChip(
+                                          label: label,
+                                          selected:
+                                              _selectedLabels.contains(label),
+                                          onTap: () =>
+                                              _toggleSublabel(label),
+                                        ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ],
                           ),
@@ -2002,24 +2328,20 @@ class _LabelGroupChip extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
 
-  static const double _chipHeight = 34;
-
   @override
   Widget build(BuildContext context) {
     final foregroundColor = active ? AppPalette.green : AppPalette.ink;
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        height: _chipHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
         decoration: BoxDecoration(
           color: active ? Colors.white : const Color(0xFFE4E4E4),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(20),
           border: active
               ? Border.all(color: AppPalette.green, width: 1.5)
               : null,
@@ -2027,8 +2349,8 @@ class _LabelGroupChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.add, size: 14, color: foregroundColor),
-            const SizedBox(width: 4),
+            Icon(Icons.add, size: 13, color: foregroundColor),
+            const SizedBox(width: 3),
             Text(
               label,
               style: GoogleFonts.nunito(
@@ -2055,22 +2377,18 @@ class _SublabelChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const double _chipHeight = _LabelGroupChip._chipHeight;
-
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        height: _chipHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
         decoration: BoxDecoration(
           color: selected ? AppPalette.green : const Color(0xFFD1D1D1),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,

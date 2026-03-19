@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
+import '../../app.dart';
 import '../models/goal_model.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
@@ -238,7 +239,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _profileActionButton('Income', Icons.attach_money),
+            _profileActionButton('Income', Icons.attach_money, isIncomeBtn: true),
             const SizedBox(width: 16),
             _profileActionButton('Goals', Icons.flag_outlined, isGoalBtn: true),
           ],
@@ -267,11 +268,14 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     String label,
     IconData icon, {
     bool isGoalBtn = false,
+    bool isIncomeBtn = false,
   }) {
     return ElevatedButton.icon(
       onPressed: () {
         if (isGoalBtn) {
           setState(() => _viewState = 1);
+        } else if (isIncomeBtn) {
+          Navigator.of(context).pushNamed(AppRoutes.budget);
         }
       },
       icon: Icon(icon, size: 20, color: Colors.white),

@@ -14,9 +14,9 @@ class LoginScreen extends StatelessWidget {
       primaryLabel: 'Login',
       footerText: 'You got no account?',
       footerActionLabel: 'Register',
-      antLeft: -175,
-      antBottom: -300,
-      antHeight: 700,
+      antLeft: -20,
+      antBottom: -60,
+      antHeight: 300,
       onFooterPressed: () =>
           Navigator.of(context).pushNamed(AppRoutes.register),
     );

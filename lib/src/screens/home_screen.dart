@@ -110,7 +110,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       _AmountHeadline(
-                        amount: summary.spendableDailyBudget,
+                        amount: summary.remainingSpendableBudget <= 0
+                            ? 0
+                            : summary.remainingSpendableBudget,
                         amountColor: AppPalette.green,
                       ),
                       const SizedBox(height: 20),

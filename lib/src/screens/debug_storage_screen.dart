@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../models/income_model.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 
@@ -19,6 +20,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
 
   List<ExpenseModel> expenses = <ExpenseModel>[];
   List<GoalModel> goals = <GoalModel>[];
+  List<IncomeModel> incomes = <IncomeModel>[];
   CloudVerificationSummary? _verification;
   String? _cloudMessage;
   bool _isSyncing = false;
@@ -33,6 +35,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
   Future<void> _refresh() async {
     final exp = await _storage.getAllExpenses();
     final gls = await _storage.getAllGoals();
+    final inc = await _storage.getAllIncomes();
 
     if (!mounted) {
       return;
@@ -41,6 +44,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
     setState(() {
       expenses = exp;
       goals = gls;
+      incomes = inc;
     });
   }
 
@@ -99,6 +103,30 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Meta de prueba guardada localmente')),
+    );
+  }
+
+  Future<void> _addTestIncome() async {
+    final income = IncomeModel()
+      ..userId = 1
+      ..name = 'Ingreso prueba ${DateTime.now().millisecond}'
+      ..amount = 250000
+      ..type = 'FREQUENTLY'
+      ..recurrenceInterval = 1
+      ..recurrenceUnit = 'WEEKS'
+      ..startDate = DateTime.now()
+      ..createdAt = DateTime.now()
+      ..isSynced = false;
+
+    await _storage.saveIncome(income);
+    await _refresh();
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Ingreso de prueba guardado localmente')),
     );
   }
 
@@ -215,6 +243,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
         .where((expense) => !expense.isSynced)
         .length;
     final pendingGoals = goals.where((goal) => !goal.isSynced).length;
+    final pendingIncomes = incomes.where((income) => !income.isSynced).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -244,11 +273,14 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
             _buildLocalSummaryCard(
               pendingExpenses: pendingExpenses,
               pendingGoals: pendingGoals,
+              pendingIncomes: pendingIncomes,
             ),
             const SizedBox(height: 20),
             _buildExpensesCard(),
             const SizedBox(height: 20),
             _buildGoalsCard(),
+            const SizedBox(height: 20),
+            _buildIncomesCard(),
           ],
         ),
       ),
@@ -359,6 +391,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
   Widget _buildLocalSummaryCard({
     required int pendingExpenses,
     required int pendingGoals,
+    required int pendingIncomes,
   }) {
     return Card(
       child: Padding(
@@ -373,8 +406,10 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
             const SizedBox(height: 12),
             _buildStatusLine('Gastos guardados', '${expenses.length}'),
             _buildStatusLine('Metas guardadas', '${goals.length}'),
+            _buildStatusLine('Ingresos guardados', '${incomes.length}'),
             _buildStatusLine('Gastos pendientes', '$pendingExpenses'),
             _buildStatusLine('Metas pendientes', '$pendingGoals'),
+            _buildStatusLine('Ingresos pendientes', '$pendingIncomes'),
           ],
         ),
       ),
@@ -448,6 +483,42 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
             else
               Column(
                 children: goals.map(_buildGoalTile).toList(growable: false),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncomesCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'INGRESOS GUARDADOS',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                ElevatedButton(
+                  onPressed: _addTestIncome,
+                  child: const Text('Agregar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (incomes.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Sin ingresos aun'),
+              )
+            else
+              Column(
+                children: incomes.map(_buildIncomeTile).toList(growable: false),
               ),
           ],
         ),
@@ -543,6 +614,54 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
           Text(
             '$progress% - Deadline: ${goal.deadline.day}/${goal.deadline.month}/${goal.deadline.year}',
             style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIncomeTile(IncomeModel income) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  income.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                income.isSynced ? 'Nube' : 'Local',
+                style: TextStyle(
+                  color: income.isSynced ? Colors.green : Colors.orange,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('Ingreso: COP \$${income.amount.toStringAsFixed(0)}'),
+          Text(
+            'Tipo: ${income.type} ${income.recurrenceInterval ?? ''} ${income.recurrenceUnit ?? ''}'
+                .trim(),
+          ),
+          Text(
+            'serverId: ${income.serverId ?? 'sin asignar'}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          Text(
+            'Inicio: ${income.startDate.day}/${income.startDate.month}/${income.startDate.year}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),

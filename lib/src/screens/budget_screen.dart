@@ -71,6 +71,11 @@ class BudgetScreen extends StatelessWidget {
                       currencyFormat: _currencyFormat,
                     ),
                     const SizedBox(height: 14),
+                    _IncomeSyncCard(
+                      incomes: incomes,
+                      currencyFormat: _currencyFormat,
+                    ),
+                    const SizedBox(height: 14),
                     if (summary.isSpendableBudgetExhausted) ...[
                       _BudgetNoticeCard(
                         message: summary.isInternalBudgetExhausted
@@ -95,11 +100,15 @@ class BudgetScreen extends StatelessWidget {
                     Center(
                       child: ElevatedButton(
                         onPressed: () async {
-                          await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (_) => const NewIncomeScreen(),
-                            ),
-                          );
+                          final didSave = await Navigator.of(context)
+                              .push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) => const NewIncomeScreen(),
+                                ),
+                              );
+                          if (didSave == true) {
+                            unawaited(CloudSyncService().syncAllPendingData());
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppPalette.ink,
@@ -187,18 +196,27 @@ class _IncomeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  income.name,
-                  style: GoogleFonts.nunito(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: AppPalette.ink,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        income.name,
+                        style: GoogleFonts.nunito(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _IncomeSyncBadge(isSynced: income.isSynced),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -207,6 +225,18 @@ class _IncomeCard extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: AppPalette.ink.withValues(alpha: 0.6),
+                  ),
+                ),
+                Text(
+                  income.isSynced
+                      ? 'Uploaded to Firebase'
+                      : 'Saved locally. Pending cloud sync',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: income.isSynced
+                        ? Colors.green.shade700
+                        : Colors.orange.shade800,
                   ),
                 ),
               ],
@@ -221,6 +251,31 @@ class _IncomeCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _IncomeSyncBadge extends StatelessWidget {
+  const _IncomeSyncBadge({required this.isSynced});
+
+  final bool isSynced;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: isSynced ? const Color(0xFFD7F6DE) : const Color(0xFFFFE1C2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        isSynced ? 'Nube' : 'Local',
+        style: GoogleFonts.nunito(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: AppPalette.ink,
+        ),
       ),
     );
   }
@@ -244,6 +299,137 @@ class _EmptyIncomesCard extends StatelessWidget {
             height: 1.5,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _IncomeSyncCard extends StatelessWidget {
+  const _IncomeSyncCard({required this.incomes, required this.currencyFormat});
+
+  final List<IncomeModel> incomes;
+  final NumberFormat currencyFormat;
+
+  Future<void> _syncNow(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final summary = await CloudSyncService().syncAllPendingData();
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Incomes synced. Uploaded ${summary.uploadedIncomes} income(s). Failures: ${summary.failures}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Income sync failed: $error')),
+      );
+    }
+  }
+
+  Future<void> _verifyNow(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final verification = await CloudSyncService().verifyCloudState();
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Firestore incomes: ${verification.remoteIncomes}. Pending local incomes: ${verification.pendingIncomes}. Missing remote incomes: ${verification.missingIncomes}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Cloud verification failed: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingIncomes = incomes.where((income) => !income.isSynced).length;
+    final syncedIncomes = incomes.length - pendingIncomes;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppPalette.field,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Income sync status',
+            style: GoogleFonts.nunito(
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Create an income offline and it will stay Local. When internet comes back, tap Sync now or wait for the background retry until it changes to Nube.',
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.fieldHint,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _BudgetSummaryStat(
+                  label: 'Local pending',
+                  value: '$pendingIncomes',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _BudgetSummaryStat(
+                  label: 'Uploaded',
+                  value: '$syncedIncomes',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              ElevatedButton(
+                onPressed: () => _syncNow(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppPalette.ink,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Sync now'),
+              ),
+              OutlinedButton(
+                onPressed: () => _verifyNow(context),
+                child: const Text('Verify cloud'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

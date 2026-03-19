@@ -38,10 +38,9 @@ class SpendAntBottomNav extends StatelessWidget {
                   return;
                 }
                 if (currentItem != SpendAntNavItem.profile) {
-                  Navigator.of(context).pushReplacementNamed(
-                    AppRoutes.setGoal,
-                    arguments: 0,
-                  );
+                  Navigator.of(
+                    context,
+                  ).pushReplacementNamed(AppRoutes.setGoal, arguments: 0);
                 }
               },
             ),
@@ -55,7 +54,8 @@ class SpendAntBottomNav extends StatelessWidget {
               },
             ),
             InkWell(
-              onTap: () => Navigator.of(context).pushNamed(AppRoutes.newExpense),
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.newExpense),
               borderRadius: BorderRadius.circular(999),
               child: Container(
                 width: 44,
@@ -76,17 +76,20 @@ class SpendAntBottomNav extends StatelessWidget {
                   return;
                 }
                 if (currentItem != SpendAntNavItem.goals) {
-                  Navigator.of(context).pushReplacementNamed(
-                    AppRoutes.setGoal,
-                    arguments: 1,
-                  );
+                  Navigator.of(
+                    context,
+                  ).pushReplacementNamed(AppRoutes.setGoal, arguments: 1);
                 }
               },
             ),
             _NavIconButton(
               icon: Icons.credit_card_outlined,
               selected: currentItem == SpendAntNavItem.cards,
-              onTap: () {},
+              onTap: () {
+                if (currentItem != SpendAntNavItem.cards) {
+                  Navigator.of(context).pushReplacementNamed(AppRoutes.budget);
+                }
+              },
             ),
           ],
         ),

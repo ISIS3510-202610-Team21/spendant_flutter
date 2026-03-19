@@ -91,6 +91,7 @@ class CloudSyncService {
     : _firestore = firestore ?? FirebaseFirestore.instance;
 
   static Future<CloudSyncSummary>? _ongoingSync;
+  static bool _syncRequestedWhileRunning = false;
 
   final FirebaseFirestore _firestore;
   final LocalStorageService _localStorage = LocalStorageService();
@@ -115,10 +116,11 @@ class CloudSyncService {
   Future<CloudSyncSummary> syncAllPendingData() async {
     final ongoingSync = _ongoingSync;
     if (ongoingSync != null) {
+      _syncRequestedWhileRunning = true;
       return ongoingSync;
     }
 
-    final syncFuture = _syncAllPendingDataInternal();
+    final syncFuture = _runSyncQueue();
     _ongoingSync = syncFuture;
 
     try {
@@ -128,6 +130,17 @@ class CloudSyncService {
         _ongoingSync = null;
       }
     }
+  }
+
+  Future<CloudSyncSummary> _runSyncQueue() async {
+    CloudSyncSummary latestSummary = const CloudSyncSummary();
+
+    do {
+      _syncRequestedWhileRunning = false;
+      latestSummary = await _syncAllPendingDataInternal();
+    } while (_syncRequestedWhileRunning);
+
+    return latestSummary;
   }
 
   Future<CloudSyncSummary> _syncAllPendingDataInternal() async {

@@ -47,7 +47,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
     await storage.saveExpense(expense);
     _refresh();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ Gasto de prueba guardado')),
+      const SnackBar(content: Text('Gasto de prueba guardado')),
     );
   }
 
@@ -65,7 +65,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
     await storage.saveGoal(goal);
     _refresh();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ Meta de prueba guardada')),
+      const SnackBar(content: Text('Meta de prueba guardada')),
     );
   }
 
@@ -73,7 +73,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🔧 Debug: Almacenamiento Local'),
+        title: const Text('Debug: Almacenamiento Local'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -97,7 +97,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '💰 GASTOS GUARDADOS',
+                          'GASTOS GUARDADOS',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -105,7 +105,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                         ),
                         ElevatedButton(
                           onPressed: _addTestExpense,
-                          child: const Text('➕ Agregar'),
+                          child: const Text('Agregar'),
                         ),
                       ],
                     ),
@@ -144,7 +144,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                                           ),
                                         ),
                                         Text(
-                                          exp.isSynced ? '☁️' : '📱',
+                                          exp.isSynced ? 'Nube' : 'Local',
                                           style: TextStyle(
                                             color: exp.isSynced
                                                 ? Colors.green
@@ -186,7 +186,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '🎯 METAS GUARDADAS',
+                          'METAS GUARDADAS',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -194,7 +194,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                         ),
                         ElevatedButton(
                           onPressed: _addTestGoal,
-                          child: const Text('➕ Agregar'),
+                          child: const Text('Agregar'),
                         ),
                       ],
                     ),
@@ -234,7 +234,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                                           ),
                                         ),
                                         Text(
-                                          goal.isSynced ? '☁️' : '📱',
+                                          goal.isSynced ? 'Nube' : 'Local',
                                           style: TextStyle(
                                             color: goal.isSynced
                                                 ? Colors.green

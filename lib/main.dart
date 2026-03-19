@@ -9,9 +9,9 @@ void main() async {
   // Initialize local storage with Hive (with error handling)
   try {
     await LocalStorageService.init();
-    print('✅ LocalStorageService inicializado correctamente');
+    print('LocalStorageService inicializado correctamente');
   } catch (e) {
-    print('❌ Error inicializando LocalStorageService: $e');
+    print('Error inicializando LocalStorageService: $e');
   }
   
   runApp(const SpendAntApp());

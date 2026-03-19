@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'src/screens/debug_storage_screen.dart';
+import 'src/screens/budget_screen.dart';
 import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
@@ -26,6 +27,7 @@ abstract final class AppRoutes {
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
   static const debugStorage = '/debug-storage';
+  static const budget = '/budget';
 }
 
 class SpendAntApp extends StatefulWidget {
@@ -99,6 +101,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
         AppRoutes.debugStorage: (_) => const DebugStorageScreen(),
+        AppRoutes.budget: (_) => const BudgetScreen(),
       },
     );
   }

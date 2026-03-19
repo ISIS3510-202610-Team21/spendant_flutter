@@ -44,9 +44,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           return Stack(
             children: [
               const Positioned(
-                left: -175,
-                bottom: -300,
-                child: AntAsset('web/ant/Standing.svg', height: 700),
+                left: -20,
+                bottom: -50,
+                child: AntAsset('web/ant/Standing.svg', height: 290),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(

@@ -12,6 +12,8 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
+import '../models/expense_model.dart';
+import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
@@ -609,16 +611,60 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _handleConfirm() async {
+    FocusScope.of(context).unfocus();
+
+    if (_selectedCategory == null) {
+      _showScanMessage('Please choose a main category');
+      return;
+    }
+
     if (_selectedDetailLabels.isEmpty) {
       await _showMissingLabelWarning();
       return;
     }
 
+    // Validate required fields
+    if (_expenseNameController.text.trim().isEmpty) {
+      _showScanMessage('Please enter an expense name');
+      return;
+    }
+
+    final amountText = _expenseValueController.text.replaceAll(',', '').trim();
+    final parsedAmount = double.tryParse(amountText);
+    if (amountText.isEmpty || parsedAmount == null || parsedAmount <= 0) {
+      _showScanMessage('Please enter a valid amount');
+      return;
+    }
+
+    // Create expense model
+    final expense = ExpenseModel()
+      ..userId = 1 // TODO: Get actual user ID from auth
+      ..name = _expenseNameController.text.trim()
+      ..amount = parsedAmount
+      ..date = _selectedDate
+      ..time =
+          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}'
+      ..latitude = _selectedLocation?.position?.latitude
+      ..longitude = _selectedLocation?.position?.longitude
+      ..locationName = _selectedLocation?.label
+      ..source = 'MANUAL'
+      ..receiptImagePath = null
+      ..isPendingCategory = false
+      ..isRecurring = false
+      ..isSynced = false
+      ..createdAt = DateTime.now()
+      ..primaryCategory = _selectedCategory
+      ..detailLabels = List<String>.from(_selectedDetailLabels);
+
+    // Save to local storage
+    await LocalStorageService().saveExpense(expense);
+
     if (!mounted) {
       return;
     }
 
-    Navigator.of(context).maybePop();
+    _showScanMessage('Expense saved locally');
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _showMissingLabelWarning() {

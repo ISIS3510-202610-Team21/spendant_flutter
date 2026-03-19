@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
@@ -35,11 +37,7 @@ class _ExpenseLabelGroup {
 const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   _ExpenseLabelGroup(
     label: 'Academic Essentials',
-    sublabels: <String>[
-      'University Fees',
-      'Learning Materials',
-      'Commute',
-    ],
+    sublabels: <String>['University Fees', 'Learning Materials', 'Commute'],
   ),
   _ExpenseLabelGroup(
     label: 'Lifestyle & Social',
@@ -116,6 +114,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   ExpenseLocationSelection? _selectedLocation;
   ReceiptScanResult? _lastReceiptScanResult;
   bool _isScanningReceipt = false;
+  bool _isSavingExpense = false;
 
   @override
   void initState() {
@@ -169,8 +168,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
-    final materialTextTheme =
-        Typography.material2021(platform: defaultTargetPlatform).black;
+    final materialTextTheme = Typography.material2021(
+      platform: defaultTargetPlatform,
+    ).black;
     const timeDisplayHeight = 64 / 57;
     final selected = await showTimePicker(
       context: context,
@@ -341,9 +341,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   Future<void> _pickLabels() async {
     final selected = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
-        builder: (_) => LabelSelectionScreen(
-          initialSelection: _selectedDetailLabels,
-        ),
+        builder: (_) =>
+            LabelSelectionScreen(initialSelection: _selectedDetailLabels),
       ),
     );
 
@@ -594,10 +593,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           position:
               result.location!.latitude != null &&
                   result.location!.longitude != null
-              ? LatLng(
-                  result.location!.latitude!,
-                  result.location!.longitude!,
-                )
+              ? LatLng(result.location!.latitude!, result.location!.longitude!)
               : null,
         );
       }
@@ -605,12 +601,28 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _showScanMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _syncPendingDataInBackground() {
+    unawaited(_runPendingCloudSync());
+  }
+
+  Future<void> _runPendingCloudSync() async {
+    try {
+      await CloudSyncService().syncAllPendingData();
+    } catch (_) {
+      // Keep the local save as the source of truth and retry cloud sync later.
+    }
   }
 
   Future<void> _handleConfirm() async {
+    if (_isSavingExpense) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
 
     if (_selectedCategory == null) {
@@ -636,9 +648,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
+    setState(() {
+      _isSavingExpense = true;
+    });
+
     // Create expense model
     final expense = ExpenseModel()
-      ..userId = 1 // TODO: Get actual user ID from auth
+      ..userId =
+          1 // TODO: Get actual user ID from auth
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -656,15 +673,32 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
-    // Save to local storage
-    await LocalStorageService().saveExpense(expense);
+    try {
+      await LocalStorageService().saveExpense(expense);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSavingExpense = false;
+      });
+      _showScanMessage('The expense could not be saved');
+      return;
+    }
 
     if (!mounted) {
       return;
     }
 
-    _showScanMessage('Expense saved locally');
-    Navigator.of(context).pop(true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Expense saved locally')),
+    );
+    navigator.pop(true);
+    _syncPendingDataInBackground();
   }
 
   Future<void> _showMissingLabelWarning() {
@@ -749,6 +783,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               children: [
                 _ExpenseHeader(
                   title: widget.headerTitle,
+                  isSubmitting: _isSavingExpense,
                   onClose: () => Navigator.of(context).maybePop(),
                   onConfirm: () {
                     _handleConfirm();
@@ -823,8 +858,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                             in _selectedDetailLabels)
                                           Chip(
                                             label: Text(label),
-                                            backgroundColor:
-                                                const Color(0xFFD1D1D1),
+                                            backgroundColor: const Color(
+                                              0xFFD1D1D1,
+                                            ),
                                             deleteIconColor: AppPalette.ink,
                                             onDeleted: () {
                                               setState(() {
@@ -861,14 +897,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                             ? const SizedBox(
                                                 width: 16,
                                                 height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      valueColor:
-                                                          AlwaysStoppedAnimation<
-                                                            Color
-                                                          >(AppPalette.white),
-                                                    ),
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(AppPalette.white),
+                                                ),
                                               )
                                             : SvgPicture.asset(
                                                 'web/icons/Camera.svg',
@@ -899,7 +934,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                     ),
                                   ),
                                   if (_lastReceiptScanResult != null &&
-                                      _lastReceiptScanResult!.hasDetectedData) ...[
+                                      _lastReceiptScanResult!
+                                          .hasDetectedData) ...[
                                     const SizedBox(height: 20),
                                     _ReceiptReviewCard(
                                       result: _lastReceiptScanResult!,
@@ -1006,7 +1042,9 @@ class _ReceiptReviewCard extends StatelessWidget {
         (
           icon: Icons.access_time,
           label: 'Time',
-          value: TimeOfDay.fromDateTime(result.time!).format(context).toLowerCase(),
+          value: TimeOfDay.fromDateTime(
+            result.time!,
+          ).format(context).toLowerCase(),
         ),
       if (result.location != null && result.location!.label.trim().isNotEmpty)
         (
@@ -1231,8 +1269,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final materialTextTheme =
-        Typography.material2021(platform: defaultTargetPlatform).black;
+    final materialTextTheme = Typography.material2021(
+      platform: defaultTargetPlatform,
+    ).black;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1240,6 +1279,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
         child: Column(
           children: [
             _ExpenseHeader(
+              isSubmitting: false,
               title: 'Select Date',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
@@ -1363,6 +1403,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         child: Column(
           children: [
             _ExpenseHeader(
+              isSubmitting: false,
               title: 'Select Location',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () {
@@ -1470,7 +1511,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         }
 
         return GoogleMap(
-          initialCameraPosition: CameraPosition(target: _selectedPoint, zoom: 16),
+          initialCameraPosition: CameraPosition(
+            target: _selectedPoint,
+            zoom: 16,
+          ),
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           onTap: (point) {
@@ -1581,8 +1625,9 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
       return group.sublabels;
     }
 
-    final matchingSublabels =
-        group.sublabels.where((label) => _matchesQuery(label)).toList();
+    final matchingSublabels = group.sublabels
+        .where((label) => _matchesQuery(label))
+        .toList();
 
     if (matchingSublabels.isNotEmpty) {
       return matchingSublabels;
@@ -1644,6 +1689,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
             child: Column(
               children: [
                 _ExpenseHeader(
+                  isSubmitting: false,
                   title: 'Labels',
                   onClose: () => Navigator.of(context).pop(),
                   onConfirm: _save,
@@ -1659,12 +1705,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                       return SingleChildScrollView(
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: EdgeInsets.fromLTRB(
-                          24,
-                          14,
-                          24,
-                          bottomPadding,
-                        ),
+                        padding: EdgeInsets.fromLTRB(24, 14, 24, bottomPadding),
                         child: ConstrainedBox(
                           constraints: BoxConstraints(minHeight: minHeight),
                           child: Column(
@@ -1679,19 +1720,19 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                                   controller: _searchController,
                                   decoration: InputDecoration(
                                     hintText: 'Search Label',
-                                    prefixIconConstraints:
-                                        const BoxConstraints(minWidth: 16),
+                                    prefixIconConstraints: const BoxConstraints(
+                                      minWidth: 16,
+                                    ),
                                     suffixIcon: const Icon(
                                       Icons.search,
                                       color: AppPalette.fieldHint,
                                     ),
                                     fillColor: Colors.transparent,
                                     filled: true,
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                          horizontal: 18,
-                                          vertical: 16,
-                                        ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 16,
+                                    ),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(999),
                                       borderSide: BorderSide.none,
@@ -1722,14 +1763,18 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                                   for (final group in visibleGroups) ...[
                                     _LabelGroupChip(
                                       label: group.label,
-                                      active: _expandedGroupLabel == group.label,
+                                      active:
+                                          _expandedGroupLabel == group.label,
                                       onTap: () => _toggleGroup(group.label),
                                     ),
-                                    for (final label in _visibleSublabels(group))
+                                    for (final label in _visibleSublabels(
+                                      group,
+                                    ))
                                       _SublabelChip(
                                         label: label,
-                                        selected:
-                                            _selectedLabels.contains(label),
+                                        selected: _selectedLabels.contains(
+                                          label,
+                                        ),
                                         onTap: () => _toggleSublabel(label),
                                       ),
                                   ],
@@ -1795,9 +1840,10 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat('#,###', 'en_US').format(
-      int.parse(digitsOnly),
-    );
+    final formatted = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(int.parse(digitsOnly));
 
     return TextEditingValue(
       text: formatted,
@@ -1809,11 +1855,13 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
 class _ExpenseHeader extends StatelessWidget {
   const _ExpenseHeader({
     required this.title,
+    required this.isSubmitting,
     required this.onClose,
     required this.onConfirm,
   });
 
   final String title;
+  final bool isSubmitting;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
 
@@ -1825,7 +1873,7 @@ class _ExpenseHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: onClose,
+            onPressed: isSubmitting ? null : onClose,
             icon: const Icon(Icons.close, color: AppPalette.ink),
           ),
           Expanded(
@@ -1840,8 +1888,17 @@ class _ExpenseHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: onConfirm,
-            icon: const Icon(Icons.check, color: AppPalette.ink),
+            onPressed: isSubmitting ? null : onConfirm,
+            icon: isSubmitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppPalette.ink,
+                    ),
+                  )
+                : const Icon(Icons.check, color: AppPalette.ink),
           ),
         ],
       ),
@@ -1867,9 +1924,7 @@ class _ExpenseField extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: AppPalette.field,
-        border: Border(
-          bottom: BorderSide(color: AppPalette.ink, width: 1.5),
-        ),
+        border: Border(bottom: BorderSide(color: AppPalette.ink, width: 1.5)),
       ),
       child: TextField(
         controller: controller,
@@ -2133,4 +2188,3 @@ class _MiniActionButton extends StatelessWidget {
     );
   }
 }
-

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/goal_model.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -29,6 +32,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
+  bool _isSavingGoal = false;
 
   @override
   void didChangeDependencies() {
@@ -106,6 +110,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   Future<void> _finishGoalSetup() async {
+    if (_isSavingGoal) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
 
     final amount = _parsedGoalAmount();
@@ -120,6 +128,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       return;
     }
 
+    setState(() {
+      _isSavingGoal = true;
+    });
+
     final goal = GoalModel()
       ..userId = _defaultUserId
       ..name = _nameController.text.trim()
@@ -130,18 +142,47 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       ..createdAt = DateTime.now()
       ..isSynced = false;
 
-    await LocalStorageService().saveGoal(goal);
+    try {
+      await LocalStorageService().saveGoal(goal);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSavingGoal = false;
+      });
+      _showMessage('The goal could not be saved');
+      return;
+    }
 
     if (!mounted) {
       return;
     }
 
-    _showMessage('Goal saved locally');
     _resetGoalForm();
     setState(() {
+      _isSavingGoal = false;
       _currentStep = -1;
       _viewState = 1;
     });
+    _showMessage('Goal saved locally');
+    _syncPendingDataInBackground();
+  }
+
+  void _syncPendingDataInBackground() {
+    unawaited(_runPendingCloudSync());
+  }
+
+  Future<void> _runPendingCloudSync() async {
+    try {
+      await CloudSyncService().syncAllPendingData();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage('Goal saved locally. Cloud sync is still pending');
+    }
   }
 
   void _showMessage(String message) {
@@ -209,7 +250,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                   ),
                   IconButton(
                     onPressed: () {},
-                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppPalette.ink,
+                    ),
                   ),
                 ],
               ),
@@ -319,10 +363,14 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             child: ValueListenableBuilder<Box<GoalModel>>(
               valueListenable: LocalStorageService.goalsListenable,
               builder: (context, box, _) {
-                final goals = box.values
-                    .where((goal) => goal.userId == _defaultUserId)
-                    .toList()
-                  ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+                final goals =
+                    box.values
+                        .where((goal) => goal.userId == _defaultUserId)
+                        .toList()
+                      ..sort(
+                        (left, right) =>
+                            right.createdAt.compareTo(left.createdAt),
+                      );
 
                 return ListView(
                   padding: const EdgeInsets.all(24),
@@ -393,7 +441,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
-                onPressed: _closeGoalSetup,
+                onPressed: _isSavingGoal ? null : _closeGoalSetup,
                 icon: const Icon(Icons.close, size: 30),
               ),
             ),
@@ -429,8 +477,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   Widget _buildStepPlan() {
     final amount = _parsedGoalAmount() ?? 0;
-    final rawDaysLeft =
-        _goalDeadline.difference(DateUtils.dateOnly(DateTime.now())).inDays;
+    final rawDaysLeft = _goalDeadline
+        .difference(DateUtils.dateOnly(DateTime.now()))
+        .inDays;
     final daysLeft = rawDaysLeft < 1 ? 1 : rawDaysLeft;
     final suggestedDailySaving = amount / daysLeft;
 
@@ -468,13 +517,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             const SizedBox(height: 180, child: AntAsset('web/ant/Ok.svg')),
             const Spacer(),
             ElevatedButton(
-              onPressed: _finishGoalSetup,
+              onPressed: _isSavingGoal ? null : _finishGoalSetup,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
-              child: const Text(
-                'Alright!',
-                style: TextStyle(color: Colors.white),
+              child: Text(
+                _isSavingGoal ? 'Saving...' : 'Alright!',
+                style: const TextStyle(color: Colors.white),
               ),
             ),
           ],
@@ -662,9 +711,10 @@ class _GoalAmountFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat('#,###', 'en_US').format(
-      int.parse(digitsOnly),
-    );
+    final formatted = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(int.parse(digitsOnly));
 
     return TextEditingValue(
       text: formatted,

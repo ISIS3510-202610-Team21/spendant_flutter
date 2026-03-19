@@ -18,13 +18,6 @@ import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
 
-class _ExpenseLabelOption {
-  const _ExpenseLabelOption({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-}
-
 class _ExpenseLabelGroup {
   const _ExpenseLabelGroup({required this.label, required this.sublabels});
 
@@ -36,34 +29,63 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   _ExpenseLabelGroup(
     label: 'Academic Essentials',
     sublabels: <String>[
-      'University Fees',
-      'Learning Materials',
       'Commute',
+      'Learning Materials',
+      'University Fees',
     ],
   ),
   _ExpenseLabelGroup(
     label: 'Lifestyle & Social',
     sublabels: <String>[
-      'Social/Group Hangouts',
-      'Food Delivery',
       'Entertainment',
+      'Food',
+      'Food Delivery',
+      'Gifts',
+      'Group Hangouts',
       'Subscriptions',
     ],
   ),
   _ExpenseLabelGroup(
     label: 'Living Expenses',
-    sublabels: <String>['Rent & Utilities', 'Groceries', 'Personal Care'],
+    sublabels: <String>[
+      'Groceries',
+      'Personal Care',
+      'Rent',
+      'Services',
+      'Transport',
+      'Utilities',
+    ],
   ),
   _ExpenseLabelGroup(
     label: 'Strategic & Utility Tags',
     sublabels: <String>[
-      'Social Ledger (Owed)',
-      'Goal Savings',
-      'Impulse/Emotional',
       'Emergency',
+      'Impulse',
+      'Owed',
     ],
   ),
 ];
+
+const Map<String, String> _detailLabelPrimaryCategories = <String, String>{
+  'Food': 'Food',
+  'Food Delivery': 'Food',
+  'Groceries': 'Food',
+  'Commute': 'Transport',
+  'Transport': 'Transport',
+  'Learning Materials': 'Services',
+  'University Fees': 'Services',
+  'Personal Care': 'Services',
+  'Rent': 'Services',
+  'Services': 'Services',
+  'Utilities': 'Services',
+  'Entertainment': 'Other',
+  'Gifts': 'Other',
+  'Group Hangouts': 'Other',
+  'Subscriptions': 'Other',
+  'Emergency': 'Other',
+  'Impulse': 'Other',
+  'Owed': 'Other',
+};
 
 enum _ReceiptSourceOption { camera, gallery, file }
 
@@ -103,14 +125,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final ReceiptScanService _receiptScanService = ReceiptScanService();
 
-  static const List<_ExpenseLabelOption> _predefinedLabels =
-      <_ExpenseLabelOption>[
-        _ExpenseLabelOption(label: 'Food', color: AppPalette.food),
-        _ExpenseLabelOption(label: 'Transport', color: AppPalette.transport),
-        _ExpenseLabelOption(label: 'Services', color: AppPalette.services),
-        _ExpenseLabelOption(label: 'Other', color: AppPalette.other),
-      ];
-
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
   DateTime _selectedDate = DateTime.now();
@@ -142,6 +156,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ).format(editingExpense.amount.round());
       _selectedCategory = editingExpense.primaryCategory;
       _selectedDetailLabels = <String>[...editingExpense.detailLabels];
+      _selectedCategory =
+          _derivePrimaryCategory(_selectedDetailLabels) ??
+          editingExpense.primaryCategory;
       _selectedDate = editingExpense.date;
 
       final timeParts = editingExpense.time.split(':');
@@ -171,6 +188,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     _expenseValueController.text = draft.amount;
     _selectedCategory = draft.primaryCategory;
     _selectedDetailLabels = <String>[...draft.detailLabels];
+    _selectedCategory =
+        _derivePrimaryCategory(_selectedDetailLabels) ?? draft.primaryCategory;
     _selectedDate = draft.date;
     _selectedTime = draft.time;
 
@@ -182,6 +201,26 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             : null,
       );
     }
+  }
+
+  String? _derivePrimaryCategory(List<String> labels) {
+    for (final label in labels) {
+      final category = _detailLabelPrimaryCategories[label];
+      if (category != null) {
+        return category;
+      }
+    }
+
+    if (labels.isNotEmpty) {
+      return 'Other';
+    }
+
+    return null;
+  }
+
+  void _applySelectedLabels(List<String> labels) {
+    _selectedDetailLabels = labels;
+    _selectedCategory = _derivePrimaryCategory(labels);
   }
 
   Future<void> _pickDate() async {
@@ -362,12 +401,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
-  void _selectCategory(String label) {
-    setState(() {
-      _selectedCategory = _selectedCategory == label ? null : label;
-    });
-  }
-
   Future<void> _pickLabels() async {
     final selected = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
@@ -382,7 +415,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     setState(() {
-      _selectedDetailLabels = selected;
+      _applySelectedLabels(selected);
+    });
+  }
+
+  void _removeSelectedLabel(String label) {
+    setState(() {
+      final updated = List<String>.from(_selectedDetailLabels)
+        ..remove(label);
+      _applySelectedLabels(updated);
     });
   }
 
@@ -647,15 +688,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   Future<void> _handleConfirm() async {
     FocusScope.of(context).unfocus();
 
-    if (_selectedCategory == null) {
-      _showScanMessage('Please choose a main category');
-      return;
-    }
-
     if (_selectedDetailLabels.isEmpty) {
       await _showMissingLabelWarning();
       return;
     }
+
+    _selectedCategory ??= _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
 
     // Validate required fields
     if (_expenseNameController.text.trim().isEmpty) {
@@ -838,57 +876,22 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   ),
                                   const SizedBox(height: 18),
                                   Wrap(
-                                    alignment: WrapAlignment.center,
+                                    alignment: WrapAlignment.start,
                                     spacing: 10,
                                     runSpacing: 10,
                                     children: [
-                                      for (final option in _predefinedLabels)
-                                        _PrimaryCategoryChip(
-                                          label: option.label,
-                                          color: option.color,
-                                          selected:
-                                              _selectedCategory == option.label,
+                                      _MiniActionButton(
+                                        icon: Icons.add,
+                                        label: 'Label',
+                                        onPressed: _pickLabels,
+                                      ),
+                                      for (final label in _selectedDetailLabels)
+                                        _SelectedExpenseLabelChip(
+                                          label: label,
                                           onTap: () =>
-                                              _selectCategory(option.label),
+                                              _removeSelectedLabel(label),
                                         ),
                                     ],
-                                  ),
-                                  if (_selectedDetailLabels.isNotEmpty) ...[
-                                    const SizedBox(height: 14),
-                                    Wrap(
-                                      alignment: WrapAlignment.center,
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        for (final label
-                                            in _selectedDetailLabels)
-                                          Chip(
-                                            label: Text(label),
-                                            backgroundColor:
-                                                const Color(0xFFD1D1D1),
-                                            deleteIconColor: AppPalette.ink,
-                                            onDeleted: () {
-                                              setState(() {
-                                                _selectedDetailLabels.remove(
-                                                  label,
-                                                );
-                                              });
-                                            },
-                                            labelStyle: GoogleFonts.nunito(
-                                              fontWeight: FontWeight.w800,
-                                              color: AppPalette.ink,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                  const SizedBox(height: 16),
-                                  Center(
-                                    child: _MiniActionButton(
-                                      icon: Icons.add,
-                                      label: 'Label',
-                                      onPressed: _pickLabels,
-                                    ),
                                   ),
                                   const SizedBox(height: 24),
                                   Center(
@@ -1779,88 +1782,17 @@ class LabelSelectionScreen extends StatefulWidget {
 }
 
 class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
-  final TextEditingController _searchController = TextEditingController();
   late List<String> _selectedLabels;
-  String _query = '';
-  String? _expandedGroupLabel;
 
   @override
   void initState() {
     super.initState();
     _selectedLabels = <String>[...widget.initialSelection];
-    _expandedGroupLabel = _groupLabelForSelection(widget.initialSelection);
-    _searchController.addListener(_handleSearchChanged);
   }
 
   @override
   void dispose() {
-    _searchController
-      ..removeListener(_handleSearchChanged)
-      ..dispose();
     super.dispose();
-  }
-
-  void _handleSearchChanged() {
-    setState(() {
-      _query = _searchController.text.trim().toLowerCase();
-    });
-  }
-
-  String? _groupLabelForSelection(List<String> selection) {
-    for (final label in selection) {
-      for (final group in _expenseLabelGroups) {
-        if (group.sublabels.contains(label)) {
-          return group.label;
-        }
-      }
-    }
-    return null;
-  }
-
-  bool _matchesQuery(String value) {
-    if (_query.isEmpty) {
-      return true;
-    }
-    return value.toLowerCase().contains(_query);
-  }
-
-  List<_ExpenseLabelGroup> _visibleGroups() {
-    if (_query.isEmpty) {
-      return _expenseLabelGroups;
-    }
-
-    return _expenseLabelGroups.where((group) {
-      return _matchesQuery(group.label) ||
-          group.sublabels.any((label) => _matchesQuery(label));
-    }).toList();
-  }
-
-  List<String> _visibleSublabels(_ExpenseLabelGroup group) {
-    if (_query.isEmpty) {
-      if (_expandedGroupLabel != group.label) {
-        return const <String>[];
-      }
-      return group.sublabels;
-    }
-
-    final matchingSublabels =
-        group.sublabels.where((label) => _matchesQuery(label)).toList();
-
-    if (matchingSublabels.isNotEmpty) {
-      return matchingSublabels;
-    }
-
-    if (_matchesQuery(group.label)) {
-      return group.sublabels;
-    }
-
-    return const <String>[];
-  }
-
-  void _toggleGroup(String label) {
-    setState(() {
-      _expandedGroupLabel = _expandedGroupLabel == label ? null : label;
-    });
   }
 
   void _toggleSublabel(String label) {
@@ -1893,12 +1825,9 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = 124.0 + keyboardInset;
-    final visibleGroups = _visibleGroups();
+    final bottomPadding = 132.0 + MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white,
       body: Stack(
         children: [
@@ -1909,108 +1838,40 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                   title: 'Labels',
                   onClose: () => Navigator.of(context).pop(),
                   onConfirm: _save,
+                  showConfirm: false,
                 ),
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final minHeight = math.max(
-                        0.0,
-                        constraints.maxHeight - bottomPadding,
-                      );
-
-                      return SingleChildScrollView(
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: EdgeInsets.fromLTRB(
-                          24,
-                          14,
-                          24,
-                          bottomPadding,
-                        ),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: minHeight),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(24, 24, 24, bottomPadding),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final group in _expenseLabelGroups) ...[
+                          Text(
+                            group.label,
+                            style: GoogleFonts.nunito(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: AppPalette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 12,
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: AppPalette.field,
-                                  borderRadius: BorderRadius.circular(999),
+                              for (final label in group.sublabels)
+                                _SublabelChip(
+                                  label: label,
+                                  selected: _selectedLabels.contains(label),
+                                  onTap: () => _toggleSublabel(label),
                                 ),
-                                child: TextField(
-                                  controller: _searchController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Search Label',
-                                    prefixIconConstraints:
-                                        const BoxConstraints(minWidth: 16),
-                                    suffixIcon: const Icon(
-                                      Icons.search,
-                                      color: AppPalette.fieldHint,
-                                    ),
-                                    fillColor: Colors.transparent,
-                                    filled: true,
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                          horizontal: 18,
-                                          vertical: 16,
-                                        ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: const BorderSide(
-                                        color: AppPalette.green,
-                                      ),
-                                    ),
-                                  ),
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppPalette.ink,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeInOut,
-                                alignment: Alignment.topLeft,
-                                child: Wrap(
-                                  spacing: 7,
-                                  runSpacing: 8,
-                                  children: [
-                                    for (final group in visibleGroups) ...[
-                                      _LabelGroupChip(
-                                        label: group.label,
-                                        active:
-                                            _expandedGroupLabel == group.label,
-                                        onTap: () =>
-                                            _toggleGroup(group.label),
-                                      ),
-                                      for (final label
-                                          in _visibleSublabels(group))
-                                        _SublabelChip(
-                                          label: label,
-                                          selected:
-                                              _selectedLabels.contains(label),
-                                          onTap: () =>
-                                              _toggleSublabel(label),
-                                        ),
-                                    ],
-                                  ],
-                                ),
-                              ),
                             ],
                           ),
-                        ),
-                      );
-                    },
+                          const SizedBox(height: 28),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -2021,26 +1882,27 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
             curve: Curves.easeOut,
             left: 0,
             right: 0,
-            bottom: 22 + keyboardInset,
+            bottom: 24,
             child: SafeArea(
               top: false,
               child: Center(
                 child: SizedBox(
-                  width: 88,
-                  height: 42,
+                  width: 172,
+                  height: 50,
                   child: ElevatedButton(
-                    onPressed: _selectedLabels.isEmpty ? null : _save,
+                    onPressed: _save,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppPalette.ink,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFA6A6A6),
-                      disabledForegroundColor: Colors.white,
                       textStyle: GoogleFonts.nunito(
-                        fontSize: 13,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                       ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                    child: const Text('Save'),
+                    child: const Text('Done'),
                   ),
                 ),
               ),
@@ -2082,11 +1944,13 @@ class _ExpenseHeader extends StatelessWidget {
     required this.title,
     required this.onClose,
     required this.onConfirm,
+    this.showConfirm = true,
   });
 
   final String title;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
+  final bool showConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -2110,9 +1974,14 @@ class _ExpenseHeader extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            onPressed: onConfirm,
-            icon: const Icon(Icons.check, color: AppPalette.ink),
+          SizedBox(
+            width: 48,
+            child: showConfirm
+                ? IconButton(
+                    onPressed: onConfirm,
+                    icon: const Icon(Icons.check, color: AppPalette.ink),
+                  )
+                : null,
           ),
         ],
       ),
@@ -2214,103 +2083,6 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
-class _PrimaryCategoryChip extends StatelessWidget {
-  const _PrimaryCategoryChip({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  static const double chipHeight = 46;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          height: chipHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: selected ? color : AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Center(
-            widthFactor: 1,
-            child: Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: AppPalette.ink,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LabelGroupChip extends StatelessWidget {
-  const _LabelGroupChip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foregroundColor = active ? AppPalette.green : AppPalette.ink;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          color: active ? Colors.white : const Color(0xFFE4E4E4),
-          borderRadius: BorderRadius.circular(20),
-          border: active
-              ? Border.all(color: AppPalette.green, width: 1.5)
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add, size: 13, color: foregroundColor),
-            const SizedBox(width: 3),
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: foregroundColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SublabelChip extends StatelessWidget {
   const _SublabelChip({
     required this.label,
@@ -2326,21 +2098,78 @@ class _SublabelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         decoration: BoxDecoration(
-          color: selected ? AppPalette.green : const Color(0xFFD1D1D1),
-          borderRadius: BorderRadius.circular(20),
+          color: selected ? AppPalette.green : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
+          ),
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.nunito(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: selected ? 1 : 0,
+              child: const Icon(Icons.check, size: 15, color: AppPalette.ink),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedExpenseLabelChip extends StatelessWidget {
+  const _SelectedExpenseLabelChip({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: _MiniActionButton.buttonHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppPalette.green,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check, size: 17, color: AppPalette.ink),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2359,6 +2188,8 @@ class _MiniActionButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
 
+  static const double buttonHeight = 46;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -2367,7 +2198,7 @@ class _MiniActionButton extends StatelessWidget {
         onTap: onPressed,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          height: _PrimaryCategoryChip.chipHeight,
+          height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: AppPalette.green,

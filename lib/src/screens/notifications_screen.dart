@@ -16,6 +16,7 @@ import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/spendant_delete_dialog.dart';
 import 'new_expense_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -103,27 +104,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     required String title,
     required String name,
   }) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text('Are you sure you want to delete "$name"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+    return showSpendAntDeleteDialog(
+      context,
+      title: title,
+      name: name,
     );
-
-    return shouldDelete ?? false;
   }
 
   Future<void> _deleteExpense(NotificationFeedItem notification) async {
@@ -316,7 +301,7 @@ class _NotificationsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      padding: const EdgeInsets.fromLTRB(12, 30, 12, 16),
       child: Row(
         children: [
           IconButton(

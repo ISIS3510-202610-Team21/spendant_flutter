@@ -10,6 +10,7 @@ import '../models/income_model.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/spendant_delete_dialog.dart';
 import '../widgets/spendant_bottom_nav.dart';
 
 // ─────────────────────────────────────────────────────────
@@ -43,27 +44,11 @@ class BudgetScreen extends StatelessWidget {
     required String title,
     required String name,
   }) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text('Are you sure you want to delete "$name"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+    return showSpendAntDeleteDialog(
+      context,
+      title: title,
+      name: name,
     );
-
-    return shouldDelete ?? false;
   }
 
   Future<void> _confirmDeleteIncome(

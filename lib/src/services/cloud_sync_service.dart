@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
@@ -163,10 +164,18 @@ class CloudSyncService {
       }
 
       try {
+        final localId = _localIdFor(expense, index);
         final documentId = await _upsertDocument(
           collectionName: 'expenses',
           serverId: expense.serverId,
-          data: _expenseToMap(expense, index),
+          fallbackDocumentId: _entityDocumentId(
+            firebaseUid: _firebaseUidForEntity(),
+            localId: localId,
+          ),
+          includeSyncMetadata: false,
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _expenseToMap(expense, localId),
         );
         await _localStorage.markExpenseAsSynced(index, documentId);
         uploadedExpenses++;
@@ -183,10 +192,18 @@ class CloudSyncService {
       }
 
       try {
+        final localId = _localIdFor(income, index);
         final documentId = await _upsertDocument(
           collectionName: 'incomes',
           serverId: income.serverId,
-          data: _incomeToMap(income, index),
+          fallbackDocumentId: _entityDocumentId(
+            firebaseUid: _firebaseUidForEntity(),
+            localId: localId,
+          ),
+          includeSyncMetadata: false,
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _incomeToMap(income, localId),
         );
         await _localStorage.markIncomeAsSynced(index, documentId);
         uploadedIncomes++;
@@ -203,10 +220,18 @@ class CloudSyncService {
       }
 
       try {
+        final localId = _localIdFor(goal, index);
         final documentId = await _upsertDocument(
           collectionName: 'goals',
           serverId: goal.serverId,
-          data: _goalToMap(goal, index),
+          fallbackDocumentId: _entityDocumentId(
+            firebaseUid: _firebaseUidForEntity(),
+            localId: localId,
+          ),
+          includeSyncMetadata: false,
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _goalToMap(goal, localId),
         );
         await _localStorage.markGoalAsSynced(index, documentId);
         uploadedGoals++;
@@ -243,10 +268,16 @@ class CloudSyncService {
       }
 
       try {
+        final localId = _localIdFor(user, index);
+        final uid = _firebaseUidForUser(user, localId);
         final documentId = await _upsertDocument(
           collectionName: 'users',
           serverId: user.serverId,
-          data: _userToMap(user, index),
+          fallbackDocumentId: uid,
+          includeSyncMetadata: false,
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _userToMap(user, localId),
         );
         await _localStorage.markUserAsSynced(index, documentId);
         uploadedUsers++;
@@ -460,17 +491,24 @@ class CloudSyncService {
   Future<String> _upsertDocument({
     required String collectionName,
     required String? serverId,
+    String? fallbackDocumentId,
+    bool includeSyncMetadata = true,
+    bool preferFallbackDocumentId = false,
+    bool deleteLegacyDocumentWhenMigrating = false,
     required Map<String, Object?> data,
   }) async {
     final collection = _firestore.collection(collectionName);
-    final document = serverId != null && serverId.trim().isNotEmpty
-        ? collection.doc(serverId)
-        : collection.doc();
+    final resolvedDocumentId = _resolvedDocumentId(
+      serverId: serverId,
+      fallbackDocumentId: fallbackDocumentId,
+      preferFallbackDocumentId: preferFallbackDocumentId,
+    );
+    final document = collection.doc(resolvedDocumentId);
+    final payload = includeSyncMetadata
+        ? <String, Object?>{...data, 'syncedAt': FieldValue.serverTimestamp()}
+        : data;
 
-    await document.set(<String, Object?>{
-      ...data,
-      'syncedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await document.set(payload);
 
     final remoteSnapshot = await document.get(
       const GetOptions(source: Source.server),
@@ -481,16 +519,25 @@ class CloudSyncService {
       );
     }
 
+    final legacyServerId = serverId?.trim();
+    if (deleteLegacyDocumentWhenMigrating &&
+        legacyServerId != null &&
+        legacyServerId.isNotEmpty &&
+        legacyServerId != document.id) {
+      await collection.doc(legacyServerId).delete();
+    }
+
     return document.id;
   }
 
-  Map<String, Object?> _expenseToMap(ExpenseModel expense, int localIndex) {
+  Map<String, Object?> _expenseToMap(ExpenseModel expense, int localId) {
     return <String, Object?>{
-      'localIndex': localIndex,
+      'id': localId,
       'userId': expense.userId,
+      'firebaseUid': _firebaseUidForEntity(),
       'name': expense.name,
       'amount': expense.amount,
-      'date': expense.date,
+      'date': _toEpochMillis(expense.date),
       'time': expense.time,
       'latitude': expense.latitude,
       'longitude': expense.longitude,
@@ -501,41 +548,40 @@ class CloudSyncService {
       'isRecurring': expense.isRecurring,
       'recurrenceInterval': expense.recurrenceInterval,
       'recurrenceUnit': expense.recurrenceUnit,
-      'nextOccurrenceDate': expense.nextOccurrenceDate,
-      'createdAt': expense.createdAt,
+      'nextOccurrenceDate': _toEpochMillis(expense.nextOccurrenceDate),
+      'createdAt': _toEpochMillis(expense.createdAt),
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
-      'entityType': 'expense',
     };
   }
 
-  Map<String, Object?> _incomeToMap(IncomeModel income, int localIndex) {
+  Map<String, Object?> _incomeToMap(IncomeModel income, int localId) {
     return <String, Object?>{
-      'localIndex': localIndex,
+      'id': localId,
       'userId': income.userId,
+      'firebaseUid': _firebaseUidForEntity(),
       'name': income.name,
       'amount': income.amount,
       'type': income.type,
       'recurrenceInterval': income.recurrenceInterval,
       'recurrenceUnit': income.recurrenceUnit,
-      'nextOccurrenceDate': income.nextOccurrenceDate,
-      'startDate': income.startDate,
-      'createdAt': income.createdAt,
-      'entityType': 'income',
+      'nextOccurrenceDate': _toEpochMillis(income.nextOccurrenceDate),
+      'startDate': _toEpochMillis(income.startDate),
+      'createdAt': _toEpochMillis(income.createdAt),
     };
   }
 
-  Map<String, Object?> _goalToMap(GoalModel goal, int localIndex) {
+  Map<String, Object?> _goalToMap(GoalModel goal, int localId) {
     return <String, Object?>{
-      'localIndex': localIndex,
+      'id': localId,
       'userId': goal.userId,
+      'firebaseUid': _firebaseUidForEntity(),
       'name': goal.name,
       'targetAmount': goal.targetAmount,
       'currentAmount': goal.currentAmount,
-      'deadline': goal.deadline,
+      'deadline': _toEpochMillis(goal.deadline),
       'isCompleted': goal.isCompleted,
-      'createdAt': goal.createdAt,
-      'entityType': 'goal',
+      'createdAt': _toEpochMillis(goal.createdAt),
     };
   }
 
@@ -551,19 +597,116 @@ class CloudSyncService {
     };
   }
 
-  Map<String, Object?> _userToMap(UserModel user, int localIndex) {
+  Map<String, Object?> _userToMap(UserModel user, int localId) {
+    final username = _normalizedUsername(user);
+    final uid = _firebaseUidForUser(user, localId);
+    final displayName = _normalizedDisplayName(user, username);
+
     return <String, Object?>{
-      'localIndex': localIndex,
-      'username': user.username,
+      'uid': uid,
+      'username': username,
       'email': user.email,
-      'passwordHash': user.passwordHash,
-      'firebaseUid': user.firebaseUid,
-      'displayName': user.displayName,
-      'handle': user.handle,
-      'avatarPath': user.avatarPath,
-      'isFingerprintEnabled': user.isFingerprintEnabled,
-      'createdAt': user.createdAt,
-      'entityType': 'user',
+      'displayName': displayName,
+      'handle': _normalizedHandle(user, username),
+      'createdAt': _toEpochMillis(user.createdAt),
     };
+  }
+
+  int _localIdFor(HiveObject object, int fallbackIndex) {
+    final key = object.key;
+    if (key is int) {
+      return key;
+    }
+    if (key is String) {
+      return int.tryParse(key) ?? fallbackIndex;
+    }
+    return fallbackIndex;
+  }
+
+  String _entityDocumentId({
+    required String firebaseUid,
+    required int localId,
+  }) {
+    return '${firebaseUid}_$localId';
+  }
+
+  String _resolvedDocumentId({
+    required String? serverId,
+    required String? fallbackDocumentId,
+    required bool preferFallbackDocumentId,
+  }) {
+    if (preferFallbackDocumentId &&
+        fallbackDocumentId != null &&
+        fallbackDocumentId.trim().isNotEmpty) {
+      return fallbackDocumentId;
+    }
+    if (serverId != null && serverId.trim().isNotEmpty) {
+      return serverId;
+    }
+    if (fallbackDocumentId != null && fallbackDocumentId.trim().isNotEmpty) {
+      return fallbackDocumentId;
+    }
+    return _firestore.collection('_').doc().id;
+  }
+
+  int? _toEpochMillis(DateTime? value) {
+    return value?.millisecondsSinceEpoch;
+  }
+
+  String _firebaseUidForEntity() {
+    final box = LocalStorageService.userBox;
+    for (var index = 0; index < box.length; index++) {
+      final user = box.getAt(index);
+      if (user == null) {
+        continue;
+      }
+
+      return _firebaseUidForUser(user, _localIdFor(user, index));
+    }
+    return 'user_1';
+  }
+
+  String _firebaseUidForUser(UserModel user, int localId) {
+    final firebaseUid = user.firebaseUid?.trim();
+    if (firebaseUid != null && firebaseUid.isNotEmpty) {
+      return firebaseUid;
+    }
+    return 'user_$localId';
+  }
+
+  String _normalizedUsername(UserModel user) {
+    final username = user.username.trim();
+    if (username.isNotEmpty) {
+      return username;
+    }
+
+    final displayName = user.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    return 'User';
+  }
+
+  String _normalizedDisplayName(UserModel user, String username) {
+    final displayName = user.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+    return username;
+  }
+
+  String _normalizedHandle(UserModel user, String username) {
+    final handle = user.handle?.trim();
+    if (handle != null && handle.isNotEmpty) {
+      return handle;
+    }
+
+    final normalized = username.toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]+'),
+      '',
+    );
+    final safeValue = normalized.isEmpty ? 'spendant' : normalized;
+    return '@$safeValue';
   }
 }

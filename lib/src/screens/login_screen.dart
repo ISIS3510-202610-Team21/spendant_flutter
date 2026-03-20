@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../models/user_model.dart';
 import '../services/auth_memory_store.dart';
+import '../services/cloud_sync_service.dart';
+import '../services/local_storage_service.dart';
 import '../widgets/auth_chrome.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -72,9 +77,51 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     super.dispose();
   }
 
+  String _buildHandle(String username) {
+    final normalized = username.toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]+'),
+      '',
+    );
+    final safeValue = normalized.isEmpty ? 'spendant' : normalized;
+    return '@$safeValue';
+  }
+
+  Future<void> _saveUserLocally(String username) async {
+    final normalizedUsername = username.isEmpty ? 'there' : username;
+    final userBox = LocalStorageService.userBox;
+    final now = DateTime.now();
+
+    if (userBox.isNotEmpty) {
+      final existingUser = userBox.getAt(0);
+      if (existingUser != null) {
+        existingUser.username = normalizedUsername;
+        existingUser.displayName = normalizedUsername;
+        existingUser.handle = _buildHandle(normalizedUsername);
+        existingUser.isSynced = false;
+        if (existingUser.createdAt.millisecondsSinceEpoch <= 0) {
+          existingUser.createdAt = now;
+        }
+        await existingUser.save();
+        return;
+      }
+    }
+
+    final user = UserModel()
+      ..username = normalizedUsername
+      ..displayName = normalizedUsername
+      ..handle = _buildHandle(normalizedUsername)
+      ..email = ''
+      ..createdAt = now
+      ..isSynced = false;
+
+    await LocalStorageService().saveUser(user);
+  }
+
   Future<void> _submit() async {
     final username = _usernameController.text.trim();
     await AuthMemoryStore.saveLogin(username.isEmpty ? 'there' : username);
+    await _saveUserLocally(username);
+    unawaited(CloudSyncService().syncAllPendingData());
     if (!mounted) {
       return;
     }

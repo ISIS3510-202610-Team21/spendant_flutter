@@ -36,6 +36,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
+  GoalModel? _editingGoal;
+  String? _goalBudgetBlockedTitle;
+  String? _goalBudgetBlockedMessage;
   bool _isSavingGoal = false;
   String _profileName = 'John Doe';
   String _profileHandle = '@johndoe';
@@ -122,16 +125,26 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     _showMessage('Profile updated');
   }
 
-  void _startGoalSetup() {
+  void _startGoalSetup({GoalModel? goal}) {
     FocusScope.of(context).unfocus();
 
     final summary = _budgetSummary();
-    if (!summary.hasIncome) {
+    if (goal == null && !summary.hasIncome) {
       _showMessage('Add an income first so we can calculate your daily budget');
       return;
     }
 
-    _resetGoalForm();
+    if (goal == null) {
+      _resetGoalForm();
+    } else {
+      _editingGoal = goal;
+      _nameController.text = goal.name;
+      _amountController.text = NumberFormat(
+        '#,###',
+        'en_US',
+      ).format(goal.targetAmount.round());
+      _goalDeadline = goal.deadline;
+    }
     setState(() {
       _currentStep = 0;
     });
@@ -139,6 +152,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   void _closeGoalSetup() {
     FocusScope.of(context).unfocus();
+    _resetGoalForm();
     setState(() {
       _currentStep = -1;
     });
@@ -148,6 +162,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     _nameController.clear();
     _amountController.clear();
     _goalDeadline = DateTime.now().add(const Duration(days: 30));
+    _editingGoal = null;
+    _goalBudgetBlockedTitle = null;
+    _goalBudgetBlockedMessage = null;
   }
 
   double? _parsedGoalAmount() {
@@ -165,11 +182,41 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       return null;
     }
 
-    return DailyBudgetService.validateNewGoal(
-      userId: _defaultUserId,
+    final editingGoal = _editingGoal;
+    if (editingGoal == null) {
+      return DailyBudgetService.validateNewGoal(
+        userId: _defaultUserId,
+        targetAmount: amount,
+        currentAmount: 0,
+        deadline: _goalDeadline,
+      );
+    }
+
+    final summary = _budgetSummary();
+    final currentGoalDailyCommitment = DailyBudgetService.dailyGoalContribution(
+      editingGoal,
+    );
+    final editedDailyGoalAmount = DailyBudgetService.projectedGoalDailyContribution(
       targetAmount: amount,
-      currentAmount: 0,
+      currentAmount: editingGoal.currentAmount,
       deadline: _goalDeadline,
+      isCompleted: editingGoal.currentAmount >= amount,
+    );
+    final remainingGoalsCommitment =
+        summary.totalGoalDailyCommitment - currentGoalDailyCommitment;
+    final projectedGoalDailyCommitment =
+        remainingGoalsCommitment + editedDailyGoalAmount;
+
+    return GoalBudgetValidationResult(
+      hasIncome: summary.hasIncome,
+      dailyGoalAmount: editedDailyGoalAmount,
+      currentGoalDailyCommitment: remainingGoalsCommitment,
+      projectedGoalDailyCommitment: projectedGoalDailyCommitment,
+      availableInternalDailyBudget: summary.internalDailyBudget,
+      goalFitsOnItsOwn:
+          editedDailyGoalAmount <= summary.internalDailyBudget + 0.0001,
+      goalFitsWithAllGoals:
+          projectedGoalDailyCommitment <= summary.internalDailyBudget + 0.0001,
     );
   }
 
@@ -177,25 +224,40 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     return 'COP ${_currencyFormat.format(amount.round())}';
   }
 
-  void _showGoalBudgetValidationMessage(GoalBudgetValidationResult validation) {
-    if (!validation.hasIncome) {
-      _showMessage('Add an income first so we can calculate your daily budget');
-      return;
-    }
+  void _showGoalBudgetBlockedScreen(GoalBudgetValidationResult validation) {
+    final title = switch (validation) {
+      GoalBudgetValidationResult(:final hasIncome) when !hasIncome =>
+        'No budget available for this goal',
+      GoalBudgetValidationResult(:final goalFitsOnItsOwn)
+          when !goalFitsOnItsOwn =>
+        'This goal does not fit your current budget',
+      _ => 'Your current budget cannot support this goal',
+    };
 
-    if (!validation.goalFitsOnItsOwn) {
-      _showMessage(
-        'This goal needs about ${_formatCop(validation.dailyGoalAmount)} per day, but your internal daily budget is only ${_formatCop(validation.availableInternalDailyBudget)}.',
-      );
-      return;
-    }
+    final message = switch (validation) {
+      GoalBudgetValidationResult(:final hasIncome) when !hasIncome =>
+        'With your current setup, this goal cannot be created because you do not have an active income feeding the daily budget yet. Go back to Goals and add income first.',
+      GoalBudgetValidationResult(:final goalFitsOnItsOwn, :final dailyGoalAmount, :final availableInternalDailyBudget)
+          when !goalFitsOnItsOwn =>
+        'With your current budget, this goal cannot be reached using the selected amount and deadline. It would need about ${_formatCop(dailyGoalAmount)} per day, but your internal daily budget is only ${_formatCop(availableInternalDailyBudget)}.',
+      GoalBudgetValidationResult(:final projectedGoalDailyCommitment, :final currentGoalDailyCommitment, :final availableInternalDailyBudget) =>
+        'With your current budget and the other goals you already have, this goal cannot be reached with the selected parameters. Your existing goals already reserve ${_formatCop(currentGoalDailyCommitment)} per day, and this one would push the total to ${_formatCop(projectedGoalDailyCommitment)} over an internal daily budget of ${_formatCop(availableInternalDailyBudget)}.',
+    };
 
-    final remainingGoalRoom =
-        validation.availableInternalDailyBudget -
-        validation.currentGoalDailyCommitment;
-    _showMessage(
-      'This goal would push your daily goal commitments to ${_formatCop(validation.projectedGoalDailyCommitment)}. You only have ${_formatCop(remainingGoalRoom)} left for new goals.',
-    );
+    setState(() {
+      _goalBudgetBlockedTitle = title;
+      _goalBudgetBlockedMessage = message;
+      _currentStep = 4;
+    });
+  }
+
+  void _returnToGoalsView() {
+    FocusScope.of(context).unfocus();
+    _resetGoalForm();
+    setState(() {
+      _currentStep = -1;
+      _viewState = 1;
+    });
   }
 
   Future<void> _continueGoalSetup() async {
@@ -222,7 +284,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       final validation = _goalValidation();
       if (validation == null || !validation.canCreateGoal) {
         if (validation != null) {
-          _showGoalBudgetValidationMessage(validation);
+          _showGoalBudgetBlockedScreen(validation);
         }
         return;
       }
@@ -255,7 +317,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     final validation = _goalValidation();
     if (validation == null || !validation.canCreateGoal) {
       if (validation != null) {
-        _showGoalBudgetValidationMessage(validation);
+        _showGoalBudgetBlockedScreen(validation);
       }
       return;
     }
@@ -264,18 +326,29 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _isSavingGoal = true;
     });
 
-    final goal = GoalModel()
-      ..userId = _defaultUserId
-      ..name = _nameController.text.trim()
-      ..targetAmount = amount
-      ..currentAmount = 0
-      ..deadline = _goalDeadline
-      ..isCompleted = false
-      ..createdAt = DateTime.now()
-      ..isSynced = false;
-
     try {
-      await LocalStorageService().saveGoal(goal);
+      final editingGoal = _editingGoal;
+      if (editingGoal == null) {
+        final goal = GoalModel()
+          ..userId = _defaultUserId
+          ..name = _nameController.text.trim()
+          ..targetAmount = amount
+          ..currentAmount = 0
+          ..deadline = _goalDeadline
+          ..isCompleted = false
+          ..createdAt = DateTime.now()
+          ..isSynced = false;
+        await LocalStorageService().saveGoal(goal);
+      } else {
+        editingGoal
+          ..userId = _defaultUserId
+          ..name = _nameController.text.trim()
+          ..targetAmount = amount
+          ..deadline = _goalDeadline
+          ..isCompleted = editingGoal.currentAmount >= amount
+          ..isSynced = false;
+        await editingGoal.save();
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -292,13 +365,14 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       return;
     }
 
-    _resetGoalForm();
+    final wasEditing = _editingGoal != null;
     setState(() {
       _isSavingGoal = false;
       _currentStep = -1;
       _viewState = 1;
     });
-    _showMessage('Goal saved locally');
+    _showMessage(wasEditing ? 'Goal updated locally' : 'Goal saved locally');
+    _resetGoalForm();
     _syncPendingDataInBackground();
   }
 
@@ -546,7 +620,11 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                     const SizedBox(height: 14),
                   ],
                   if (goals.isEmpty) const _EmptyGoalsCard(),
-                  for (final goal in goals) _GoalTile(goal: goal),
+                  for (final goal in goals)
+                    _GoalTile(
+                      goal: goal,
+                      onEdit: () => _startGoalSetup(goal: goal),
+                    ),
                   const SizedBox(height: 30),
                   ElevatedButton(
                     onPressed: canCreateGoal
@@ -598,6 +676,8 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         );
       case 3:
         return _buildStepPlan();
+      case 4:
+        return _buildGoalBudgetBlockedStep();
       default:
         return const SizedBox.shrink();
     }
@@ -749,15 +829,101 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             const SizedBox(height: 180, child: AntAsset('web/ant/ant_thumb.svg')),
             const Spacer(),
             ElevatedButton(
-              onPressed: _isSavingGoal || validation?.canCreateGoal != true
+              onPressed: _isSavingGoal
                   ? null
-                  : _finishGoalSetup,
+                  : () {
+                      if (validation?.canCreateGoal == true) {
+                        _finishGoalSetup();
+                        return;
+                      }
+                      if (validation != null) {
+                        _showGoalBudgetBlockedScreen(validation);
+                      }
+                    },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
               child: Text(
-                _isSavingGoal ? 'Saving...' : 'Alright!',
+                _isSavingGoal
+                    ? (_editingGoal == null ? 'Saving...' : 'Updating...')
+                    : (_editingGoal == null ? 'Alright!' : 'Update Goal'),
                 style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGoalBudgetBlockedStep() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.topLeft,
+              child: IconButton(
+                onPressed: _returnToGoalsView,
+                icon: const Icon(Icons.close, size: 30),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              _goalBudgetBlockedTitle ?? 'This goal does not fit right now',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              _goalBudgetBlockedMessage ??
+                  'With your current budget, this goal cannot be achieved with the parameters you selected.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.ink,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 26),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                'Try changing the target amount, extending the deadline, or increasing your available income before creating this goal again.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppPalette.fieldHint,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            const SizedBox(height: 34),
+            const SizedBox(
+              height: 170,
+              child: AntAsset('web/ant/ant_suprised.svg'),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: _returnToGoalsView,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              child: const Text(
+                'Back to Goals',
+                style: TextStyle(color: Colors.white),
               ),
             ),
           ],
@@ -823,9 +989,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 }
 
 class _GoalTile extends StatelessWidget {
-  const _GoalTile({required this.goal});
+  const _GoalTile({required this.goal, required this.onEdit});
 
   final GoalModel goal;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -835,79 +1002,104 @@ class _GoalTile extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
-      height: 86,
-      child: Stack(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: AppPalette.field,
+        borderRadius: BorderRadius.circular(2),
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: AppPalette.gray,
-              borderRadius: BorderRadius.circular(25),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppPalette.green.withValues(alpha: 0.2),
+            child: const Icon(
+              Icons.flag_outlined,
+              color: AppPalette.ink,
+              size: 22,
             ),
           ),
-          FractionallySizedBox(
-            widthFactor: widthFactor,
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppPalette.green.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        goal.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.nunito(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        'Deadline: ${DateFormat('d/M/y').format(goal.deadline)}',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      Text(
-                        'Saved: COP ${NumberFormat('#,###', 'en_US').format(goal.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Daily reserve: COP ${NumberFormat('#,###', 'en_US').format(dailyReserve.round())}',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                Text(
+                  goal.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
                   ),
                 ),
-                const SizedBox(width: 12),
                 Text(
-                  '${goal.getProgressPercent()}%',
+                  'Deadline: ${DateFormat('d/M/y').format(goal.deadline)}',
                   style: GoogleFonts.nunito(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goal.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Daily reserve: COP ${NumberFormat('#,###', 'en_US').format(dailyReserve.round())}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: widthFactor,
+                    minHeight: 8,
+                    backgroundColor: Colors.white,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppPalette.green,
+                    ),
                   ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${goal.getProgressPercent()}%',
+                style: GoogleFonts.nunito(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
+              ),
+              const SizedBox(height: 8),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                splashRadius: 18,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ],
           ),
         ],
       ),

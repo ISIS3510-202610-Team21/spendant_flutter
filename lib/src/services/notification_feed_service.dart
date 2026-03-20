@@ -8,8 +8,11 @@ import '../theme/expense_visuals.dart';
 enum NotificationFeedType {
   expense,
   warning,
+  goalCreated,
   goalHalfway,
   goalAchieved,
+  incomeCreated,
+  incomeDue,
   budgetWarning,
 }
 
@@ -251,10 +254,16 @@ abstract final class NotificationFeedService {
 
   static NotificationFeedType _mapType(String type) {
     switch (type) {
+      case AppNotificationTypes.goalCreated:
+        return NotificationFeedType.goalCreated;
       case AppNotificationTypes.goalHalfway:
         return NotificationFeedType.goalHalfway;
       case AppNotificationTypes.goalAchieved:
         return NotificationFeedType.goalAchieved;
+      case AppNotificationTypes.incomeCreated:
+        return NotificationFeedType.incomeCreated;
+      case AppNotificationTypes.incomeDue:
+        return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
       default:
@@ -267,7 +276,7 @@ abstract final class NotificationFeedService {
     Map<String, GoalModel> goalByIdentity,
   ) {
     final id = notification.id;
-    const prefixes = <String>['goal-50-', 'goal-100-'];
+    const prefixes = <String>['goal-created-', 'goal-50-', 'goal-100-'];
 
     for (final prefix in prefixes) {
       if (!id.startsWith(prefix)) {

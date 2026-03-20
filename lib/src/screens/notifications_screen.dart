@@ -167,8 +167,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         );
         return;
+      case NotificationFeedType.goalCreated:
       case NotificationFeedType.goalHalfway:
       case NotificationFeedType.goalAchieved:
+      case NotificationFeedType.incomeCreated:
+      case NotificationFeedType.incomeDue:
       case NotificationFeedType.budgetWarning:
         final routeName = notification.routeName;
         if (routeName == null) {
@@ -301,7 +304,7 @@ class _NotificationsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 30, 12, 16),
+      padding: const EdgeInsets.fromLTRB(12, 50, 12, 16),
       child: Row(
         children: [
           IconButton(
@@ -432,32 +435,40 @@ class _NotificationCard extends StatelessWidget {
                     ),
                   if (showsExpenseActions) ...[
                     const SizedBox(height: 8),
-                    IconButton(
-                      onPressed: onDelete,
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: AppPalette.ink,
-                      ),
-                      tooltip: 'Delete expense',
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      splashRadius: 18,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    IconButton(
-                      onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      splashRadius: 18,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: AppPalette.ink,
+                          ),
+                          tooltip: 'Delete expense',
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 18,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        IconButton(
+                          onPressed: onEdit,
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: AppPalette.ink,
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 18,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                        ),
+                      ],
                     ),
                   ] else ...[
                     const SizedBox(height: 10),
@@ -724,6 +735,12 @@ class _NotificationVisuals {
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.warning_amber_rounded,
         );
+      case NotificationFeedType.goalCreated:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.flag_outlined,
+        );
       case NotificationFeedType.goalHalfway:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -735,6 +752,18 @@ class _NotificationVisuals {
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
+        );
+      case NotificationFeedType.incomeCreated:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.account_balance_wallet_outlined,
+        );
+      case NotificationFeedType.incomeDue:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.payments_outlined,
         );
       case NotificationFeedType.budgetWarning:
         return _NotificationVisuals(

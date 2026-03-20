@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../app.dart';
 import '../models/goal_model.dart';
+import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
@@ -361,6 +362,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _isSavingGoal = true;
     });
 
+    GoalModel? createdGoal;
     try {
       final editingGoal = _editingGoal;
       if (editingGoal == null) {
@@ -374,6 +376,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveGoal(goal);
+        createdGoal = goal;
       } else {
         editingGoal
           ..userId = _defaultUserId
@@ -406,6 +409,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _currentStep = -1;
       _viewState = 1;
     });
+    if (createdGoal != null) {
+      unawaited(AppNotificationService.notifyGoalCreated(createdGoal));
+    }
     _showMessage(wasEditing ? 'Goal updated locally' : 'Goal saved locally');
     _resetGoalForm();
     _syncPendingDataInBackground();
@@ -1151,32 +1157,37 @@ class _GoalTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppPalette.ink,
-                ),
-                tooltip: 'Delete goal',
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                splashRadius: 18,
-                constraints: const BoxConstraints(
-                  minWidth: 24,
-                  minHeight: 24,
-                ),
-              ),
-              const SizedBox(height: 2),
-              IconButton(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                splashRadius: 18,
-                constraints: const BoxConstraints(
-                  minWidth: 24,
-                  minHeight: 24,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppPalette.ink,
+                    ),
+                    tooltip: 'Delete goal',
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 18,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 18,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

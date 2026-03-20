@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
+import '../services/app_notification_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
@@ -293,27 +294,38 @@ class _IncomeCard extends StatelessWidget {
                   color: AppPalette.ink,
                 ),
               ),
-              const SizedBox(height: 10),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(
-                  Icons.delete_outline,
-                  size: 20,
-                  color: AppPalette.ink,
-                ),
-                tooltip: 'Delete income',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                splashRadius: 18,
-              ),
-              const SizedBox(height: 2),
-              IconButton(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                splashRadius: 18,
-                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: AppPalette.ink,
+                    ),
+                    tooltip: 'Delete income',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    splashRadius: 18,
+                  ),
+                  const SizedBox(width: 2),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 18,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -458,6 +470,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       _isSavingIncome = true;
     });
 
+    IncomeModel? createdIncome;
     try {
       final editingIncome = widget.editingIncome;
       if (editingIncome == null) {
@@ -472,6 +485,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveIncome(income);
+        createdIncome = income;
       } else {
         editingIncome
           ..userId = _defaultUserId
@@ -510,6 +524,9 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         ),
       ),
     );
+    if (createdIncome != null) {
+      unawaited(AppNotificationService.notifyIncomeCreated(createdIncome));
+    }
     navigator.pop(true);
     _syncPendingDataInBackground();
   }

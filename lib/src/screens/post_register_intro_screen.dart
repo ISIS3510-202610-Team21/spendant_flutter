@@ -1,9 +1,12 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
+import '../services/notification_reader_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
 
@@ -11,44 +14,123 @@ class PostRegisterIntroScreen extends StatefulWidget {
   const PostRegisterIntroScreen({super.key});
 
   @override
-  State<PostRegisterIntroScreen> createState() => _PostRegisterIntroScreenState();
+  State<PostRegisterIntroScreen> createState() =>
+      _PostRegisterIntroScreenState();
 }
 
 class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
   int _step = 0;
+  AppLifecycleListener? _appLifecycleListener;
+  bool _waitingForNotificationReaderAccess = false;
 
   static const List<_RegisterIntroStep> _steps = <_RegisterIntroStep>[
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_presenting.svg',
       message:
-          "Welcome to SpendAnt!\n\nWe’ll help you handle the small\nstuff so your savings can grow big!",
+          "Welcome to SpendAnt!\n\nWe'll help you handle the small\nstuff so your savings can grow big!",
       primaryLabel: 'Continue',
     ),
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_waving.svg',
       message:
-          "To help us spot patterns in your\nspending, like that recurring\nFriday lunch or upcoming travel,\nwe’d love to sync with your\ncalendar.",
+          "To help us spot patterns in your\nspending, like that recurring\nFriday lunch or upcoming travel,\nwe'd love to sync with your\ncalendar.",
       primaryLabel: 'Sync Calendar',
       secondaryLabel: 'Skip',
     ),
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_idle.svg',
       message:
-          'Want instant insights? Allow\nnotification access for Google Pay,\nand SpendAnt will categorize your\nspending the second it happens.',
+          'On Android, SpendAnt can send\nits own alerts and read Google Pay\nnotifications so purchases become\nexpenses automatically.',
       primaryLabel: 'Allow Notification Access',
       secondaryLabel: 'Skip',
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _appLifecycleListener = AppLifecycleListener(
+      onResume: () {
+        unawaited(_handleAppResume());
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _appLifecycleListener?.dispose();
+    super.dispose();
+  }
 
   Future<void> _goHome() async {
     if (!mounted) {
       return;
     }
 
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      AppRoutes.home,
-      (route) => false,
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+  }
+
+  Future<void> _handleAppResume() async {
+    if (!_waitingForNotificationReaderAccess ||
+        !NotificationReaderService.isSupportedPlatform) {
+      return;
+    }
+
+    final isEnabled = await NotificationReaderService.isAccessEnabled();
+    if (!mounted || !isEnabled) {
+      return;
+    }
+
+    _waitingForNotificationReaderAccess = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
+        ),
+      ),
     );
+    await _goHome();
+  }
+
+  Future<void> _requestPostingPermission() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Notification permission is only available on mobile devices.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final status = await Permission.notification.request();
+    if (!mounted) {
+      return;
+    }
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'SpendAnt alerts are blocked right now. You can enable them later from system settings.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!status.isGranted && !status.isLimited) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'SpendAnt alert notifications were not enabled on this device.',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _handlePrimaryAction() async {
@@ -75,39 +157,67 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    if (!kIsWeb) {
-      final status = await Permission.notification.request();
-      if (!mounted) {
-        return;
-      }
+    await _requestPostingPermission();
+    if (!mounted) {
+      return;
+    }
 
-      if (status.isPermanentlyDenied || status.isRestricted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Notification access is blocked. Open settings if you want to enable it later.',
-            ),
-          ),
-        );
-        await openAppSettings();
-      } else if (!status.isGranted && !status.isLimited) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notification access was not enabled.'),
-          ),
-        );
-      }
-    } else {
+    if (kIsWeb) {
+      await _goHome();
+      return;
+    }
+
+    if (defaultTargetPlatform != TargetPlatform.android) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Notification permission is only available on mobile devices.',
+            'Automatic Google Pay import is only available on Android.',
           ),
         ),
       );
+      await _goHome();
+      return;
     }
 
-    await _goHome();
+    final hasReaderAccess = await NotificationReaderService.isAccessEnabled();
+    if (!mounted) {
+      return;
+    }
+
+    if (hasReaderAccess) {
+      await _goHome();
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Android also needs notification reading access to import Google Pay purchases. Enable it in the next screen.',
+        ),
+      ),
+    );
+    setState(() {
+      _waitingForNotificationReaderAccess = true;
+    });
+
+    try {
+      await NotificationReaderService.openAccessSettings();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _waitingForNotificationReaderAccess = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'The notification reader settings could not be opened on this device.',
+          ),
+        ),
+      );
+      await _goHome();
+    }
   }
 
   Future<void> _handleSecondaryAction() async {

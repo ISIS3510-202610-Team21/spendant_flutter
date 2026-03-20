@@ -22,6 +22,7 @@ import 'src/screens/set_goal_screen.dart';
 import 'src/services/app_navigation_service.dart';
 import 'src/services/app_notification_service.dart';
 import 'src/services/cloud_sync_service.dart';
+import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
 import 'src/theme/spendant_theme.dart';
@@ -92,6 +93,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
 
     _appLifecycleListener = AppLifecycleListener(
       onResume: () {
+        unawaited(GooglePayExpenseImportService.refresh());
         _syncPendingDataInBackground();
         _scheduleAppNotificationRefresh();
       },

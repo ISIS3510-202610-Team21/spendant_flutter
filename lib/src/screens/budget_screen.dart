@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
 import '../services/cloud_sync_service.dart';
-import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
@@ -38,13 +37,68 @@ class BudgetScreen extends StatelessWidget {
     return 'Every $interval ${unit}s';
   }
 
+  Future<bool> _showDeleteConfirmation(
+    BuildContext context, {
+    required String title,
+    required String name,
+  }) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text('Are you sure you want to delete "$name"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldDelete ?? false;
+  }
+
+  Future<void> _confirmDeleteIncome(
+    BuildContext context,
+    IncomeModel income,
+  ) async {
+    final shouldDelete = await _showDeleteConfirmation(
+      context,
+      title: 'Delete income?',
+      name: income.name,
+    );
+    if (!shouldDelete || !context.mounted) {
+      return;
+    }
+
+    final deletedFromCloud = await CloudSyncService().deleteIncomeRecord(
+      income,
+    );
+    if (!context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deletedFromCloud
+              ? 'Income deleted'
+              : 'Income deleted locally. Cloud cleanup is still pending.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final budgetDependencies = Listenable.merge(<Listenable>[
-      LocalStorageService.incomesListenable,
-      LocalStorageService.goalsListenable,
-      LocalStorageService.expensesListenable,
-    ]);
+    final budgetDependencies = LocalStorageService.incomesListenable;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -59,31 +113,10 @@ class BudgetScreen extends StatelessWidget {
                 final incomes =
                     box.values.where((i) => i.userId == _defaultUserId).toList()
                       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-                final summary = DailyBudgetService.buildSummaryForUser(
-                  _defaultUserId,
-                );
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                   children: [
-                    _BudgetSummaryCard(
-                      summary: summary,
-                      currencyFormat: _currencyFormat,
-                    ),
-                    const SizedBox(height: 14),
-                    _IncomeSyncCard(
-                      incomes: incomes,
-                      currencyFormat: _currencyFormat,
-                    ),
-                    const SizedBox(height: 14),
-                    if (summary.isSpendableBudgetExhausted) ...[
-                      _BudgetNoticeCard(
-                        message: summary.isInternalBudgetExhausted
-                            ? 'Today\'s full daily budget is already gone, so no more money can move toward your goals today.'
-                            : 'Your visible daily budget is already exhausted. Spending more today will affect the money reserved for your goals.',
-                      ),
-                      const SizedBox(height: 14),
-                    ],
                     if (incomes.isEmpty)
                       const _EmptyIncomesCard()
                     else
@@ -93,6 +126,8 @@ class BudgetScreen extends StatelessWidget {
                           color: _cardColors[i % _cardColors.length],
                           recurrenceLabel: _recurrenceLabel(incomes[i]),
                           currencyFormat: _currencyFormat,
+                          onDelete: () =>
+                              _confirmDeleteIncome(context, incomes[i]),
                         ),
                         const SizedBox(height: 12),
                       ],
@@ -180,12 +215,14 @@ class _IncomeCard extends StatelessWidget {
     required this.color,
     required this.recurrenceLabel,
     required this.currencyFormat,
+    required this.onDelete,
   });
 
   final IncomeModel income;
   final Color color;
   final String recurrenceLabel;
   final NumberFormat currencyFormat;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -242,13 +279,31 @@ class _IncomeCard extends StatelessWidget {
               ],
             ),
           ),
-          Text(
-            'COP ${currencyFormat.format(income.amount.round())}',
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'COP ${currencyFormat.format(income.amount.round())}',
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
+              ),
+              const SizedBox(height: 6),
+              IconButton(
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: AppPalette.ink,
+                ),
+                tooltip: 'Delete income',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                splashRadius: 18,
+              ),
+            ],
           ),
         ],
       ),
@@ -304,302 +359,9 @@ class _EmptyIncomesCard extends StatelessWidget {
   }
 }
 
-class _IncomeSyncCard extends StatelessWidget {
-  const _IncomeSyncCard({required this.incomes, required this.currencyFormat});
-
-  final List<IncomeModel> incomes;
-  final NumberFormat currencyFormat;
-
-  Future<void> _syncNow(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      final summary = await CloudSyncService().syncAllPendingData();
-      if (!context.mounted) {
-        return;
-      }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Incomes synced. Uploaded ${summary.uploadedIncomes} income(s). Failures: ${summary.failures}.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      messenger.showSnackBar(
-        SnackBar(content: Text('Income sync failed: $error')),
-      );
-    }
-  }
-
-  Future<void> _verifyNow(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      final verification = await CloudSyncService().verifyCloudState();
-      if (!context.mounted) {
-        return;
-      }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Firestore incomes: ${verification.remoteIncomes}. Pending local incomes: ${verification.pendingIncomes}. Missing remote incomes: ${verification.missingIncomes}.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      messenger.showSnackBar(
-        SnackBar(content: Text('Cloud verification failed: $error')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pendingIncomes = incomes.where((income) => !income.isSynced).length;
-    final syncedIncomes = incomes.length - pendingIncomes;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Income sync status',
-            style: GoogleFonts.nunito(
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Create an income offline and it will stay Local. When internet comes back, tap Sync now or wait for the background retry until it changes to Nube.',
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'Local pending',
-                  value: '$pendingIncomes',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'Uploaded',
-                  value: '$syncedIncomes',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              ElevatedButton(
-                onPressed: () => _syncNow(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppPalette.ink,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Sync now'),
-              ),
-              OutlinedButton(
-                onPressed: () => _verifyNow(context),
-                child: const Text('Verify cloud'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─────────────────────────────────────────────────────────
 // NEW INCOME SCREEN (formulario)
 // ─────────────────────────────────────────────────────────
-
-class _BudgetSummaryCard extends StatelessWidget {
-  const _BudgetSummaryCard({
-    required this.summary,
-    required this.currencyFormat,
-  });
-
-  final DailyBudgetSummary summary;
-  final NumberFormat currencyFormat;
-
-  String _format(double amount) {
-    return 'COP ${currencyFormat.format(amount.round())}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Daily budget overview',
-            style: GoogleFonts.nunito(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Internal budget comes from your incomes. The user budget is what remains after reserving the daily savings needed for all goals.',
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'Internal',
-                  value: _format(summary.internalDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'Goals reserve',
-                  value: _format(summary.totalGoalDailyCommitment),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'User budget',
-                  value: _format(summary.spendableDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _BudgetSummaryStat(
-                  label: 'Spent today',
-                  value: _format(summary.todayExpenses),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BudgetSummaryStat extends StatelessWidget {
-  const _BudgetSummaryStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BudgetNoticeCard extends StatelessWidget {
-  const _BudgetNoticeCard({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF0D9),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.warning_amber_rounded, color: AppPalette.ink),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              message,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: AppPalette.ink,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class NewIncomeScreen extends StatefulWidget {
   const NewIncomeScreen({super.key});

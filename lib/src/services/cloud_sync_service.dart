@@ -133,6 +133,30 @@ class CloudSyncService {
     }
   }
 
+  Future<bool> deleteIncomeRecord(IncomeModel income) async {
+    return _deleteRecord(
+      collectionName: 'incomes',
+      serverId: income.serverId,
+      fallbackDocumentId: _entityDocumentId(
+        firebaseUid: _firebaseUidForEntity(),
+        localId: _localIdFor(income, 0),
+      ),
+      deleteLocal: () => income.delete(),
+    );
+  }
+
+  Future<bool> deleteGoalRecord(GoalModel goal) async {
+    return _deleteRecord(
+      collectionName: 'goals',
+      serverId: goal.serverId,
+      fallbackDocumentId: _entityDocumentId(
+        firebaseUid: _firebaseUidForEntity(),
+        localId: _localIdFor(goal, 0),
+      ),
+      deleteLocal: () => goal.delete(),
+    );
+  }
+
   Future<CloudSyncSummary> _runSyncQueue() async {
     CloudSyncSummary latestSummary = const CloudSyncSummary();
 
@@ -528,6 +552,49 @@ class CloudSyncService {
     }
 
     return document.id;
+  }
+
+  Future<bool> _deleteRecord({
+    required String collectionName,
+    required String? serverId,
+    required String fallbackDocumentId,
+    required Future<void> Function() deleteLocal,
+  }) async {
+    var deletedFromCloud = true;
+
+    if (isSupportedPlatform) {
+      deletedFromCloud = await _deleteCloudDocumentVariants(
+        collectionName: collectionName,
+        serverId: serverId,
+        fallbackDocumentId: fallbackDocumentId,
+      );
+    }
+
+    await deleteLocal();
+    return deletedFromCloud;
+  }
+
+  Future<bool> _deleteCloudDocumentVariants({
+    required String collectionName,
+    required String? serverId,
+    required String fallbackDocumentId,
+  }) async {
+    var deletedFromCloud = true;
+    final collection = _firestore.collection(collectionName);
+    final documentIds = <String>{
+      if (serverId != null && serverId.trim().isNotEmpty) serverId.trim(),
+      fallbackDocumentId,
+    };
+
+    for (final documentId in documentIds) {
+      try {
+        await collection.doc(documentId).delete();
+      } catch (_) {
+        deletedFromCloud = false;
+      }
+    }
+
+    return deletedFromCloud;
   }
 
   Map<String, Object?> _expenseToMap(ExpenseModel expense, int localId) {

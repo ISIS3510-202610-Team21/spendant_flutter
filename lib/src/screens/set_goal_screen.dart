@@ -347,6 +347,54 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<bool> _showDeleteConfirmation({
+    required String title,
+    required String name,
+  }) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text('Are you sure you want to delete "$name"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldDelete ?? false;
+  }
+
+  Future<void> _confirmDeleteGoal(GoalModel goal) async {
+    final shouldDelete = await _showDeleteConfirmation(
+      title: 'Delete goal?',
+      name: goal.name,
+    );
+    if (!shouldDelete || !mounted) {
+      return;
+    }
+
+    final deletedFromCloud = await CloudSyncService().deleteGoalRecord(goal);
+    if (!mounted) {
+      return;
+    }
+
+    _showMessage(
+      deletedFromCloud
+          ? 'Goal deleted'
+          : 'Goal deleted locally. Cloud cleanup is still pending',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_currentStep >= 0) {
@@ -498,7 +546,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     final budgetDependencies = Listenable.merge(<Listenable>[
       LocalStorageService.goalsListenable,
       LocalStorageService.incomesListenable,
-      LocalStorageService.expensesListenable,
     ]);
 
     return SafeArea(
@@ -543,33 +590,27 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                         (left, right) =>
                             right.createdAt.compareTo(left.createdAt),
                       );
-                final summary = _budgetSummary();
-                final canCreateGoal = summary.hasIncome;
+                final hasIncome = LocalStorageService.incomeBox.values.any(
+                  (income) => income.userId == _defaultUserId,
+                );
+                final canCreateGoal = hasIncome;
 
                 return ListView(
                   padding: const EdgeInsets.all(24),
                   children: [
-                    _GoalBudgetCard(
-                      summary: summary,
-                      currencyFormat: _currencyFormat,
-                    ),
-                    const SizedBox(height: 14),
-                    if (!summary.hasIncome) ...[
+                    if (!hasIncome) ...[
                       const _GoalRulesNotice(
                         message:
                             'Goals need at least one active income because every goal reserves part of your daily budget.',
                       ),
                       const SizedBox(height: 14),
-                    ] else if (summary.isSpendableBudgetExhausted) ...[
-                      _GoalRulesNotice(
-                        message: summary.isInternalBudgetExhausted
-                            ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
-                            : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
-                      ),
-                      const SizedBox(height: 14),
                     ],
                     if (goals.isEmpty) const _EmptyGoalsCard(),
-                    for (final goal in goals) _GoalTile(goal: goal),
+                    for (final goal in goals)
+                      _GoalTile(
+                        goal: goal,
+                        onDelete: () => _confirmDeleteGoal(goal),
+                      ),
                     const SizedBox(height: 30),
                     ElevatedButton(
                       onPressed: canCreateGoal
@@ -845,9 +886,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 }
 
 class _GoalTile extends StatelessWidget {
-  const _GoalTile({required this.goal});
+  const _GoalTile({required this.goal, required this.onDelete});
 
   final GoalModel goal;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -921,12 +963,33 @@ class _GoalTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  '${goal.getProgressPercent()}%',
-                  style: GoogleFonts.nunito(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: onDelete,
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 20,
+                        color: AppPalette.ink,
+                      ),
+                      tooltip: 'Delete goal',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                      splashRadius: 18,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${goal.getProgressPercent()}%',
+                      style: GoogleFonts.nunito(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -957,127 +1020,6 @@ class _EmptyGoalsCard extends StatelessWidget {
           fontWeight: FontWeight.w800,
           color: AppPalette.ink,
         ),
-      ),
-    );
-  }
-}
-
-class _GoalBudgetCard extends StatelessWidget {
-  const _GoalBudgetCard({required this.summary, required this.currencyFormat});
-
-  final DailyBudgetSummary summary;
-  final NumberFormat currencyFormat;
-
-  String _format(double amount) {
-    return 'COP ${currencyFormat.format(amount.round())}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Daily budget',
-            style: GoogleFonts.nunito(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Your incomes define the internal daily budget. Goals reserve part of it, and the rest is what you can safely spend today.',
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Internal',
-                  value: _format(summary.internalDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Goals reserve',
-                  value: _format(summary.totalGoalDailyCommitment),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'User daily budget',
-                  value: _format(summary.spendableDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Spent today',
-                  value: _format(summary.todayExpenses),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalBudgetStat extends StatelessWidget {
-  const _GoalBudgetStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-        ],
       ),
     );
   }

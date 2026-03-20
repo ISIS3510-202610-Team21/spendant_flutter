@@ -123,6 +123,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
+  String? _selectedDetailLabelPreview;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
@@ -217,6 +218,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _applySelectedLabels(List<String> labels) {
     _selectedDetailLabels = labels;
     _selectedCategory = _derivePrimaryCategory(labels);
+    _selectedDetailLabelPreview = _pickRandomLabel(labels);
+  }
+
+  String? _pickRandomLabel(List<String> labels) {
+    if (labels.isEmpty) {
+      return null;
+    }
+
+    return labels[math.Random().nextInt(labels.length)];
   }
 
   void _removeSelectedLabel(String label) {
@@ -936,11 +946,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                         label: 'Label',
                                         onPressed: _pickLabels,
                                       ),
-                                      for (final label in _selectedDetailLabels)
+                                      if (_selectedDetailLabelPreview != null)
                                         _SelectedExpenseLabelChip(
-                                          label: label,
-                                          onTap: () =>
-                                              _removeSelectedLabel(label),
+                                          label: _selectedDetailLabelPreview!,
+                                          onTap: _pickLabels,
                                         ),
                                     ],
                                   ),

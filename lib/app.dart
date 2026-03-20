@@ -38,11 +38,10 @@ abstract final class AppRoutes {
   static const notifications = '/notifications';
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
-  static const debugStorage = '/debug-storage';
   static const budget = '/budget';
 }
 
-class SpendAntApp extends StatefulWidget {
+class SpendAntApp extends StatelessWidget {
   const SpendAntApp({super.key});
 
   @override
@@ -152,7 +151,6 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.notifications: (_) => const NotificationsScreen(),
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
-        AppRoutes.debugStorage: (_) => const DebugStorageScreen(),
         AppRoutes.budget: (_) => const BudgetScreen(),
       },
     );

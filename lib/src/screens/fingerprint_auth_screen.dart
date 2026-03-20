@@ -55,7 +55,8 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     if (authState.hasLoggedInBefore) {
       availability = await _biometricAuthService.getAvailability();
 
-      if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
+      if (!availability.isDeviceSupported ||
+          !availability.canCheckBiometrics) {
         statusMessage =
             'This device does not support fingerprint authentication.';
       } else if (!availability.supportsFingerprintLogin) {
@@ -146,14 +147,15 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     final title = _isLoading
         ? 'Checking device'
         : !hasLoggedInBefore
-        ? 'Login required'
-        : 'Touch the sensor';
-    final subtitle = _statusMessage ?? 'Use your fingerprint to log in safely.';
+            ? 'Login required'
+            : 'Touch the sensor';
+    final subtitle =
+        _statusMessage ?? 'Use your fingerprint to log in safely.';
     final buttonLabel = !hasLoggedInBefore
         ? 'Go to Login'
         : _isAuthenticating
-        ? 'Authenticating...'
-        : 'Continue';
+            ? 'Authenticating...'
+            : 'Continue';
 
     return GreenScreenScaffold(
       child: LayoutBuilder(
@@ -193,7 +195,10 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
                             decoration: BoxDecoration(
                               color: AppPalette.field,
                               shape: BoxShape.circle,
-                              border: Border.all(color: AppPalette.ink, width: 2),
+                              border: Border.all(
+                                color: AppPalette.ink,
+                                width: 2,
+                              ),
                             ),
                             child: _isLoading || _isAuthenticating
                                 ? const Center(

@@ -196,12 +196,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     final currentGoalDailyCommitment = DailyBudgetService.dailyGoalContribution(
       editingGoal,
     );
-    final editedDailyGoalAmount = DailyBudgetService.projectedGoalDailyContribution(
-      targetAmount: amount,
-      currentAmount: editingGoal.currentAmount,
-      deadline: _goalDeadline,
-      isCompleted: editingGoal.currentAmount >= amount,
-    );
+    final editedDailyGoalAmount =
+        DailyBudgetService.projectedGoalDailyContribution(
+          targetAmount: amount,
+          currentAmount: editingGoal.currentAmount,
+          deadline: _goalDeadline,
+          isCompleted: editingGoal.currentAmount >= amount,
+        );
     final remainingGoalsCommitment =
         summary.totalGoalDailyCommitment - currentGoalDailyCommitment;
     final projectedGoalDailyCommitment =
@@ -237,10 +238,18 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     final message = switch (validation) {
       GoalBudgetValidationResult(:final hasIncome) when !hasIncome =>
         'With your current setup, this goal cannot be created because you do not have an active income feeding the daily budget yet. Go back to Goals and add income first.',
-      GoalBudgetValidationResult(:final goalFitsOnItsOwn, :final dailyGoalAmount, :final availableInternalDailyBudget)
+      GoalBudgetValidationResult(
+        :final goalFitsOnItsOwn,
+        :final dailyGoalAmount,
+        :final availableInternalDailyBudget,
+      )
           when !goalFitsOnItsOwn =>
         'With your current budget, this goal cannot be reached using the selected amount and deadline. It would need about ${_formatCop(dailyGoalAmount)} per day, but your internal daily budget is only ${_formatCop(availableInternalDailyBudget)}.',
-      GoalBudgetValidationResult(:final projectedGoalDailyCommitment, :final currentGoalDailyCommitment, :final availableInternalDailyBudget) =>
+      GoalBudgetValidationResult(
+        :final projectedGoalDailyCommitment,
+        :final currentGoalDailyCommitment,
+        :final availableInternalDailyBudget,
+      ) =>
         'With your current budget and the other goals you already have, this goal cannot be reached with the selected parameters. Your existing goals already reserve ${_formatCop(currentGoalDailyCommitment)} per day, and this one would push the total to ${_formatCop(projectedGoalDailyCommitment)} over an internal daily budget of ${_formatCop(availableInternalDailyBudget)}.',
     };
 
@@ -530,11 +539,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         }
       },
       icon: assetPath != null
-          ? SvgPicture.asset(
-              assetPath,
-              width: 20,
-              height: 20,
-            )
+          ? SvgPicture.asset(assetPath, width: 20, height: 20)
           : Icon(icon, size: 20, color: Colors.white),
       label: Text(label, style: const TextStyle(color: Colors.white)),
       style: ElevatedButton.styleFrom(
@@ -728,28 +733,11 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   Widget _buildStepPlan() {
     final amount = _parsedGoalAmount() ?? 0;
+    final rawDaysLeft =
+        _goalDeadline.difference(DateUtils.dateOnly(DateTime.now())).inDays;
+    final daysLeft = rawDaysLeft < 1 ? 1 : rawDaysLeft;
+    final suggestedDailySaving = amount / daysLeft;
     final validation = _goalValidation();
-    final summary = _budgetSummary();
-    final suggestedDailySaving = validation?.dailyGoalAmount ?? 0;
-    final projectedSpendableBudget = validation == null
-        ? summary.spendableDailyBudget
-        : validation.availableInternalDailyBudget -
-              validation.projectedGoalDailyCommitment;
-    final guidanceMessage = switch (validation) {
-      null => null,
-      GoalBudgetValidationResult(:final hasIncome) when !hasIncome =>
-        'Add an income first so this goal has a real daily budget behind it.',
-      GoalBudgetValidationResult(:final goalFitsOnItsOwn)
-          when !goalFitsOnItsOwn =>
-        'This goal alone already needs more per day than your internal budget can support.',
-      GoalBudgetValidationResult(:final goalFitsWithAllGoals)
-          when !goalFitsWithAllGoals =>
-        'With your other goals included, this one would reserve more money per day than your income allows.',
-      _ => 'This goal fits inside your internal daily budget.',
-    };
-    final guidanceColor = validation?.canCreateGoal == true
-        ? AppPalette.green
-        : Colors.black87;
 
     return SafeArea(
       child: Padding(
@@ -759,7 +747,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
-                onPressed: _closeGoalSetup,
+                onPressed: _isSavingGoal ? null : _closeGoalSetup,
                 icon: const Icon(Icons.close, size: 30),
               ),
             ),
@@ -779,50 +767,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: AppPalette.ink,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _GoalPlanStat(
-                    label: 'Internal daily budget',
-                    value: _formatCop(summary.internalDailyBudget),
-                  ),
-                  const SizedBox(height: 8),
-                  _GoalPlanStat(
-                    label: 'Other goals already reserve',
-                    value: _formatCop(summary.totalGoalDailyCommitment),
-                  ),
-                  const SizedBox(height: 8),
-                  _GoalPlanStat(
-                    label: 'This goal would reserve',
-                    value: _formatCop(suggestedDailySaving),
-                  ),
-                  const SizedBox(height: 8),
-                  _GoalPlanStat(
-                    label: 'User daily budget after this goal',
-                    value: _formatCop(projectedSpendableBudget),
-                  ),
-                  if (guidanceMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      guidanceMessage,
-                      style: GoogleFonts.nunito(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: guidanceColor,
-                      ),
-                    ),
-                  ],
-                ],
               ),
             ),
             const SizedBox(height: 40),
@@ -1107,6 +1051,189 @@ class _GoalTile extends StatelessWidget {
   }
 }
 
+class _GoalBudgetCard extends StatelessWidget {
+  const _GoalBudgetCard({
+    required this.summary,
+    required this.currencyFormat,
+  });
+
+  final DailyBudgetSummary summary;
+  final NumberFormat currencyFormat;
+
+  String _formatCop(double amount) {
+    return 'COP ${currencyFormat.format(amount.round())}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusTitle = switch (summary) {
+      DailyBudgetSummary(:final hasIncome) when !hasIncome =>
+        'No active income',
+      DailyBudgetSummary(:final isInternalBudgetExhausted)
+          when isInternalBudgetExhausted =>
+        'Goal budget exhausted',
+      DailyBudgetSummary(:final isSpendableBudgetExhausted)
+          when isSpendableBudgetExhausted =>
+        'Spendable budget exhausted',
+      _ => 'Budget available for goals',
+    };
+
+    final statusMessage = switch (summary) {
+      DailyBudgetSummary(:final hasIncome) when !hasIncome =>
+        'Add at least one income to unlock daily budget planning for your goals.',
+      DailyBudgetSummary(
+        :final internalDailyBudget,
+        :final totalGoalDailyCommitment,
+        :final spendableDailyBudget,
+      )
+          when summary.isInternalBudgetExhausted =>
+        'Your goals already reserve ${_formatCop(totalGoalDailyCommitment)} per day, which uses all of the internal daily budget of ${_formatCop(internalDailyBudget)}. Spendable budget left today: ${_formatCop(spendableDailyBudget)}.',
+      DailyBudgetSummary(
+        :final spendableDailyBudget,
+        :final totalGoalDailyCommitment,
+      )
+          when summary.isSpendableBudgetExhausted =>
+        'You have ${_formatCop(spendableDailyBudget)} left to spend today. Be careful: your goals still reserve ${_formatCop(totalGoalDailyCommitment)} per day.',
+      DailyBudgetSummary(
+        :final spendableDailyBudget,
+        :final internalDailyBudget,
+        :final totalGoalDailyCommitment,
+      ) =>
+        'You can still spend ${_formatCop(spendableDailyBudget)} today. Goals are reserving ${_formatCop(totalGoalDailyCommitment)} per day from an internal daily budget of ${_formatCop(internalDailyBudget)}.',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppPalette.field,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            statusTitle,
+            style: GoogleFonts.nunito(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _BudgetMetricRow(
+            label: 'Daily income',
+            value: _formatCop(summary.totalDailyIncome),
+          ),
+          _BudgetMetricRow(
+            label: 'Internal daily budget',
+            value: _formatCop(summary.internalDailyBudget),
+          ),
+          _BudgetMetricRow(
+            label: 'Goal reserve in use',
+            value: _formatCop(summary.totalGoalDailyCommitment),
+          ),
+          _BudgetMetricRow(
+            label: 'Spendable today',
+            value: _formatCop(summary.spendableDailyBudget),
+            emphasize: true,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            statusMessage,
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.fieldHint,
+              height: 1.25,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BudgetMetricRow extends StatelessWidget {
+  const _BudgetMetricRow({
+    required this.label,
+    required this.value,
+    this.emphasize = false,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasize;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueColor = emphasize ? AppPalette.green : AppPalette.ink;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.fieldHint,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: valueColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GoalRulesNotice extends StatelessWidget {
+  const _GoalRulesNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppPalette.amber.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.info_outline, color: AppPalette.ink, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppPalette.ink,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyGoalsCard extends StatelessWidget {
   const _EmptyGoalsCard();
 
@@ -1132,199 +1259,6 @@ class _EmptyGoalsCard extends StatelessWidget {
   }
 }
 
-class _GoalBudgetCard extends StatelessWidget {
-  const _GoalBudgetCard({required this.summary, required this.currencyFormat});
-
-  final DailyBudgetSummary summary;
-  final NumberFormat currencyFormat;
-
-  String _format(double amount) {
-    return 'COP ${currencyFormat.format(amount.round())}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Daily budget',
-            style: GoogleFonts.nunito(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Your incomes define the internal daily budget. Goals reserve part of it, and the rest is what you can safely spend today.',
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-              height: 1.25,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Internal',
-                  value: _format(summary.internalDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Goals reserve',
-                  value: _format(summary.totalGoalDailyCommitment),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'User daily budget',
-                  value: _format(summary.spendableDailyBudget),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _GoalBudgetStat(
-                  label: 'Spent today',
-                  value: _format(summary.todayExpenses),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalBudgetStat extends StatelessWidget {
-  const _GoalBudgetStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalRulesNotice extends StatelessWidget {
-  const _GoalRulesNotice({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF0D9),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.info_outline, color: AppPalette.ink),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              message,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: AppPalette.ink,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalPlanStat extends StatelessWidget {
-  const _GoalPlanStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          value,
-          style: GoogleFonts.nunito(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: AppPalette.ink,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _GoalAmountFormatter extends TextInputFormatter {
   const _GoalAmountFormatter();
 
@@ -1339,10 +1273,9 @@ class _GoalAmountFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = NumberFormat('#,###', 'en_US').format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,

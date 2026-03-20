@@ -8,9 +8,9 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../../app.dart';
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
-import '../models/app_notification_model.dart';
 import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
@@ -125,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             right,
                           ).compareTo(_expenseDateTime(left)),
                         );
+
                   final summary = DailyBudgetService.buildSummaryForUser(
                     _defaultUserId,
                   );
@@ -351,8 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return orderedDates.take(6).map((date) {
       final dayExpenses = grouped[date]!
         ..sort(
-          (left, right) =>
-              _expenseDateTime(right).compareTo(_expenseDateTime(left)),
+          (left, right) => _expenseDateTime(
+            right,
+          ).compareTo(_expenseDateTime(left)),
         );
 
       return _ExpenseDayGroup(
@@ -460,10 +462,9 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(amount.round());
+    final formattedAmount = NumberFormat('#,###', 'en_US').format(
+      amount.round(),
+    );
 
     return RichText(
       text: TextSpan(

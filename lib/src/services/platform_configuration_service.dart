@@ -23,4 +23,12 @@ abstract final class PlatformConfigurationService {
       return false;
     }
   }
+
+  static Future<bool> ensureGoogleMapsIsReady() async {
+    if (kIsWeb) {
+      return ensureGoogleMapsApiKeyOnWebLoaded();
+    }
+
+    return hasGoogleMapsApiKey();
+  }
 }

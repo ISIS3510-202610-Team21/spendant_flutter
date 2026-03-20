@@ -31,31 +31,6 @@
 
   <title>spendant_flutter</title>
   <link rel="manifest" href="manifest.json">
-  <script>
-    (function () {
-      const fallbackKey = 'AIzaSyBw9W_7GwOntgGVTqYpnSj8k7_9_W-7zWU';
-      const params = new URLSearchParams(window.location.search);
-      const queryKey = (params.get('gmapsKey') || '').trim();
-      const storedKey =
-        (window.localStorage.getItem('GOOGLE_MAPS_API_KEY') || '').trim();
-      const configuredKey = queryKey || storedKey || fallbackKey;
-
-      if (!configuredKey) {
-        return;
-      }
-
-      if (queryKey) {
-        window.localStorage.setItem('GOOGLE_MAPS_API_KEY', queryKey);
-      }
-
-      window.__spendantGoogleMapsApiKey = configuredKey;
-      document.write(
-        '<script src="https://maps.googleapis.com/maps/api/js?key=' +
-          encodeURIComponent(configuredKey) +
-          '&libraries=places"><\\/script>'
-      );
-    })();
-  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

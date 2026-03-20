@@ -16,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/auth_memory_store.dart';
+import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
@@ -121,12 +122,16 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseValueController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
   final ReceiptScanService _receiptScanService = ReceiptScanService();
+  final CloudinaryReceiptUploadService _cloudinaryReceiptUploadService =
+      CloudinaryReceiptUploadService();
 
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
+  _ReceiptImportPayload? _selectedReceiptPayload;
+  String? _receiptImagePath;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
   ReceiptScanResult? _lastReceiptScanResult;
@@ -175,6 +180,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               : null,
         );
       }
+
+      _receiptImagePath = editingExpense.receiptImagePath;
       return;
     }
 
@@ -441,6 +448,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     setState(() {
+      _selectedReceiptPayload = payload;
+      _receiptImagePath = payload.path;
       _isScanningReceipt = true;
     });
 
@@ -680,6 +689,37 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
+  Future<String?> _resolveReceiptImagePath() async {
+    final payload = _selectedReceiptPayload;
+    if (payload == null || _looksLikeRemoteUrl(_receiptImagePath)) {
+      return _receiptImagePath;
+    }
+
+    try {
+      final uploadedUrl = await _cloudinaryReceiptUploadService.uploadReceipt(
+        userId: _currentUserId,
+        fileName: payload.fileName,
+        bytes: payload.bytes,
+      );
+      _receiptImagePath = uploadedUrl;
+      return uploadedUrl;
+    } catch (error) {
+      debugPrint('Cloudinary receipt upload failed: $error');
+      return _receiptImagePath;
+    }
+  }
+
+  bool _looksLikeRemoteUrl(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return false;
+    }
+
+    final uri = Uri.tryParse(value.trim());
+    return uri != null &&
+        uri.hasScheme &&
+        (uri.isScheme('http') || uri.isScheme('https'));
+  }
+
   void _showScanMessage(String message) {
     showDialog<void>(
       context: context,
@@ -743,6 +783,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     final editingExpense = widget.editingExpense;
     final expense = editingExpense ?? ExpenseModel();
+    final receiptImagePath = await _resolveReceiptImagePath();
 
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
@@ -757,7 +798,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..source = (editingExpense?.source.trim().isNotEmpty ?? false)
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
-      ..receiptImagePath = editingExpense?.receiptImagePath
+      ..receiptImagePath = receiptImagePath
       ..isPendingCategory = false
       ..isRecurring = editingExpense?.isRecurring ?? false
       ..recurrenceInterval = editingExpense?.recurrenceInterval

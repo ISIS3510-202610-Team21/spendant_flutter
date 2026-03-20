@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/biometric_auth_service.dart';
 import '../theme/spendant_theme.dart';
@@ -17,8 +18,10 @@ class FingerprintAuthScreen extends StatefulWidget {
 class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
 
+  bool _didLoadRedirect = false;
   AuthGreetingState? _authState;
   BiometricAvailability? _availability;
+  PostAuthNavigationArgs? _postAuthNavigationArgs;
   String? _statusMessage;
   bool _isLoading = true;
   bool _isAuthenticating = false;
@@ -29,6 +32,21 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     _loadBiometricState();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_didLoadRedirect) {
+      return;
+    }
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is PostAuthNavigationArgs) {
+      _postAuthNavigationArgs = args;
+    }
+    _didLoadRedirect = true;
+  }
+
   Future<void> _loadBiometricState() async {
     final authState = await AuthMemoryStore.loadGreetingState();
     BiometricAvailability? availability;
@@ -37,7 +55,8 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     if (authState.hasLoggedInBefore) {
       availability = await _biometricAuthService.getAvailability();
 
-      if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
+      if (!availability.isDeviceSupported ||
+          !availability.canCheckBiometrics) {
         statusMessage =
             'This device does not support fingerprint authentication.';
       } else if (!availability.supportsFingerprintLogin) {
@@ -72,7 +91,10 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     final availability = _availability;
 
     if (authState == null || !authState.hasLoggedInBefore) {
-      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.login,
+        arguments: _postAuthNavigationArgs,
+      );
       return;
     }
 
@@ -106,6 +128,12 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     });
 
     if (result.didAuthenticate) {
+      final redirect = _postAuthNavigationArgs?.redirect;
+      if (redirect != null) {
+        await AppNavigationService.openRedirect(redirect);
+        return;
+      }
+
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
@@ -119,131 +147,135 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     final title = _isLoading
         ? 'Checking device'
         : !hasLoggedInBefore
-        ? 'Login required'
-        : 'Touch the sensor';
-    final subtitle = _statusMessage ?? 'Use your fingerprint to log in safely.';
+            ? 'Login required'
+            : 'Touch the sensor';
+    final subtitle =
+        _statusMessage ?? 'Use your fingerprint to log in safely.';
     final buttonLabel = !hasLoggedInBefore
         ? 'Go to Login'
         : _isAuthenticating
-        ? 'Authenticating...'
-        : 'Continue';
+            ? 'Authenticating...'
+            : 'Continue';
 
     return GreenScreenScaffold(
-      resizeToAvoidBottomInset: false,
       child: LayoutBuilder(
-        builder: (context, _) {
+        builder: (context, constraints) {
           return Stack(
             children: [
               Positioned(
-                left: -24,
-                bottom: -18,
-                child: IgnorePointer(
-                  child: AntAsset('web/ant/Standing.svg', height: 210),
-                ),
+                left: -28,
+                bottom: -56,
+                child: AntAsset('web/ant/ant_login.svg', height: 460),
               ),
               Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(30, 28, 30, 32),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 26),
-                      const SpendAntWordmark(),
-                      const SizedBox(height: 108),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.nunito(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 38),
-                      GestureDetector(
-                        onTap: _handlePrimaryAction,
-                        child: Container(
-                          width: 182,
-                          height: 182,
-                          decoration: BoxDecoration(
-                            color: AppPalette.field,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppPalette.ink, width: 2),
-                          ),
-                          child: _isLoading || _isAuthenticating
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 38,
-                                    height: 38,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: AppPalette.ink,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.fingerprint,
-                                  size: 92,
-                                  color: AppPalette.ink,
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 42),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          subtitle,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 120),
+                        const SpendAntWordmark(),
+                        const SizedBox(height: 88),
+                        Text(
+                          title,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
-                            fontSize: 15,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
                             color: AppPalette.ink,
-                            fontWeight: FontWeight.w700,
-                            height: 1.25,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      BlackPrimaryButton(
-                        label: buttonLabel,
-                        width: 190,
-                        height: 50,
-                        onPressed: _isLoading ? () {} : _handlePrimaryAction,
-                      ),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: () => Navigator.of(
-                          context,
-                        ).pushReplacementNamed(AppRoutes.login),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppPalette.ink,
-                        ),
-                        child: Text(
-                          hasLoggedInBefore
-                              ? 'Use password instead'
-                              : 'Open login screen',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
+                        const SizedBox(height: 34),
+                        GestureDetector(
+                          onTap: _handlePrimaryAction,
+                          child: Container(
+                            width: 120,
+                            height: 120,
+                            decoration: BoxDecoration(
+                              color: AppPalette.field,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppPalette.ink,
+                                width: 2,
+                              ),
+                            ),
+                            child: _isLoading || _isAuthenticating
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 34,
+                                      height: 34,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                        color: AppPalette.ink,
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.fingerprint,
+                                    size: 78,
+                                    color: AppPalette.ink,
+                                  ),
                           ),
                         ),
-                      ),
-                      if (hasLoggedInBefore &&
-                          !_isLoading &&
-                          availability != null) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          availability.supportsFingerprint ||
-                                  availability.supportsFingerprintLogin
-                              ? 'Detected method: fingerprint'
-                              : 'Detected method: unavailable',
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppPalette.ink.withValues(alpha: 0.72),
+                        const SizedBox(height: 34),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            subtitle,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.nunito(
+                              fontSize: 14,
+                              color: AppPalette.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
+                        const SizedBox(height: 24),
+                        BlackPrimaryButton(
+                          label: buttonLabel,
+                          width: 170,
+                          onPressed: _isLoading ? () {} : _handlePrimaryAction,
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pushReplacementNamed(
+                            AppRoutes.login,
+                            arguments: _postAuthNavigationArgs,
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppPalette.ink,
+                          ),
+                          child: Text(
+                            hasLoggedInBefore
+                                ? 'Use password instead'
+                                : 'Open login screen',
+                            style: GoogleFonts.nunito(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (hasLoggedInBefore &&
+                            !_isLoading &&
+                            availability != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            availability.supportsFingerprint ||
+                                    availability.supportsFingerprintLogin
+                                ? 'Detected method: fingerprint'
+                                : 'Detected method: unavailable',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.nunito(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppPalette.ink.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: constraints.maxHeight * 0.20),
                       ],
-                      const Spacer(),
-                    ],
+                    ),
                   ),
                 ),
               ),

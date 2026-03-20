@@ -48,10 +48,12 @@ dependencies:
   path: ^1.9.1
   permission_handler: ^12.0.1
   local_auth: ^3.0.1
+  flutter_local_notifications: ^19.4.0
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   firebase_core: ^4.1.1
   cloud_firestore: ^6.0.2
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:
@@ -81,6 +83,22 @@ flutter:
   assets:
     - web/ant/
     - web/icons/
+
+  fonts:
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-ExtraBold.ttf
+          weight: 800
+    - family: Recursive
+      fonts:
+        - asset: assets/fonts/Recursive-Black.ttf
+          weight: 900
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -45,8 +45,12 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GMSApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Spendant needs camera access to scan expense receipts.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Spendant uses your location to attach a place name to your expenses.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Spendant needs photo library access to import receipt images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

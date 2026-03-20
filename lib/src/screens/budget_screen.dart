@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
@@ -98,21 +99,19 @@ class BudgetScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final budgetDependencies = LocalStorageService.incomesListenable;
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
           _BudgetHeader(onClose: () => Navigator.of(context).pop()),
           Expanded(
-            child: AnimatedBuilder(
-              animation: budgetDependencies,
-              builder: (context, _) {
-                final box = LocalStorageService.incomeBox;
-                final incomes =
-                    box.values.where((i) => i.userId == _defaultUserId).toList()
-                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            child: ValueListenableBuilder<Box<IncomeModel>>(
+              valueListenable: LocalStorageService.incomesListenable,
+              builder: (context, box, _) {
+                final incomes = box.values
+                    .where((i) => i.userId == _defaultUserId)
+                    .toList()
+                  ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
@@ -128,6 +127,14 @@ class BudgetScreen extends StatelessWidget {
                           currencyFormat: _currencyFormat,
                           onDelete: () =>
                               _confirmDeleteIncome(context, incomes[i]),
+                          onEdit: () async {
+                            await Navigator.of(context).push<bool>(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    NewIncomeScreen(editingIncome: incomes[i]),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                       ],
@@ -216,6 +223,7 @@ class _IncomeCard extends StatelessWidget {
     required this.recurrenceLabel,
     required this.currencyFormat,
     required this.onDelete,
+    required this.onEdit,
   });
 
   final IncomeModel income;
@@ -223,18 +231,32 @@ class _IncomeCard extends StatelessWidget {
   final String recurrenceLabel;
   final NumberFormat currencyFormat;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(2),
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppPalette.ink.withValues(alpha: 0.08),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: AppPalette.ink,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,6 +286,7 @@ class _IncomeCard extends StatelessWidget {
                     color: AppPalette.ink.withValues(alpha: 0.6),
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   income.isSynced
                       ? 'Uploaded to Firebase'
@@ -276,9 +299,19 @@ class _IncomeCard extends StatelessWidget {
                         : Colors.orange.shade800,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  'Starts ${DateFormat('d/M/y').format(income.startDate)}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -290,7 +323,7 @@ class _IncomeCard extends StatelessWidget {
                   color: AppPalette.ink,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
               IconButton(
                 onPressed: onDelete,
                 icon: const Icon(
@@ -302,6 +335,15 @@ class _IncomeCard extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                 splashRadius: 18,
+              ),
+              const SizedBox(height: 2),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                splashRadius: 18,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               ),
             ],
           ),
@@ -364,7 +406,9 @@ class _EmptyIncomesCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 
 class NewIncomeScreen extends StatefulWidget {
-  const NewIncomeScreen({super.key});
+  const NewIncomeScreen({super.key, this.editingIncome});
+
+  final IncomeModel? editingIncome;
 
   @override
   State<NewIncomeScreen> createState() => _NewIncomeScreenState();
@@ -383,6 +427,28 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   String _recurrenceUnit = 'WEEKS';
   DateTime _selectedDate = DateTime.now();
   bool _isSavingIncome = false;
+
+  bool get _isEditing => widget.editingIncome != null;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final editingIncome = widget.editingIncome;
+    if (editingIncome == null) {
+      return;
+    }
+
+    _nameController.text = editingIncome.name;
+    _amountController.text = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(editingIncome.amount.round());
+    _type = editingIncome.type;
+    _recurrenceUnit = editingIncome.recurrenceUnit ?? 'WEEKS';
+    _intervalController.text = '${editingIncome.recurrenceInterval ?? 1}';
+    _selectedDate = editingIncome.startDate;
+  }
 
   @override
   void dispose() {
@@ -447,19 +513,32 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       _isSavingIncome = true;
     });
 
-    final income = IncomeModel()
-      ..userId = _defaultUserId
-      ..name = _nameController.text.trim()
-      ..amount = parsedAmount
-      ..type = _type
-      ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
-      ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
-      ..startDate = _selectedDate
-      ..createdAt = DateTime.now()
-      ..isSynced = false;
-
     try {
-      await LocalStorageService().saveIncome(income);
+      final editingIncome = widget.editingIncome;
+      if (editingIncome == null) {
+        final income = IncomeModel()
+          ..userId = _defaultUserId
+          ..name = _nameController.text.trim()
+          ..amount = parsedAmount
+          ..type = _type
+          ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
+          ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
+          ..startDate = _selectedDate
+          ..createdAt = DateTime.now()
+          ..isSynced = false;
+        await LocalStorageService().saveIncome(income);
+      } else {
+        editingIncome
+          ..userId = _defaultUserId
+          ..name = _nameController.text.trim()
+          ..amount = parsedAmount
+          ..type = _type
+          ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
+          ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
+          ..startDate = _selectedDate
+          ..isSynced = false;
+        await editingIncome.save();
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -480,7 +559,11 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
     final navigator = Navigator.of(context);
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('Income saved locally')),
+      SnackBar(
+        content: Text(
+          _isEditing ? 'Income updated locally' : 'Income saved locally',
+        ),
+      ),
     );
     navigator.pop(true);
     _syncPendingDataInBackground();
@@ -515,6 +598,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         child: Column(
           children: [
             _NewIncomeHeader(
+              title: _isEditing ? 'Edit Income' : 'New Income',
               isSubmitting: _isSavingIncome,
               onClose: () => Navigator.of(context).maybePop(),
               onConfirm: _handleConfirm,
@@ -538,7 +622,9 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                         controller: _amountController,
                         hintText: r'$ 0',
                         keyboardType: TextInputType.number,
-                        inputFormatters: [const _CurrencyThousandsFormatter()],
+                        inputFormatters: [
+                          const _CurrencyThousandsFormatter(),
+                        ],
                       ),
                       const SizedBox(height: 28),
                       Center(
@@ -565,7 +651,8 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                             _TypeChip(
                               label: 'Frequently',
                               selected: _type == 'FREQUENTLY',
-                              onTap: () => setState(() => _type = 'FREQUENTLY'),
+                              onTap: () =>
+                                  setState(() => _type = 'FREQUENTLY'),
                             ),
                           ],
                         ),
@@ -583,7 +670,10 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                       ],
                       const SizedBox(height: 24),
                       Center(
-                        child: _DateRow(date: _selectedDate, onTap: _pickDate),
+                        child: _DateRow(
+                          date: _selectedDate,
+                          onTap: _pickDate,
+                        ),
                       ),
                     ],
                   ),
@@ -599,11 +689,13 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
 
 class _NewIncomeHeader extends StatelessWidget {
   const _NewIncomeHeader({
+    required this.title,
     required this.isSubmitting,
     required this.onClose,
     required this.onConfirm,
   });
 
+  final String title;
   final bool isSubmitting;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
@@ -616,12 +708,12 @@ class _NewIncomeHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: isSubmitting ? null : onClose,
+            onPressed: onClose,
             icon: const Icon(Icons.close, color: AppPalette.ink),
           ),
           Expanded(
             child: Text(
-              'New Income',
+              title,
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 19,
@@ -631,17 +723,8 @@ class _NewIncomeHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: isSubmitting ? null : onConfirm,
-            icon: isSubmitting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: AppPalette.ink,
-                    ),
-                  )
-                : const Icon(Icons.check, color: AppPalette.ink),
+            onPressed: onConfirm,
+            icon: const Icon(Icons.check, color: AppPalette.ink),
           ),
         ],
       ),
@@ -880,10 +963,9 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digitsOnly.isEmpty) return const TextEditingValue();
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = NumberFormat('#,###', 'en_US').format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,

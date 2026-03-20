@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,17 +16,11 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
-
-class _ExpenseLabelOption {
-  const _ExpenseLabelOption({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-}
 
 class _ExpenseLabelGroup {
   const _ExpenseLabelGroup({required this.label, required this.sublabels});
@@ -37,31 +32,56 @@ class _ExpenseLabelGroup {
 const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   _ExpenseLabelGroup(
     label: 'Academic Essentials',
-    sublabels: <String>['University Fees', 'Learning Materials', 'Commute'],
+    sublabels: <String>['Commute', 'Learning Materials', 'University Fees'],
   ),
   _ExpenseLabelGroup(
     label: 'Lifestyle & Social',
     sublabels: <String>[
-      'Social/Group Hangouts',
-      'Food Delivery',
       'Entertainment',
+      'Food',
+      'Food Delivery',
+      'Gifts',
+      'Group Hangouts',
       'Subscriptions',
     ],
   ),
   _ExpenseLabelGroup(
     label: 'Living Expenses',
-    sublabels: <String>['Rent & Utilities', 'Groceries', 'Personal Care'],
+    sublabels: <String>[
+      'Groceries',
+      'Personal Care',
+      'Rent',
+      'Services',
+      'Transport',
+      'Utilities',
+    ],
   ),
   _ExpenseLabelGroup(
     label: 'Strategic & Utility Tags',
-    sublabels: <String>[
-      'Social Ledger (Owed)',
-      'Goal Savings',
-      'Impulse/Emotional',
-      'Emergency',
-    ],
+    sublabels: <String>['Emergency', 'Impulse', 'Owed'],
   ),
 ];
+
+const Map<String, String> _detailLabelPrimaryCategories = <String, String>{
+  'Food': 'Food',
+  'Food Delivery': 'Food',
+  'Groceries': 'Food',
+  'Commute': 'Transport',
+  'Transport': 'Transport',
+  'Learning Materials': 'Services',
+  'University Fees': 'Services',
+  'Personal Care': 'Services',
+  'Rent': 'Services',
+  'Services': 'Services',
+  'Utilities': 'Services',
+  'Entertainment': 'Other',
+  'Gifts': 'Other',
+  'Group Hangouts': 'Other',
+  'Subscriptions': 'Other',
+  'Emergency': 'Other',
+  'Impulse': 'Other',
+  'Owed': 'Other',
+};
 
 enum _ReceiptSourceOption { camera, gallery, file }
 
@@ -83,10 +103,12 @@ class NewExpenseScreen extends StatefulWidget {
   const NewExpenseScreen({
     super.key,
     this.initialDraft,
+    this.editingExpense,
     this.headerTitle = 'New Expense',
   });
 
   final ExpenseDraft? initialDraft;
+  final ExpenseModel? editingExpense;
   final String headerTitle;
 
   @override
@@ -99,22 +121,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final ReceiptScanService _receiptScanService = ReceiptScanService();
 
-  static const List<_ExpenseLabelOption> _predefinedLabels =
-      <_ExpenseLabelOption>[
-        _ExpenseLabelOption(label: 'Food', color: AppPalette.food),
-        _ExpenseLabelOption(label: 'Transport', color: AppPalette.transport),
-        _ExpenseLabelOption(label: 'Services', color: AppPalette.services),
-        _ExpenseLabelOption(label: 'Other', color: AppPalette.other),
-      ];
-
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
-  ReceiptScanResult? _lastReceiptScanResult;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
+  ReceiptScanResult? _lastReceiptScanResult;
 
   @override
   void initState() {
@@ -131,6 +145,37 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _applyInitialDraft() {
+    final editingExpense = widget.editingExpense;
+    if (editingExpense != null) {
+      _expenseNameController.text = editingExpense.name;
+      _expenseValueController.text = NumberFormat(
+        '#,###',
+        'en_US',
+      ).format(editingExpense.amount.round());
+      _selectedCategory = editingExpense.primaryCategory;
+      _applySelectedLabels(<String>[...editingExpense.detailLabels]);
+      _selectedCategory ??= editingExpense.primaryCategory;
+      _selectedDate = editingExpense.date;
+
+      final timeParts = editingExpense.time.split(':');
+      _selectedTime = TimeOfDay(
+        hour: timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0,
+        minute: timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0,
+      );
+
+      if ((editingExpense.locationName ?? '').trim().isNotEmpty) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: editingExpense.locationName!.trim(),
+          position:
+              editingExpense.latitude != null &&
+                  editingExpense.longitude != null
+              ? LatLng(editingExpense.latitude!, editingExpense.longitude!)
+              : null,
+        );
+      }
+      return;
+    }
+
     final draft = widget.initialDraft;
     if (draft == null) {
       return;
@@ -139,7 +184,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     _expenseNameController.text = draft.name;
     _expenseValueController.text = draft.amount;
     _selectedCategory = draft.primaryCategory;
-    _selectedDetailLabels = <String>[...draft.detailLabels];
+    _applySelectedLabels(<String>[...draft.detailLabels]);
+    _selectedCategory ??= draft.primaryCategory;
     _selectedDate = draft.date;
     _selectedTime = draft.time;
 
@@ -151,6 +197,33 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             : null,
       );
     }
+  }
+
+  String? _derivePrimaryCategory(List<String> labels) {
+    for (final label in labels) {
+      final category = _detailLabelPrimaryCategories[label];
+      if (category != null) {
+        return category;
+      }
+    }
+
+    if (labels.isNotEmpty) {
+      return 'Other';
+    }
+
+    return null;
+  }
+
+  void _applySelectedLabels(List<String> labels) {
+    _selectedDetailLabels = labels;
+    _selectedCategory = _derivePrimaryCategory(labels);
+  }
+
+  void _removeSelectedLabel(String label) {
+    setState(() {
+      final updated = List<String>.from(_selectedDetailLabels)..remove(label);
+      _applySelectedLabels(updated);
+    });
   }
 
   Future<void> _pickDate() async {
@@ -332,12 +405,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
-  void _selectCategory(String label) {
-    setState(() {
-      _selectedCategory = _selectedCategory == label ? null : label;
-    });
-  }
-
   Future<void> _pickLabels() async {
     final selected = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
@@ -351,24 +418,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     setState(() {
-      _selectedDetailLabels = selected;
+      _applySelectedLabels(selected);
     });
   }
 
   Future<void> _scanReceipt() async {
-    if (kIsWeb) {
-      final result = await Navigator.of(context).push<ReceiptScanResult>(
-        MaterialPageRoute(builder: (_) => const _MockReceiptScannerScreen()),
-      );
-      if (result != null && mounted) {
-        _applyReceiptScanResult(result);
-        _showScanMessage(
-          'Receipt scanned. Review the detected fields before saving.',
-        );
-      }
-      return;
-    }
-
     final source = await _showReceiptSourceSheet();
     if (source == null) {
       return;
@@ -439,6 +493,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   ) async {
     switch (source) {
       case _ReceiptSourceOption.camera:
+        if (kIsWeb ||
+            (defaultTargetPlatform != TargetPlatform.android &&
+                defaultTargetPlatform != TargetPlatform.iOS)) {
+          _showScanMessage(
+            'Camera capture is only available on phones. Use Gallery or File instead.',
+          );
+          return null;
+        }
+
         final image = await _imagePicker.pickImage(
           source: ImageSource.camera,
           imageQuality: 88,
@@ -503,6 +566,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   Future<bool> _ensureReceiptPermission(_ReceiptSourceOption source) async {
     switch (source) {
       case _ReceiptSourceOption.camera:
+        if (kIsWeb ||
+            (defaultTargetPlatform != TargetPlatform.android &&
+                defaultTargetPlatform != TargetPlatform.iOS)) {
+          _showScanMessage(
+            'Camera capture is only available on phones. Use Gallery or File instead.',
+          );
+          return false;
+        }
+
         final status = await Permission.camera.request();
         return _handlePermissionStatus(
           status,
@@ -631,15 +703,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     FocusScope.of(context).unfocus();
 
-    if (_selectedCategory == null) {
-      _showScanMessage('Please choose a main category');
-      return;
-    }
-
     if (_selectedDetailLabels.isEmpty) {
       await _showMissingLabelWarning();
       return;
     }
+
+    _selectedCategory ??=
+        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
 
     // Validate required fields
     if (_expenseNameController.text.trim().isEmpty) {
@@ -658,9 +728,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _isSavingExpense = true;
     });
 
-    // Create expense model
-    final expense = ExpenseModel()
+    final editingExpense = widget.editingExpense;
+    final expense = editingExpense ?? ExpenseModel();
+
+    expense
       ..userId =
+          editingExpense?.userId ??
           1 // TODO: Get actual user ID from auth
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
@@ -670,17 +743,27 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
       ..locationName = _selectedLocation?.label
-      ..source = 'MANUAL'
-      ..receiptImagePath = null
+      ..source = (editingExpense?.source.trim().isNotEmpty ?? false)
+          ? editingExpense!.source
+          : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
+      ..receiptImagePath = editingExpense?.receiptImagePath
       ..isPendingCategory = false
-      ..isRecurring = false
+      ..isRecurring = editingExpense?.isRecurring ?? false
+      ..recurrenceInterval = editingExpense?.recurrenceInterval
+      ..recurrenceUnit = editingExpense?.recurrenceUnit
+      ..nextOccurrenceDate = editingExpense?.nextOccurrenceDate
       ..isSynced = false
-      ..createdAt = DateTime.now()
+      ..serverId = editingExpense?.serverId
+      ..createdAt = editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
     try {
-      await LocalStorageService().saveExpense(expense);
+      if (editingExpense == null) {
+        await LocalStorageService().saveExpense(expense);
+      } else {
+        await expense.save();
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -701,7 +784,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final navigator = Navigator.of(context);
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('Expense saved locally')),
+      SnackBar(
+        content: Text(
+          editingExpense == null
+              ? 'Expense saved locally'
+              : 'Expense updated locally',
+        ),
+      ),
     );
     navigator.pop(true);
     _syncPendingDataInBackground();
@@ -838,58 +927,22 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   ),
                                   const SizedBox(height: 18),
                                   Wrap(
-                                    alignment: WrapAlignment.center,
+                                    alignment: WrapAlignment.start,
                                     spacing: 10,
                                     runSpacing: 10,
                                     children: [
-                                      for (final option in _predefinedLabels)
-                                        _PrimaryCategoryChip(
-                                          label: option.label,
-                                          color: option.color,
-                                          selected:
-                                              _selectedCategory == option.label,
+                                      _MiniActionButton(
+                                        icon: Icons.add,
+                                        label: 'Label',
+                                        onPressed: _pickLabels,
+                                      ),
+                                      for (final label in _selectedDetailLabels)
+                                        _SelectedExpenseLabelChip(
+                                          label: label,
                                           onTap: () =>
-                                              _selectCategory(option.label),
+                                              _removeSelectedLabel(label),
                                         ),
                                     ],
-                                  ),
-                                  if (_selectedDetailLabels.isNotEmpty) ...[
-                                    const SizedBox(height: 14),
-                                    Wrap(
-                                      alignment: WrapAlignment.center,
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        for (final label
-                                            in _selectedDetailLabels)
-                                          Chip(
-                                            label: Text(label),
-                                            backgroundColor: const Color(
-                                              0xFFD1D1D1,
-                                            ),
-                                            deleteIconColor: AppPalette.ink,
-                                            onDeleted: () {
-                                              setState(() {
-                                                _selectedDetailLabels.remove(
-                                                  label,
-                                                );
-                                              });
-                                            },
-                                            labelStyle: GoogleFonts.nunito(
-                                              fontWeight: FontWeight.w800,
-                                              color: AppPalette.ink,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                  const SizedBox(height: 16),
-                                  Center(
-                                    child: _MiniActionButton(
-                                      icon: Icons.add,
-                                      label: 'Label',
-                                      onPressed: _pickLabels,
-                                    ),
                                   ),
                                   const SizedBox(height: 24),
                                   Center(
@@ -1164,8 +1217,7 @@ class _MockReceiptScannerScreen extends StatefulWidget {
       _MockReceiptScannerScreenState();
 }
 
-class _MockReceiptScannerScreenState
-    extends State<_MockReceiptScannerScreen> {
+class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
   bool _scanning = false;
 
   static final ReceiptScanResult _mockResult = ReceiptScanResult(
@@ -1173,9 +1225,7 @@ class _MockReceiptScannerScreenState
     formattedAmount: '25,020',
     date: DateTime(2026, 3, 19),
     time: DateTime(2026, 3, 19, 13, 45),
-    location: const ReceiptScanLocation(
-      label: 'Calle 20 #6-76, Bogotá',
-    ),
+    location: const ReceiptScanLocation(label: 'Calle 20 #6-76, Bogotá'),
     rawText: '',
   );
 
@@ -1305,11 +1355,7 @@ class _MockReceiptScannerScreenState
                     ),
 
                   // Corner guides
-                  Positioned(
-                    top: 60,
-                    left: 40,
-                    child: _CornerGuide(rotate: 0),
-                  ),
+                  Positioned(top: 60, left: 40, child: _CornerGuide(rotate: 0)),
                   Positioned(
                     top: 60,
                     right: 40,
@@ -1597,7 +1643,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'Select Date',
+              title: 'New Expense',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
             ),
@@ -1705,15 +1751,83 @@ class LocationPickerScreen extends StatefulWidget {
 class _LocationPickerScreenState extends State<LocationPickerScreen> {
   static const LatLng _defaultCenter = LatLng(4.60971, -74.08175);
 
-  late LatLng _selectedPoint = widget.initialValue?.position ?? _defaultCenter;
+  final ExpenseLocationService _locationService =
+      const ExpenseLocationService();
   late final Future<bool> _hasGoogleMapsApiKeyFuture =
-      PlatformConfigurationService.hasGoogleMapsApiKey();
+      PlatformConfigurationService.ensureGoogleMapsIsReady();
+  late final TextEditingController _searchController;
+
+  GoogleMapController? _mapController;
+  LatLng? _selectedPoint;
+  String? _resolvedLabel;
+  bool _isFetchingCurrentLocation = false;
+  bool _isSearchingLocation = false;
+  bool _isResolvingLocation = false;
+  String? _statusMessage;
+  int _selectionRequestId = 0;
+
+  bool get _canSave {
+    return _selectedPoint != null ||
+        _searchController.text.trim().isNotEmpty ||
+        (_resolvedLabel?.trim().isNotEmpty ?? false);
+  }
+
+  String get _selectionLabel {
+    final typedLabel = _searchController.text.trim();
+    if (typedLabel.isNotEmpty) {
+      return typedLabel;
+    }
+
+    final resolvedLabel = _resolvedLabel?.trim();
+    if (resolvedLabel != null && resolvedLabel.isNotEmpty) {
+      return resolvedLabel;
+    }
+
+    final point = _selectedPoint;
+    if (point != null) {
+      return ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+    }
+
+    return '';
+  }
+
+  LatLng get _cameraTarget => _selectedPoint ?? _defaultCenter;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _selectedPoint = widget.initialValue?.position;
+
+    final initialLabel = widget.initialValue?.label.trim();
+    _resolvedLabel = initialLabel != null && initialLabel.isNotEmpty
+        ? initialLabel
+        : null;
+    _searchController = TextEditingController(text: _resolvedLabel ?? '');
+
+    if (_selectedPoint != null &&
+        (_resolvedLabel == null ||
+            ExpenseLocationService.looksLikeCoordinateLabel(_resolvedLabel!))) {
+      unawaited(_refreshSelectionLabel(syncSearchField: true));
+    } else if (_selectedPoint == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_prefillCurrentLocationIfAvailable());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final label =
-        '${_selectedPoint.latitude.toStringAsFixed(4)}, ${_selectedPoint.longitude.toStringAsFixed(4)}';
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -1721,16 +1835,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'Select Location',
+              title: 'Pick Location',
               onClose: () => Navigator.of(context).pop(),
-              onConfirm: () {
-                Navigator.of(context).pop(
-                  ExpenseLocationSelection(
-                    position: _selectedPoint,
-                    label: label,
-                  ),
-                );
-              },
+              onConfirm: _submitSelection,
             ),
             Expanded(
               child: Padding(
@@ -1738,16 +1845,85 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 child: Column(
                   children: [
                     TextField(
-                      readOnly: true,
+                      controller: _searchController,
+                      textInputAction: TextInputAction.search,
+                      onChanged: (_) {
+                        setState(() {
+                          _statusMessage = null;
+                        });
+                      },
+                      onSubmitted: (_) => _searchLocation(),
                       decoration: InputDecoration(
-                        hintText: 'Search label',
+                        hintText: 'Search place or address',
                         prefixIcon: const Icon(Icons.search),
-                        suffixIcon: const Icon(Icons.location_on_outlined),
+                        suffixIcon: _isSearchingLocation
+                            ? const Padding(
+                                padding: EdgeInsets.all(14),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: AppPalette.green,
+                                  ),
+                                ),
+                              )
+                            : IconButton(
+                                onPressed: _searchLocation,
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                              ),
                         fillColor: Colors.white,
                         filled: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(999),
                           borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: _isFetchingCurrentLocation
+                              ? null
+                              : _useCurrentLocation,
+                          icon: _isFetchingCurrentLocation
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppPalette.green,
+                                  ),
+                                )
+                              : const Icon(Icons.my_location_rounded, size: 18),
+                          label: Text(
+                            _isFetchingCurrentLocation
+                                ? 'Locating...'
+                                : 'Use current location',
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppPalette.green,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: GoogleFonts.nunito(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _helperText,
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF4E4E4E),
                         ),
                       ),
                     ),
@@ -1764,30 +1940,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                                 left: 16,
                                 right: 16,
                                 bottom: 16,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 120,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.of(context).pop(
-                                          ExpenseLocationSelection(
-                                            position: _selectedPoint,
-                                            label: label,
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppPalette.green,
-                                        foregroundColor: AppPalette.ink,
-                                      ),
-                                      child: Text(
-                                        'Save',
-                                        style: GoogleFonts.nunito(
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                child: _LocationPickerFooter(
+                                  label: _selectionLabel,
+                                  onSave: _canSave ? _submitSelection : null,
                                 ),
                               ),
                             ],
@@ -1806,12 +1961,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   Widget _buildMapSurface() {
-    if (kIsWeb) {
-      return _buildMapFallback(
-        'Google Maps on web needs a configured JavaScript API key. The crash is blocked for now, and you can still save the current point.',
-      );
-    }
-
     return FutureBuilder<bool>(
       future: _hasGoogleMapsApiKeyFuture,
       builder: (context, snapshot) {
@@ -1823,28 +1972,32 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
         if (snapshot.data != true) {
           return _buildMapFallback(
-            'Google Maps needs a configured native API key on this app. The map was not opened to avoid the Android crash, but you can still save the current point.',
+            kIsWeb
+                ? 'Google Maps on web is unavailable right now. You can still use search, type a place name, or save your current location. For local debug, open the app once with ?gmapsKey=YOUR_KEY.'
+                : 'Google Maps needs a configured native API key on this app. The map is blocked until that key is present, but you can still search, type a place name, and save the location.',
           );
         }
 
         return GoogleMap(
           initialCameraPosition: CameraPosition(
-            target: _selectedPoint,
+            target: _cameraTarget,
             zoom: 16,
           ),
+          onMapCreated: (controller) {
+            _mapController = controller;
+          },
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
-          onTap: (point) {
-            setState(() {
-              _selectedPoint = point;
-            });
-          },
-          markers: {
-            Marker(
-              markerId: const MarkerId('selected-location'),
-              position: _selectedPoint,
-            ),
-          },
+          onTap: _selectPoint,
+          markers: _selectedPoint == null
+              ? const <Marker>{}
+              : <Marker>{
+                  Marker(
+                    markerId: const MarkerId('selected-location'),
+                    position: _selectedPoint!,
+                    infoWindow: InfoWindow(title: _selectionLabel),
+                  ),
+                },
         );
       },
     );
@@ -1866,6 +2019,477 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       ),
     );
   }
+
+  String get _helperText {
+    final label = _selectionLabel;
+    final point = _selectedPoint;
+
+    if (_isFetchingCurrentLocation) {
+      return 'Detecting your current location...';
+    }
+
+    if (_isSearchingLocation) {
+      return label.isNotEmpty ? 'Searching for "$label"...' : 'Searching...';
+    }
+
+    if (_isResolvingLocation) {
+      return 'Resolving the selected point...';
+    }
+
+    if (point == null) {
+      if (label.isNotEmpty) {
+        if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+          return '$label\n${_statusMessage!}';
+        }
+        return label;
+      }
+
+      if (_statusMessage != null) {
+        return _statusMessage!;
+      }
+
+      return 'Search a place, use your current location, or tap the map to pin where the expense happened.';
+    }
+
+    final coordinates = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+
+    if (label.isEmpty ||
+        ExpenseLocationService.looksLikeCoordinateLabel(label)) {
+      if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+        return '$coordinates\n${_statusMessage!}';
+      }
+      return coordinates;
+    }
+
+    if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+      return '$label - $coordinates\n${_statusMessage!}';
+    }
+
+    return '$label - $coordinates';
+  }
+
+  Future<void> _searchLocation() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      _showLocationMessage('Type a place or address first.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _isSearchingLocation = true;
+      _isResolvingLocation = false;
+      _statusMessage = null;
+    });
+
+    final result = await _locationService.search(query);
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    if (result == null) {
+      setState(() {
+        _isSearchingLocation = false;
+        _isResolvingLocation = false;
+        _resolvedLabel = query;
+        _statusMessage =
+            'Using the typed place name. Add your current location or a pin if you want coordinates too.';
+      });
+      return;
+    }
+
+    final point = LatLng(result.latitude, result.longitude);
+
+    setState(() {
+      _isSearchingLocation = false;
+      _isResolvingLocation = false;
+      _selectedPoint = point;
+      _resolvedLabel = result.label;
+      _statusMessage = 'Search matched this place.';
+    });
+
+    _replaceSearchText(result.label);
+    await _moveCamera(point);
+  }
+
+  Future<void> _prefillCurrentLocationIfAvailable() async {
+    if (!mounted || _selectedPoint != null) {
+      return;
+    }
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return;
+      }
+
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      if (!mounted || _selectedPoint != null) {
+        return;
+      }
+
+      final point = LatLng(position.latitude, position.longitude);
+      final previousAutoLabel = _resolvedLabel;
+      final provisionalLabel = ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+      final requestId = ++_selectionRequestId;
+
+      setState(() {
+        _selectedPoint = point;
+        _resolvedLabel = provisionalLabel;
+        _isResolvingLocation = true;
+        _statusMessage = 'Using your current location.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(provisionalLabel);
+      }
+
+      await _moveCamera(point);
+
+      final resolvedLabel = await _locationService.resolveLabel(
+        latitude: point.latitude,
+        longitude: point.longitude,
+      );
+      if (!mounted || requestId != _selectionRequestId) {
+        return;
+      }
+
+      setState(() {
+        _resolvedLabel = resolvedLabel;
+        _isResolvingLocation = false;
+        _statusMessage = 'Using your current location.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(resolvedLabel);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isResolvingLocation = false;
+      });
+    }
+  }
+
+  Future<void> _useCurrentLocation() async {
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _isFetchingCurrentLocation = true;
+      _statusMessage = null;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _statusMessage =
+              'Location services are turned off. Type a place name instead.';
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _statusMessage =
+              'Location permission was denied. Type a place name instead.';
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _statusMessage =
+              'Location permission is blocked in settings. Type a place name instead.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+
+      final point = LatLng(position.latitude, position.longitude);
+      final previousAutoLabel = _resolvedLabel;
+      final provisionalLabel = ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+      final requestId = ++_selectionRequestId;
+
+      setState(() {
+        _selectedPoint = point;
+        _resolvedLabel = provisionalLabel;
+        _isResolvingLocation = true;
+        _statusMessage = 'Current location detected.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(provisionalLabel);
+      }
+
+      await _moveCamera(point);
+
+      final resolvedLabel = await _locationService.resolveLabel(
+        latitude: point.latitude,
+        longitude: point.longitude,
+      );
+      if (!mounted || requestId != _selectionRequestId) {
+        return;
+      }
+
+      setState(() {
+        _resolvedLabel = resolvedLabel;
+        _isResolvingLocation = false;
+        _statusMessage = 'Current location detected.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(resolvedLabel);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusMessage =
+            'Current location could not be detected. Type a place name instead.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingCurrentLocation = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectPoint(LatLng point) async {
+    final previousAutoLabel = _resolvedLabel;
+    final provisionalLabel = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _selectedPoint = point;
+      _resolvedLabel = provisionalLabel;
+      _isResolvingLocation = true;
+      _statusMessage = null;
+    });
+
+    if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(provisionalLabel);
+    }
+
+    final resolvedLabel = await _locationService.resolveLabel(
+      latitude: point.latitude,
+      longitude: point.longitude,
+    );
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    setState(() {
+      _resolvedLabel = resolvedLabel;
+      _isResolvingLocation = false;
+    });
+
+    if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(resolvedLabel);
+    }
+  }
+
+  Future<void> _refreshSelectionLabel({bool syncSearchField = false}) async {
+    final point = _selectedPoint;
+    if (point == null) {
+      return;
+    }
+
+    final previousAutoLabel = _resolvedLabel;
+    final provisionalLabel = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _resolvedLabel = provisionalLabel;
+      _isResolvingLocation = true;
+    });
+
+    if (syncSearchField &&
+        _shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(provisionalLabel);
+    }
+
+    final resolvedLabel = await _locationService.resolveLabel(
+      latitude: point.latitude,
+      longitude: point.longitude,
+    );
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    setState(() {
+      _resolvedLabel = resolvedLabel;
+      _isResolvingLocation = false;
+    });
+
+    if (syncSearchField &&
+        _shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(resolvedLabel);
+    }
+  }
+
+  bool _shouldSyncSearchField(
+    String? previousAutoLabel,
+    String provisionalLabel,
+  ) {
+    final currentText = _searchController.text.trim();
+    if (currentText.isEmpty) {
+      return true;
+    }
+
+    if (currentText == provisionalLabel) {
+      return true;
+    }
+
+    if (previousAutoLabel != null && currentText == previousAutoLabel.trim()) {
+      return true;
+    }
+
+    return ExpenseLocationService.looksLikeCoordinateLabel(currentText);
+  }
+
+  Future<void> _moveCamera(LatLng point) async {
+    if (_mapController == null) {
+      return;
+    }
+
+    await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(point, 16));
+  }
+
+  void _submitSelection() {
+    final label = _selectionLabel.trim();
+    final point = _selectedPoint;
+    if (label.isEmpty && point == null) {
+      _showLocationMessage(
+        'Search a place, type a label, or tap the map before saving.',
+      );
+      return;
+    }
+
+    final resolvedLabel = label.isNotEmpty
+        ? label
+        : ExpenseLocationService.formatCoordinates(
+            point!.latitude,
+            point.longitude,
+          );
+
+    Navigator.of(
+      context,
+    ).pop(ExpenseLocationSelection(label: resolvedLabel, position: point));
+  }
+
+  void _replaceSearchText(String value) {
+    _searchController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _LocationPickerFooter extends StatelessWidget {
+  const _LocationPickerFooter({required this.label, required this.onSave});
+
+  final String label;
+  final VoidCallback? onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (label.trim().isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppPalette.ink,
+              ),
+            ),
+          ),
+        if (label.trim().isNotEmpty) const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: onSave,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppPalette.green,
+              foregroundColor: AppPalette.ink,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            child: Text(
+              'Save',
+              style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class LabelSelectionScreen extends StatefulWidget {
@@ -1878,89 +2502,17 @@ class LabelSelectionScreen extends StatefulWidget {
 }
 
 class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
-  final TextEditingController _searchController = TextEditingController();
   late List<String> _selectedLabels;
-  String _query = '';
-  String? _expandedGroupLabel;
 
   @override
   void initState() {
     super.initState();
     _selectedLabels = <String>[...widget.initialSelection];
-    _expandedGroupLabel = _groupLabelForSelection(widget.initialSelection);
-    _searchController.addListener(_handleSearchChanged);
   }
 
   @override
   void dispose() {
-    _searchController
-      ..removeListener(_handleSearchChanged)
-      ..dispose();
     super.dispose();
-  }
-
-  void _handleSearchChanged() {
-    setState(() {
-      _query = _searchController.text.trim().toLowerCase();
-    });
-  }
-
-  String? _groupLabelForSelection(List<String> selection) {
-    for (final label in selection) {
-      for (final group in _expenseLabelGroups) {
-        if (group.sublabels.contains(label)) {
-          return group.label;
-        }
-      }
-    }
-    return null;
-  }
-
-  bool _matchesQuery(String value) {
-    if (_query.isEmpty) {
-      return true;
-    }
-    return value.toLowerCase().contains(_query);
-  }
-
-  List<_ExpenseLabelGroup> _visibleGroups() {
-    if (_query.isEmpty) {
-      return _expenseLabelGroups;
-    }
-
-    return _expenseLabelGroups.where((group) {
-      return _matchesQuery(group.label) ||
-          group.sublabels.any((label) => _matchesQuery(label));
-    }).toList();
-  }
-
-  List<String> _visibleSublabels(_ExpenseLabelGroup group) {
-    if (_query.isEmpty) {
-      if (_expandedGroupLabel != group.label) {
-        return const <String>[];
-      }
-      return group.sublabels;
-    }
-
-    final matchingSublabels = group.sublabels
-        .where((label) => _matchesQuery(label))
-        .toList();
-
-    if (matchingSublabels.isNotEmpty) {
-      return matchingSublabels;
-    }
-
-    if (_matchesQuery(group.label)) {
-      return group.sublabels;
-    }
-
-    return const <String>[];
-  }
-
-  void _toggleGroup(String label) {
-    setState(() {
-      _expandedGroupLabel = _expandedGroupLabel == label ? null : label;
-    });
   }
 
   void _toggleSublabel(String label) {
@@ -1993,12 +2545,9 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = 124.0 + keyboardInset;
-    final visibleGroups = _visibleGroups();
+    final bottomPadding = 132.0 + MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white,
       body: Stack(
         children: [
@@ -2010,107 +2559,40 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                   title: 'Labels',
                   onClose: () => Navigator.of(context).pop(),
                   onConfirm: _save,
+                  showConfirm: false,
                 ),
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final minHeight = math.max(
-                        0.0,
-                        constraints.maxHeight - bottomPadding,
-                      );
-
-                      return SingleChildScrollView(
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: EdgeInsets.fromLTRB(24, 14, 24, bottomPadding),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: minHeight),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(24, 24, 24, bottomPadding),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final group in _expenseLabelGroups) ...[
+                          Text(
+                            group.label,
+                            style: GoogleFonts.nunito(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: AppPalette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 12,
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: AppPalette.field,
-                                  borderRadius: BorderRadius.circular(999),
+                              for (final label in group.sublabels)
+                                _SublabelChip(
+                                  label: label,
+                                  selected: _selectedLabels.contains(label),
+                                  onTap: () => _toggleSublabel(label),
                                 ),
-                                child: TextField(
-                                  controller: _searchController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Search Label',
-                                    prefixIconConstraints: const BoxConstraints(
-                                      minWidth: 16,
-                                    ),
-                                    suffixIcon: const Icon(
-                                      Icons.search,
-                                      color: AppPalette.fieldHint,
-                                    ),
-                                    fillColor: Colors.transparent,
-                                    filled: true,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 18,
-                                      vertical: 16,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(999),
-                                      borderSide: const BorderSide(
-                                        color: AppPalette.green,
-                                      ),
-                                    ),
-                                  ),
-                                  style: GoogleFonts.nunito(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppPalette.ink,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeInOut,
-                                alignment: Alignment.topLeft,
-                                child: Wrap(
-                                  spacing: 7,
-                                  runSpacing: 8,
-                                  children: [
-                                    for (final group in visibleGroups) ...[
-                                      _LabelGroupChip(
-                                        label: group.label,
-                                        active:
-                                           
-                                          _expandedGroupLabel == group.label,
-                                        onTap: () =>
-                                            _toggleGroup(group.label),
-                                      ),
-                                      for (final label
-                                          in _visibleSublabels(
-                                      group,
-                                    ))
-                                        _SublabelChip(
-                                          label: label,
-                                          selected: _selectedLabels.contains(
-                                            label,
-                                        ),
-                                          onTap: () =>
-                                              _toggleSublabel(label),
-                                        ),
-                                    ],
-                                  ],
-                                ),
-                              ),
                             ],
                           ),
-                        ),
-                      );
-                    },
+                          const SizedBox(height: 28),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -2121,26 +2603,27 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
             curve: Curves.easeOut,
             left: 0,
             right: 0,
-            bottom: 22 + keyboardInset,
+            bottom: 24,
             child: SafeArea(
               top: false,
               child: Center(
                 child: SizedBox(
-                  width: 88,
-                  height: 42,
+                  width: 172,
+                  height: 50,
                   child: ElevatedButton(
-                    onPressed: _selectedLabels.isEmpty ? null : _save,
+                    onPressed: _save,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppPalette.ink,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFA6A6A6),
-                      disabledForegroundColor: Colors.white,
                       textStyle: GoogleFonts.nunito(
-                        fontSize: 13,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                       ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                    child: const Text('Save'),
+                    child: const Text('Done'),
                   ),
                 ),
               ),
@@ -2184,18 +2667,20 @@ class _ExpenseHeader extends StatelessWidget {
     required this.isSubmitting,
     required this.onClose,
     required this.onConfirm,
+    this.showConfirm = true,
   });
 
   final String title;
   final bool isSubmitting;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
+  final bool showConfirm;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      padding: const EdgeInsets.fromLTRB(12, 50, 12, 14),
       child: Row(
         children: [
           IconButton(
@@ -2213,18 +2698,14 @@ class _ExpenseHeader extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            onPressed: isSubmitting ? null : onConfirm,
-            icon: isSubmitting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: AppPalette.ink,
-                    ),
+          SizedBox(
+            width: 48,
+            child: showConfirm
+                ? IconButton(
+                    onPressed: onConfirm,
+                    icon: const Icon(Icons.check, color: AppPalette.ink),
                   )
-                : const Icon(Icons.check, color: AppPalette.ink),
+                : null,
           ),
         ],
       ),
@@ -2324,103 +2805,6 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
-class _PrimaryCategoryChip extends StatelessWidget {
-  const _PrimaryCategoryChip({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  static const double chipHeight = 46;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          height: chipHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: selected ? color : AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Center(
-            widthFactor: 1,
-            child: Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: AppPalette.ink,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LabelGroupChip extends StatelessWidget {
-  const _LabelGroupChip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foregroundColor = active ? AppPalette.green : AppPalette.ink;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          color: active ? Colors.white : const Color(0xFFE4E4E4),
-          borderRadius: BorderRadius.circular(20),
-          border: active
-              ? Border.all(color: AppPalette.green, width: 1.5)
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add, size: 13, color: foregroundColor),
-            const SizedBox(width: 3),
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: foregroundColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SublabelChip extends StatelessWidget {
   const _SublabelChip({
     required this.label,
@@ -2436,21 +2820,75 @@ class _SublabelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         decoration: BoxDecoration(
-          color: selected ? AppPalette.green : const Color(0xFFD1D1D1),
-          borderRadius: BorderRadius.circular(20),
+          color: selected ? AppPalette.green : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
+          ),
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.nunito(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: selected ? 1 : 0,
+              child: const Icon(Icons.check, size: 15, color: AppPalette.ink),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedExpenseLabelChip extends StatelessWidget {
+  const _SelectedExpenseLabelChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: _MiniActionButton.buttonHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppPalette.green,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check, size: 17, color: AppPalette.ink),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2469,6 +2907,8 @@ class _MiniActionButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
 
+  static const double buttonHeight = 46;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -2477,7 +2917,7 @@ class _MiniActionButton extends StatelessWidget {
         onTap: onPressed,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          height: _PrimaryCategoryChip.chipHeight,
+          height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: AppPalette.green,

@@ -239,9 +239,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pendingExpenses = expenses
-        .where((expense) => !expense.isSynced)
-        .length;
+    final pendingExpenses = expenses.where((expense) => !expense.isSynced).length;
     final pendingGoals = goals.where((goal) => !goal.isSynced).length;
     final pendingIncomes = incomes.where((income) => !income.isSynced).length;
 
@@ -319,9 +317,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.cloud_upload_outlined),
-                    label: Text(
-                      _isSyncing ? 'Sincronizando...' : 'Sincronizar',
-                    ),
+                    label: Text(_isSyncing ? 'Sincronizando...' : 'Sincronizar'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _isVerifying ? null : _verifyCloudState,
@@ -444,9 +440,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
               )
             else
               Column(
-                children: expenses
-                    .map(_buildExpenseTile)
-                    .toList(growable: false),
+                children: expenses.map(_buildExpenseTile).toList(growable: false),
               ),
           ],
         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
@@ -10,6 +11,7 @@ class LocalStorageService {
   static const String _expensesBox = 'expenses';
   static const String _incomesBox = 'incomes';
   static const String _goalsBox = 'goals';
+  static const String _notificationsBox = 'notifications';
   static const String _labelsBox = 'labels';
   static const String _usersBox = 'users';
 
@@ -32,6 +34,9 @@ class LocalStorageService {
     if (!Hive.isAdapterRegistered(4)) {
       Hive.registerAdapter(UserModelAdapter());
     }
+    if (!Hive.isAdapterRegistered(5)) {
+      Hive.registerAdapter(AppNotificationModelAdapter());
+    }
 
     // Open boxes
     if (!Hive.isBoxOpen(_expensesBox)) {
@@ -42,6 +47,9 @@ class LocalStorageService {
     }
     if (!Hive.isBoxOpen(_goalsBox)) {
       await Hive.openBox<GoalModel>(_goalsBox);
+    }
+    if (!Hive.isBoxOpen(_notificationsBox)) {
+      await Hive.openBox<AppNotificationModel>(_notificationsBox);
     }
     if (!Hive.isBoxOpen(_labelsBox)) {
       await Hive.openBox<LabelModel>(_labelsBox);
@@ -54,6 +62,8 @@ class LocalStorageService {
   static Box<ExpenseModel> get expenseBox => Hive.box<ExpenseModel>(_expensesBox);
   static Box<IncomeModel> get incomeBox => Hive.box<IncomeModel>(_incomesBox);
   static Box<GoalModel> get goalBox => Hive.box<GoalModel>(_goalsBox);
+  static Box<AppNotificationModel> get notificationBox =>
+      Hive.box<AppNotificationModel>(_notificationsBox);
   static Box<LabelModel> get labelBox => Hive.box<LabelModel>(_labelsBox);
   static Box<UserModel> get userBox => Hive.box<UserModel>(_usersBox);
 
@@ -61,6 +71,8 @@ class LocalStorageService {
       expenseBox.listenable();
   static ValueListenable<Box<GoalModel>> get goalsListenable =>
       goalBox.listenable();
+  static ValueListenable<Box<AppNotificationModel>> get notificationsListenable =>
+      notificationBox.listenable();
   static ValueListenable<Box<IncomeModel>> get incomesListenable =>
       incomeBox.listenable();
   static ValueListenable<Box<LabelModel>> get labelsListenable =>
@@ -269,6 +281,7 @@ class LocalStorageService {
     await expenseBox.clear();
     await incomeBox.clear();
     await goalBox.clear();
+    await notificationBox.clear();
     await labelBox.clear();
     await userBox.clear();
   }

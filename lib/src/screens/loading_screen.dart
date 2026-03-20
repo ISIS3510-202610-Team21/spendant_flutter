@@ -39,7 +39,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const AntAsset('web/ant/Rolling.svg', height: 165),
+            const AntAsset('web/ant/ant_coin.svg', height: 165),
             const SizedBox(height: 10),
             Text(
               'Loading...',

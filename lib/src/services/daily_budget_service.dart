@@ -25,6 +25,7 @@ class DailyBudgetSummary {
   final double remainingInternalBudget;
   final double remainingSpendableBudget;
 
+  double get totalDailyIncome => internalDailyBudget;
   bool get hasIncome => incomes.isNotEmpty && internalDailyBudget > 0;
   bool get hasGoals => goals.isNotEmpty;
   bool get isSpendableBudgetExhausted => remainingSpendableBudget <= 0;

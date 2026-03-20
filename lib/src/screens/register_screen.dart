@@ -10,12 +10,14 @@ class RegisterScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return AuthCredentialsScreen(
       primaryLabel: 'Register',
-      showConfirmPassword: true,
+      successRoute: AppRoutes.registerIntro,
+      showEmail: true,
       footerText: 'Already got an account?',
       footerActionLabel: 'Login',
-      antLeft: -175,
-      antBottom: -300,
-      antHeight: 700,
+      antAssetPath: 'web/ant/ant_login.svg',
+      antLeft: -28,
+      antBottom: -56,
+      antHeight: 460,
       onFooterPressed: () =>
           Navigator.of(context).pushReplacementNamed(AppRoutes.login),
     );

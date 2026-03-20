@@ -1644,7 +1644,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'Select Date',
+              title: 'New Expense',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
             ),
@@ -1768,7 +1768,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'Select Location',
+              title: 'New Expense',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () {
                 Navigator.of(context).pop(
@@ -2103,7 +2103,7 @@ class _ExpenseHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      padding: const EdgeInsets.fromLTRB(12, 50, 12, 14),
       child: Row(
         children: [
           IconButton(

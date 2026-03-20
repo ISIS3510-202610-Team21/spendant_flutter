@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
@@ -415,25 +416,22 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           children: [
             _profileActionButton(
               'Income',
-              Icons.attach_money,
+              assetPath: 'web/icons/IncomeWhite.svg',
               isIncomeBtn: true,
             ),
             const SizedBox(width: 16),
-            _profileActionButton('Goals', Icons.flag_outlined, isGoalBtn: true),
+            _profileActionButton(
+              'Goals',
+              icon: Icons.flag_outlined,
+              isGoalBtn: true,
+            ),
           ],
-        ),
-        const SizedBox(height: 14),
-        Center(
-          child: _profileActionButton(
-            'Set Bank Account',
-            Icons.account_balance_outlined,
-          ),
         ),
         const Spacer(),
         const Center(
           child: SizedBox(
-            width: 150,
-            height: 180,
+            width: 200,
+            height: 250,
             child: AntAsset('web/ant/ant_idle.svg'),
           ),
         ),
@@ -443,8 +441,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   Widget _profileActionButton(
-    String label,
-    IconData icon, {
+    String label, {
+    IconData? icon,
+    String? assetPath,
     bool isGoalBtn = false,
     bool isIncomeBtn = false,
   }) {
@@ -456,7 +455,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           Navigator.of(context).pushNamed(AppRoutes.budget);
         }
       },
-      icon: Icon(icon, size: 20, color: Colors.white),
+      icon: assetPath != null
+          ? SvgPicture.asset(
+              assetPath,
+              width: 20,
+              height: 20,
+            )
+          : Icon(icon, size: 20, color: Colors.white),
       label: Text(label, style: const TextStyle(color: Colors.white)),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.black,
@@ -474,104 +479,100 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       LocalStorageService.expensesListenable,
     ]);
 
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
-                    onPressed: () => setState(() => _viewState = 0),
-                    icon: const Icon(
-                      Icons.close,
-                      size: 28,
-                      color: Colors.black,
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(20, 58, 20, 14),
+          color: AppPalette.green,
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: () => setState(() => _viewState = 0),
+                icon: const Icon(Icons.close, size: 28, color: AppPalette.ink),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Goals',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.ink,
                     ),
                   ),
                 ),
-                Text(
-                  'Goals',
-                  style: GoogleFonts.nunito(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 48),
+            ],
           ),
-          Expanded(
-            child: AnimatedBuilder(
-              animation: budgetDependencies,
-              builder: (context, _) {
-                final box = LocalStorageService.goalBox;
-                final goals =
-                    box.values
-                        .where((goal) => goal.userId == _defaultUserId)
-                        .toList()
-                      ..sort(
-                        (left, right) =>
-                            right.createdAt.compareTo(left.createdAt),
-                      );
-                final summary = _budgetSummary();
-                final canCreateGoal = summary.hasIncome;
+        ),
+        Expanded(
+          child: AnimatedBuilder(
+            animation: budgetDependencies,
+            builder: (context, _) {
+              final box = LocalStorageService.goalBox;
+              final goals =
+                  box.values.where((goal) => goal.userId == _defaultUserId).toList()
+                    ..sort(
+                      (left, right) =>
+                          right.createdAt.compareTo(left.createdAt),
+                    );
+              final summary = _budgetSummary();
+              final canCreateGoal = summary.hasIncome;
 
-                return ListView(
-                  padding: const EdgeInsets.all(24),
-                  children: [
-                    _GoalBudgetCard(
-                      summary: summary,
-                      currencyFormat: _currencyFormat,
+              return ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  _GoalBudgetCard(
+                    summary: summary,
+                    currencyFormat: _currencyFormat,
+                  ),
+                  const SizedBox(height: 14),
+                  if (!summary.hasIncome) ...[
+                    const _GoalRulesNotice(
+                      message:
+                          'Goals need at least one active income because every goal reserves part of your daily budget.',
                     ),
                     const SizedBox(height: 14),
-                    if (!summary.hasIncome) ...[
-                      const _GoalRulesNotice(
-                        message:
-                            'Goals need at least one active income because every goal reserves part of your daily budget.',
-                      ),
-                      const SizedBox(height: 14),
-                    ] else if (summary.isSpendableBudgetExhausted) ...[
-                      _GoalRulesNotice(
-                        message: summary.isInternalBudgetExhausted
-                            ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
-                            : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-                    if (goals.isEmpty) const _EmptyGoalsCard(),
-                    for (final goal in goals) _GoalTile(goal: goal),
-                    const SizedBox(height: 30),
-                    ElevatedButton(
-                      onPressed: canCreateGoal
-                          ? _startGoalSetup
-                          : () => Navigator.of(
-                              context,
-                            ).pushNamed(AppRoutes.budget),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        minimumSize: const Size(double.infinity, 55),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      child: Text(
-                        canCreateGoal ? 'New Goal' : 'Add Income First',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                  ] else if (summary.isSpendableBudgetExhausted) ...[
+                    _GoalRulesNotice(
+                      message: summary.isInternalBudgetExhausted
+                          ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
+                          : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (goals.isEmpty) const _EmptyGoalsCard(),
+                  for (final goal in goals) _GoalTile(goal: goal),
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: canCreateGoal
+                        ? _startGoalSetup
+                        : () => Navigator.of(context).pushNamed(AppRoutes.budget),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      minimumSize: const Size(double.infinity, 55),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
                       ),
                     ),
-                  ],
-                );
-              },
-            ),
+                    child: Text(
+                      canCreateGoal ? 'New Goal' : 'Add Income First',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

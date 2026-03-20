@@ -12,6 +12,7 @@ class LoginScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return AuthCredentialsScreen(
       primaryLabel: 'Login',
+      successRoute: AppRoutes.home,
       footerText: 'You got no account?',
       footerActionLabel: 'Register',
       antAssetPath: 'web/ant/ant_login.svg',
@@ -28,6 +29,7 @@ class AuthCredentialsScreen extends StatefulWidget {
   const AuthCredentialsScreen({
     super.key,
     required this.primaryLabel,
+    required this.successRoute,
     required this.footerText,
     required this.footerActionLabel,
     required this.antAssetPath,
@@ -35,10 +37,11 @@ class AuthCredentialsScreen extends StatefulWidget {
     required this.antBottom,
     required this.antHeight,
     required this.onFooterPressed,
-    this.showConfirmPassword = false,
+    this.showEmail = false,
   });
 
   final String primaryLabel;
+  final String successRoute;
   final String footerText;
   final String footerActionLabel;
   final String antAssetPath;
@@ -46,7 +49,7 @@ class AuthCredentialsScreen extends StatefulWidget {
   final double antBottom;
   final double antHeight;
   final VoidCallback onFooterPressed;
-  final bool showConfirmPassword;
+  final bool showEmail;
 
   @override
   State<AuthCredentialsScreen> createState() => _AuthCredentialsScreenState();
@@ -54,8 +57,8 @@ class AuthCredentialsScreen extends StatefulWidget {
 
 class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
   final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   bool _isPasswordHidden = true;
-  bool _isConfirmPasswordHidden = true;
 
   void _togglePasswordVisibility() {
     setState(() {
@@ -63,15 +66,10 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     });
   }
 
-  void _toggleConfirmPasswordVisibility() {
-    setState(() {
-      _isConfirmPasswordHidden = !_isConfirmPasswordHidden;
-    });
-  }
-
   @override
   void dispose() {
     _usernameController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -83,7 +81,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     }
     Navigator.of(
       context,
-    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+    ).pushNamedAndRemoveUntil(widget.successRoute, (route) => false);
   }
 
   @override
@@ -118,6 +116,14 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                           controller: _usernameController,
                           decoration: _fieldDecoration('Username'),
                         ),
+                        if (widget.showEmail) ...[
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _fieldDecoration('Email'),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         TextField(
                           obscureText: _isPasswordHidden,
@@ -134,28 +140,10 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                             ),
                           ),
                         ),
-                        if (widget.showConfirmPassword) ...[
-                          const SizedBox(height: 14),
-                          TextField(
-                            obscureText: _isConfirmPasswordHidden,
-                            decoration: _fieldDecoration(
-                              'Confirm password',
-                              suffixIcon: IconButton(
-                                onPressed: _toggleConfirmPasswordVisibility,
-                                icon: Icon(
-                                  _isConfirmPasswordHidden
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 20),
                         BlackPrimaryButton(
                           label: widget.primaryLabel,
-                          width: widget.showConfirmPassword ? 128 : 103,
+                          width: widget.showEmail ? 128 : 103,
                           height: 46,
                           onPressed: _submit,
                         ),
@@ -195,7 +183,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                         SizedBox(
                           height:
                               constraints.maxHeight *
-                              (widget.showConfirmPassword ? 0.29 : 0.34),
+                              (widget.showEmail ? 0.29 : 0.34),
                         ),
                       ],
                     ),

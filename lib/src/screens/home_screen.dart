@@ -11,7 +11,6 @@ import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
-import '../models/app_notification_model.dart';
 import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';

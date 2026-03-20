@@ -226,13 +226,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
-  void _removeSelectedLabel(String label) {
-    setState(() {
-      final updated = List<String>.from(_selectedDetailLabels)..remove(label);
-      _applySelectedLabels(updated);
-    });
-  }
-
   Future<void> _pickDate() async {
     final selected = await Navigator.of(context).push<DateTime>(
       MaterialPageRoute(

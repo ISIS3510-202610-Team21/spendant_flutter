@@ -10,8 +10,10 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
+import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/google_pay_expense_import_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
@@ -35,6 +37,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   late final int _notificationColorStartIndex;
 
   List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
+  bool _isSimulatingGooglePay = false;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
@@ -81,6 +84,74 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await NotificationsStore.markNotificationsAsViewed(
       notifications.map((notification) => notification.id),
     );
+  }
+
+  Future<void> _simulateGooglePayExpenseImport() async {
+    if (_isSimulatingGooglePay) {
+      return;
+    }
+
+    setState(() {
+      _isSimulatingGooglePay = true;
+    });
+
+    final result = await GooglePayExpenseImportService.simulateExpenseImport();
+    if (result.imported) {
+      await AppNotificationService.refresh();
+    }
+    await _refreshNotifications();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSimulatingGooglePay = false;
+    });
+
+    final parsedExpense = result.expense;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    switch (result.status) {
+      case GooglePayImportStatus.imported:
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              parsedExpense == null
+                  ? 'Simulated Google Pay expense imported.'
+                  : 'Imported ${parsedExpense.name} for ${NotificationFeedService.formatAmount(parsedExpense.amount)}.',
+            ),
+          ),
+        );
+        return;
+      case GooglePayImportStatus.duplicate:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'That simulated Google Pay expense already exists nearby.',
+            ),
+          ),
+        );
+        return;
+      case GooglePayImportStatus.ignored:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'The simulated Google Pay notification could not be parsed.',
+            ),
+          ),
+        );
+        return;
+      case GooglePayImportStatus.unavailable:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sign in first to import a simulated Google Pay expense.',
+            ),
+          ),
+        );
+        return;
+    }
   }
 
   Future<void> _openExpenseEditor(NotificationFeedItem notification) async {
@@ -199,7 +270,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _NotificationsHeader(onClose: () => Navigator.of(context).pop()),
+            _NotificationsHeader(
+              onClose: () => Navigator.of(context).pop(),
+              onHiddenAction: _simulateGooglePayExpenseImport,
+            ),
             Expanded(
               child: sections.isEmpty
                   ? const _EmptyNotificationsState()
@@ -295,9 +369,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 }
 
 class _NotificationsHeader extends StatelessWidget {
-  const _NotificationsHeader({required this.onClose});
+  const _NotificationsHeader({
+    required this.onClose,
+    required this.onHiddenAction,
+  });
 
   final VoidCallback onClose;
+  final VoidCallback onHiddenAction;
 
   @override
   Widget build(BuildContext context) {
@@ -321,7 +399,11 @@ class _NotificationsHeader extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 48),
+          GestureDetector(
+            onLongPress: onHiddenAction,
+            behavior: HitTestBehavior.translucent,
+            child: const SizedBox(width: 48, height: 48),
+          ),
         ],
       ),
     );

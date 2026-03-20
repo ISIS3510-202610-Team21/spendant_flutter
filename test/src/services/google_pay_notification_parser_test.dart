@@ -46,6 +46,28 @@ void main() {
       expect(parsed.detailLabels, <String>['Food Delivery']);
     });
 
+    test('parses an approved bank-style Google Wallet message', () {
+      const event = NotificationReaderEvent(
+        eventId: 'wallet-4',
+        packageName: 'com.google.android.apps.walletnfcrel',
+        appName: 'Google Wallet',
+        title: r'Compra aprobada por $51.600',
+        text:
+            r'Tu compra en CAFE QUINDIO EXPRESS TITAN PLAZA por $51.600,00 con tu tarjeta terminada en 3141 ha sido APROBADA.',
+        bigText: '',
+        subText: '',
+        postedAtMillis: 1710808200000,
+      );
+
+      final parsed = GooglePayNotificationParser.parse(event);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.name, 'CAFE QUINDIO EXPRESS TITAN PLAZA');
+      expect(parsed.amount, 51600);
+      expect(parsed.primaryCategory, 'Food');
+      expect(parsed.detailLabels, <String>['Food']);
+    });
+
     test('ignores refund notifications', () {
       const event = NotificationReaderEvent(
         eventId: 'wallet-3',

@@ -92,9 +92,13 @@ abstract final class GooglePayNotificationParser {
     'google pay',
     'google wallet',
     'payment successful',
+    'payment approved',
     'payment complete',
+    'purchase approved',
     'purchase complete',
     'purchase successful',
+    'compra aprobada',
+    'pago aprobado',
     'compra realizada',
     'pago realizado',
     'you paid',
@@ -478,7 +482,7 @@ abstract final class GooglePayNotificationParser {
     cleaned = cleaned
         .split(
           RegExp(
-            r'\b(?:using|with|from|ending|con|desde|tarjeta|card|account)\b',
+            r'\b(?:using|with|from|ending|con|desde|tarjeta|card|account|por|for)\b',
             caseSensitive: false,
           ),
         )

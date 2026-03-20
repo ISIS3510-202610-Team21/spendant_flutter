@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/expense_model.dart';
@@ -8,15 +9,56 @@ import 'google_pay_notification_parser.dart';
 import 'local_storage_service.dart';
 import 'notification_reader_service.dart';
 
+enum GooglePayImportStatus { imported, duplicate, ignored, unavailable }
+
+class GooglePayImportResult {
+  const GooglePayImportResult({required this.status, this.expense});
+
+  final GooglePayImportStatus status;
+  final ParsedGooglePayExpense? expense;
+
+  bool get imported => status == GooglePayImportStatus.imported;
+}
+
 abstract final class GooglePayExpenseImportService {
   static const String _processedEventIdsKey =
       'processed_google_pay_notification_event_ids_v1';
   static const int _maxProcessedEventIds = 240;
+  static final NumberFormat _titleAmountFormat = NumberFormat('#,###', 'es_CO');
+  static final NumberFormat _bodyAmountFormat = NumberFormat(
+    '#,##0.00',
+    'es_CO',
+  );
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   static StreamSubscription<NotificationReaderEvent>? _subscription;
   static Future<void>? _activeRefresh;
   static bool _isInitialized = false;
+  static int _simulationCounter = 0;
+
+  static const List<_GooglePaySimulationTemplate> _simulationTemplates =
+      <_GooglePaySimulationTemplate>[
+        _GooglePaySimulationTemplate(
+          merchantName: 'CAFE QUINDIO EXPRESS TITAN PLAZA',
+          baseAmount: 51600,
+          cardDigits: '3141',
+        ),
+        _GooglePaySimulationTemplate(
+          merchantName: 'UBER EATS',
+          baseAmount: 28900,
+          cardDigits: '3141',
+        ),
+        _GooglePaySimulationTemplate(
+          merchantName: 'EXITO CHAPINERO',
+          baseAmount: 43600,
+          cardDigits: '3141',
+        ),
+        _GooglePaySimulationTemplate(
+          merchantName: 'SPOTIFY',
+          baseAmount: 24900,
+          cardDigits: '3141',
+        ),
+      ];
 
   static Future<void> initialize() async {
     if (_isInitialized || _subscription != null) {
@@ -29,7 +71,7 @@ abstract final class GooglePayExpenseImportService {
     }
 
     _subscription = NotificationReaderService.events.listen((event) {
-      unawaited(_importEvent(event));
+      unawaited(_importEventAndDiscard(event));
     });
 
     await refresh();
@@ -64,14 +106,44 @@ abstract final class GooglePayExpenseImportService {
     }
   }
 
-  static Future<void> _importEvent(NotificationReaderEvent event) async {
+  static Future<GooglePayImportResult> simulateExpenseImport() async {
+    final now = DateTime.now();
+    final sample =
+        _simulationTemplates[_simulationCounter % _simulationTemplates.length];
+    _simulationCounter++;
+
+    final amountOffset = (now.millisecond % 17) * 100;
+    final amount = sample.baseAmount + amountOffset;
+    final titleAmount = _titleAmountFormat.format(amount);
+    final bodyAmount = _bodyAmountFormat.format(amount);
+    final event = NotificationReaderEvent(
+      eventId: 'google-pay-sim-${now.microsecondsSinceEpoch}',
+      packageName: 'com.google.android.apps.walletnfcrel',
+      appName: 'Google Wallet',
+      title: 'Compra aprobada por \$$titleAmount',
+      text:
+          'Tu compra en ${sample.merchantName} por \$$bodyAmount con tu tarjeta terminada en ${sample.cardDigits} ha sido APROBADA.',
+      bigText:
+          'Tu compra en ${sample.merchantName} por \$$bodyAmount con tu tarjeta terminada en ${sample.cardDigits} ha sido APROBADA.',
+      subText: '',
+      postedAtMillis: now.millisecondsSinceEpoch,
+    );
+
+    return _importEvent(event);
+  }
+
+  static Future<GooglePayImportResult> _importEvent(
+    NotificationReaderEvent event,
+  ) async {
     if (_currentUserId < 0) {
-      return;
+      return const GooglePayImportResult(
+        status: GooglePayImportStatus.unavailable,
+      );
     }
 
     final parsedExpense = GooglePayNotificationParser.parse(event);
     if (parsedExpense == null) {
-      return;
+      return const GooglePayImportResult(status: GooglePayImportStatus.ignored);
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -79,12 +151,18 @@ abstract final class GooglePayExpenseImportService {
         prefs.getStringList(_processedEventIdsKey) ?? <String>[];
     final dedupeKey = event.dedupeKey;
     if (processedIds.contains(dedupeKey)) {
-      return;
+      return GooglePayImportResult(
+        status: GooglePayImportStatus.duplicate,
+        expense: parsedExpense,
+      );
     }
 
     if (_hasMatchingImportedExpense(parsedExpense)) {
       await _markEventAsProcessed(prefs, processedIds, dedupeKey);
-      return;
+      return GooglePayImportResult(
+        status: GooglePayImportStatus.duplicate,
+        expense: parsedExpense,
+      );
     }
 
     final expenseDate = DateTime(
@@ -108,6 +186,16 @@ abstract final class GooglePayExpenseImportService {
 
     await LocalStorageService().saveExpense(expense);
     await _markEventAsProcessed(prefs, processedIds, dedupeKey);
+    return GooglePayImportResult(
+      status: GooglePayImportStatus.imported,
+      expense: parsedExpense,
+    );
+  }
+
+  static Future<void> _importEventAndDiscard(
+    NotificationReaderEvent event,
+  ) async {
+    await _importEvent(event);
   }
 
   static bool _hasMatchingImportedExpense(ParsedGooglePayExpense candidate) {
@@ -166,4 +254,16 @@ abstract final class GooglePayExpenseImportService {
 
     await prefs.setStringList(_processedEventIdsKey, updatedIds);
   }
+}
+
+class _GooglePaySimulationTemplate {
+  const _GooglePaySimulationTemplate({
+    required this.merchantName,
+    required this.baseAmount,
+    required this.cardDigits,
+  });
+
+  final String merchantName;
+  final int baseAmount;
+  final String cardDigits;
 }

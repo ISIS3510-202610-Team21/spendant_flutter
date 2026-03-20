@@ -12,7 +12,8 @@ abstract final class LocalNotificationService {
       AndroidNotificationChannel(
         'spendant_alerts',
         'SpendAnt Alerts',
-        description: 'Goal and budget alerts generated locally by SpendAnt.',
+        description:
+            'Goal, budget, and spending alerts generated locally by SpendAnt.',
         importance: Importance.max,
       );
 

@@ -158,15 +158,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         await _openExpenseEditor(notification);
         return;
       case NotificationFeedType.warning:
-        if (notification.routeName != null) {
-          await AppNavigationService.openRedirect(
-            AppRedirect(
-              routeName: notification.routeName!,
-              routeArgumentInt: notification.routeArgumentInt,
-            ),
-          );
-          return;
-        }
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => _WarningDetailScreen(notification: notification),
@@ -504,6 +495,13 @@ class _WarningDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final category = notification.category ?? 'Other';
+    final headline =
+        notification.expense?.name ??
+        notification.subtitle ??
+        notification.title;
+    final secondaryLabel = notification.expense != null
+        ? category
+        : (notification.category ?? notification.subtitle);
 
     return _NotificationDetailShell(
       backgroundColor: const Color(0xFFFF632D),
@@ -538,21 +536,22 @@ class _WarningDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    notification.expense?.name ?? 'Large expense',
+                    headline,
                     style: GoogleFonts.nunito(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
                       color: AppPalette.ink,
                     ),
                   ),
-                  Text(
-                    category,
-                    style: GoogleFonts.nunito(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black54,
+                  if (secondaryLabel != null)
+                    Text(
+                      secondaryLabel,
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black54,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -742,6 +741,9 @@ class _NotificationVisuals {
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.warning_amber_rounded,
+          iconAssetPath: item.category == null
+              ? null
+              : ExpenseVisuals.iconAssetPathFor(item.category!),
         );
       case NotificationFeedType.goalCreated:
         return _NotificationVisuals(

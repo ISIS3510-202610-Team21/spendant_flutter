@@ -7,6 +7,9 @@ abstract final class AppNotificationTypes {
   static const incomeCreated = 'income_created';
   static const incomeDue = 'income_due';
   static const budgetWarning = 'budget_warning';
+  static const spendingSpike = 'spending_spike';
+  static const spendingPace = 'spending_pace';
+  static const spendingPattern = 'spending_pattern';
 }
 
 class AppNotificationModel extends HiveObject {

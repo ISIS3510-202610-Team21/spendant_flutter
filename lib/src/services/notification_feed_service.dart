@@ -74,10 +74,6 @@ abstract final class NotificationFeedService {
         userExpenses,
         prioritizedLabels: prioritizedLabels,
       ),
-      ..._buildWarningNotifications(
-        userExpenses,
-        prioritizedLabels: prioritizedLabels,
-      ),
       ..._buildAppNotifications(
         userGoals,
         appNotifications,
@@ -113,40 +109,6 @@ abstract final class NotificationFeedService {
     }).toList();
   }
 
-  static List<NotificationFeedItem> _buildWarningNotifications(
-    List<ExpenseModel> expenses, {
-    required List<String> prioritizedLabels,
-  }) {
-    final warnings = <NotificationFeedItem>[];
-
-    for (final expense in expenses) {
-      if (!_isUnusualExpense(expense, expenses)) {
-        continue;
-      }
-
-      final category = ExpenseVisuals.resolveDisplayLabel(
-        expense,
-        prioritizedLabels: prioritizedLabels,
-      );
-      warnings.add(
-        NotificationFeedItem(
-          id: 'warning-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
-          type: NotificationFeedType.warning,
-          createdAt: expense.createdAt,
-          title: 'New Warning!',
-          amount: expense.amount,
-          category: category,
-          expense: expense,
-          detailTitle: '"Hey! Everything alright\nover there?"',
-          detailMessage:
-              'We noticed some unusual activity in $category. Before your future self gets the wrong idea, was this purchase planned or is it a stress treat? Think about it for two minutes.',
-        ),
-      );
-    }
-
-    return warnings.take(4).toList();
-  }
-
   static List<NotificationFeedItem> _buildAppNotifications(
     List<GoalModel> goals,
     Iterable<AppNotificationModel> appNotifications, {
@@ -180,45 +142,6 @@ abstract final class NotificationFeedService {
           );
         })
         .toList();
-  }
-
-  static bool _isUnusualExpense(
-    ExpenseModel expense,
-    List<ExpenseModel> allExpenses,
-  ) {
-    final category = normalizeCategory(expense.primaryCategory);
-    final comparableExpenses = allExpenses.where((candidate) {
-      return candidate != expense &&
-          normalizeCategory(candidate.primaryCategory) == category;
-    }).toList();
-
-    if (category == 'Transport' && expense.amount >= 50000) {
-      return true;
-    }
-
-    if (expense.amount < 35000 || comparableExpenses.length < 2) {
-      return false;
-    }
-
-    final average =
-        comparableExpenses.fold<double>(0, (sum, item) => sum + item.amount) /
-        comparableExpenses.length;
-
-    return expense.amount >= average * 1.8 &&
-        (expense.amount - average) >= 15000;
-  }
-
-  static String normalizeCategory(String? category) {
-    switch (category?.trim()) {
-      case 'Food':
-        return 'Food';
-      case 'Transport':
-        return 'Transport';
-      case 'Services':
-        return 'Services';
-      default:
-        return 'Other';
-    }
   }
 
   static String formatAmount(double amount) {
@@ -277,6 +200,10 @@ abstract final class NotificationFeedService {
         return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
+      case AppNotificationTypes.spendingSpike:
+      case AppNotificationTypes.spendingPace:
+      case AppNotificationTypes.spendingPattern:
+        return NotificationFeedType.warning;
       default:
         return NotificationFeedType.warning;
     }

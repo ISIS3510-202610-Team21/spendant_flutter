@@ -7,10 +7,14 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
+import '../services/app_notification_service.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
+import '../widgets/spendant_delete_dialog.dart';
+import '../../app.dart';
 
 // ─────────────────────────────────────────────────────────
 // BUDGET SCREEN (lista de ingresos)
@@ -19,7 +23,6 @@ import '../widgets/spendant_bottom_nav.dart';
 class BudgetScreen extends StatelessWidget {
   const BudgetScreen({super.key});
 
-  static const int _defaultUserId = 1;
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   static const List<Color> _cardColors = [
@@ -28,6 +31,14 @@ class BudgetScreen extends StatelessWidget {
     Color(0xFFD5EAF9),
     Color(0xFFD5F9E0),
   ];
+
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+
+  void _goToHome(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+  }
 
   String _recurrenceLabel(IncomeModel income) {
     if (income.type == 'JUST_ONCE') return 'Just once';
@@ -38,21 +49,68 @@ class BudgetScreen extends StatelessWidget {
     return 'Every $interval ${unit}s';
   }
 
+  Future<bool> _showDeleteConfirmation(
+    BuildContext context, {
+    required String title,
+    required String name,
+  }) async {
+    return showSpendAntDeleteDialog(context, title: title, name: name);
+  }
+
+  Future<void> _confirmDeleteIncome(
+    BuildContext context,
+    IncomeModel income,
+  ) async {
+    final shouldDelete = await _showDeleteConfirmation(
+      context,
+      title: 'Delete income?',
+      name: income.name,
+    );
+    if (!shouldDelete || !context.mounted) {
+      return;
+    }
+
+    final deletedFromCloud = await CloudSyncService().deleteIncomeRecord(
+      income,
+    );
+    if (!context.mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(
+            deletedFromCloud
+                ? 'Income deleted'
+                : 'Income deleted locally. Cloud cleanup is still pending.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _BudgetHeader(onClose: () => Navigator.of(context).pop()),
+          _BudgetHeader(onClose: () => _goToHome(context)),
           Expanded(
             child: ValueListenableBuilder<Box<IncomeModel>>(
               valueListenable: LocalStorageService.incomesListenable,
               builder: (context, box, _) {
-                final incomes = box.values
-                    .where((i) => i.userId == _defaultUserId)
-                    .toList()
-                  ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                final incomes =
+                    box.values.where((i) => i.userId == _currentUserId).toList()
+                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
@@ -66,6 +124,8 @@ class BudgetScreen extends StatelessWidget {
                           color: _cardColors[i % _cardColors.length],
                           recurrenceLabel: _recurrenceLabel(incomes[i]),
                           currencyFormat: _currencyFormat,
+                          onDelete: () =>
+                              _confirmDeleteIncome(context, incomes[i]),
                           onEdit: () async {
                             await Navigator.of(context).push<bool>(
                               MaterialPageRoute(
@@ -157,6 +217,7 @@ class _IncomeCard extends StatelessWidget {
     required this.color,
     required this.recurrenceLabel,
     required this.currencyFormat,
+    required this.onDelete,
     required this.onEdit,
   });
 
@@ -164,6 +225,7 @@ class _IncomeCard extends StatelessWidget {
   final Color color;
   final String recurrenceLabel;
   final NumberFormat currencyFormat;
+  final VoidCallback onDelete;
   final VoidCallback onEdit;
 
   @override
@@ -235,14 +297,41 @@ class _IncomeCard extends StatelessWidget {
                   color: AppPalette.ink,
                 ),
               ),
-              const SizedBox(height: 10),
-              IconButton(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                splashRadius: 18,
-                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: AppPalette.ink,
+                    ),
+                    tooltip: 'Delete income',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    splashRadius: 18,
+                  ),
+                  const SizedBox(width: 2),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppPalette.ink,
+                    ),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 18,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -289,8 +378,6 @@ class NewIncomeScreen extends StatefulWidget {
 }
 
 class _NewIncomeScreenState extends State<NewIncomeScreen> {
-  static const int _defaultUserId = 1;
-
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _intervalController = TextEditingController(
@@ -303,6 +390,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   bool _isSavingIncome = false;
 
   bool get _isEditing => widget.editingIncome != null;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -387,11 +475,12 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       _isSavingIncome = true;
     });
 
+    IncomeModel? createdIncome;
     try {
       final editingIncome = widget.editingIncome;
       if (editingIncome == null) {
         final income = IncomeModel()
-          ..userId = _defaultUserId
+          ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..amount = parsedAmount
           ..type = _type
@@ -401,9 +490,10 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveIncome(income);
+        createdIncome = income;
       } else {
         editingIncome
-          ..userId = _defaultUserId
+          ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..amount = parsedAmount
           ..type = _type
@@ -429,16 +519,10 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       return;
     }
 
-    final messenger = ScaffoldMessenger.of(context);
+    if (createdIncome != null) {
+      unawaited(AppNotificationService.notifyIncomeCreated(createdIncome));
+    }
     final navigator = Navigator.of(context);
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          _isEditing ? 'Income updated locally' : 'Income saved locally',
-        ),
-      ),
-    );
     navigator.pop(true);
     _syncPendingDataInBackground();
   }
@@ -456,9 +540,20 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -496,9 +591,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                         controller: _amountController,
                         hintText: r'$ 0',
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          const _CurrencyThousandsFormatter(),
-                        ],
+                        inputFormatters: [const _CurrencyThousandsFormatter()],
                       ),
                       const SizedBox(height: 28),
                       Center(
@@ -525,8 +618,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                             _TypeChip(
                               label: 'Frequently',
                               selected: _type == 'FREQUENTLY',
-                              onTap: () =>
-                                  setState(() => _type = 'FREQUENTLY'),
+                              onTap: () => setState(() => _type = 'FREQUENTLY'),
                             ),
                           ],
                         ),
@@ -544,10 +636,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                       ],
                       const SizedBox(height: 24),
                       Center(
-                        child: _DateRow(
-                          date: _selectedDate,
-                          onTap: _pickDate,
-                        ),
+                        child: _DateRow(date: _selectedDate, onTap: _pickDate),
                       ),
                     ],
                   ),
@@ -837,9 +926,10 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digitsOnly.isEmpty) return const TextEditingValue();
 
-    final formatted = NumberFormat('#,###', 'en_US').format(
-      int.parse(digitsOnly),
-    );
+    final formatted = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(int.parse(digitsOnly));
 
     return TextEditingValue(
       text: formatted,

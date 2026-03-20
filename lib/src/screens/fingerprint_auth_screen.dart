@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/app_notification_service.dart';
 import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/biometric_auth_service.dart';
@@ -52,11 +53,10 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     BiometricAvailability? availability;
     String? statusMessage;
 
-    if (authState.hasLoggedInBefore) {
+    if (authState.canUseFingerprintLogin) {
       availability = await _biometricAuthService.getAvailability();
 
-      if (!availability.isDeviceSupported ||
-          !availability.canCheckBiometrics) {
+      if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
         statusMessage =
             'This device does not support fingerprint authentication.';
       } else if (!availability.supportsFingerprintLogin) {
@@ -67,7 +67,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
       }
     } else {
       statusMessage =
-          'Log in with your account first before enabling biometric access.';
+          'Log in once, save that session locally, and enable fingerprint access first.';
     }
 
     if (!mounted) {
@@ -90,7 +90,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     final authState = _authState;
     final availability = _availability;
 
-    if (authState == null || !authState.hasLoggedInBefore) {
+    if (authState == null || !authState.canUseFingerprintLogin) {
       Navigator.of(context).pushReplacementNamed(
         AppRoutes.login,
         arguments: _postAuthNavigationArgs,
@@ -128,6 +128,12 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     });
 
     if (result.didAuthenticate) {
+      await AppNotificationService.initialize();
+      await AppNotificationService.refresh();
+      if (!mounted) {
+        return;
+      }
+
       final redirect = _postAuthNavigationArgs?.redirect;
       if (redirect != null) {
         await AppNavigationService.openRedirect(redirect);
@@ -142,20 +148,19 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasLoggedInBefore = _authState?.hasLoggedInBefore ?? false;
+    final canUseFingerprintLogin = _authState?.canUseFingerprintLogin ?? false;
     final availability = _availability;
     final title = _isLoading
         ? 'Checking device'
-        : !hasLoggedInBefore
-            ? 'Login required'
-            : 'Touch the sensor';
-    final subtitle =
-        _statusMessage ?? 'Use your fingerprint to log in safely.';
-    final buttonLabel = !hasLoggedInBefore
+        : !canUseFingerprintLogin
+        ? 'Login required'
+        : 'Touch the sensor';
+    final subtitle = _statusMessage ?? 'Use your fingerprint to log in safely.';
+    final buttonLabel = !canUseFingerprintLogin
         ? 'Go to Login'
         : _isAuthenticating
-            ? 'Authenticating...'
-            : 'Continue';
+        ? 'Authenticating...'
+        : 'Continue';
 
     return GreenScreenScaffold(
       child: LayoutBuilder(
@@ -171,7 +176,9 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 30),
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
                     child: Column(
                       children: [
                         const SizedBox(height: 120),
@@ -239,15 +246,16 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
                         ),
                         const SizedBox(height: 12),
                         TextButton(
-                          onPressed: () => Navigator.of(context).pushReplacementNamed(
-                            AppRoutes.login,
-                            arguments: _postAuthNavigationArgs,
-                          ),
+                          onPressed: () =>
+                              Navigator.of(context).pushReplacementNamed(
+                                AppRoutes.login,
+                                arguments: _postAuthNavigationArgs,
+                              ),
                           style: TextButton.styleFrom(
                             foregroundColor: AppPalette.ink,
                           ),
                           child: Text(
-                            hasLoggedInBefore
+                            canUseFingerprintLogin
                                 ? 'Use password instead'
                                 : 'Open login screen',
                             style: GoogleFonts.nunito(
@@ -256,7 +264,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
                             ),
                           ),
                         ),
-                        if (hasLoggedInBefore &&
+                        if (canUseFingerprintLogin &&
                             !_isLoading &&
                             availability != null) ...[
                           const SizedBox(height: 10),

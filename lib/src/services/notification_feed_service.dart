@@ -3,13 +3,17 @@ import 'package:intl/intl.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import 'auth_memory_store.dart';
 import '../theme/expense_visuals.dart';
 
 enum NotificationFeedType {
   expense,
   warning,
+  goalCreated,
   goalHalfway,
   goalAchieved,
+  incomeCreated,
+  incomeDue,
   budgetWarning,
 }
 
@@ -52,13 +56,15 @@ abstract final class NotificationFeedService {
     required Iterable<ExpenseModel> expenses,
     required Iterable<GoalModel> goals,
     required Iterable<AppNotificationModel> appNotifications,
-    int userId = 1,
+    int? userId,
   }) {
+    final resolvedUserId = userId ?? AuthMemoryStore.currentUserIdOrGuest;
     final userExpenses =
-        expenses.where((expense) => expense.userId == userId).toList()
+        expenses.where((expense) => expense.userId == resolvedUserId).toList()
           ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
-    final userGoals = goals.where((goal) => goal.userId == userId).toList()
-      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+    final userGoals =
+        goals.where((goal) => goal.userId == resolvedUserId).toList()
+          ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
     final prioritizedLabels = ExpenseVisuals.topCategoryTotalsForMonth(
       userExpenses,
     ).map((entry) => entry.label).toList(growable: false);
@@ -72,7 +78,11 @@ abstract final class NotificationFeedService {
         userExpenses,
         prioritizedLabels: prioritizedLabels,
       ),
-      ..._buildAppNotifications(userGoals, appNotifications),
+      ..._buildAppNotifications(
+        userGoals,
+        appNotifications,
+        resolvedUserId: resolvedUserId,
+      ),
     ]..sort((left, right) => right.createdAt.compareTo(left.createdAt));
 
     return feed;
@@ -139,8 +149,9 @@ abstract final class NotificationFeedService {
 
   static List<NotificationFeedItem> _buildAppNotifications(
     List<GoalModel> goals,
-    Iterable<AppNotificationModel> appNotifications,
-  ) {
+    Iterable<AppNotificationModel> appNotifications, {
+    required int resolvedUserId,
+  }) {
     final goalByIdentity = <String, GoalModel>{};
     for (final goal in goals) {
       final identity = _goalIdentity(goal);
@@ -149,23 +160,26 @@ abstract final class NotificationFeedService {
       }
     }
 
-    return appNotifications.map((notification) {
-      final goal = _goalForNotification(notification, goalByIdentity);
-      return NotificationFeedItem(
-        id: notification.id,
-        type: _mapType(notification.type),
-        createdAt: notification.createdAt,
-        title: notification.title,
-        subtitle: notification.subtitle,
-        amount: notification.amount,
-        category: notification.category,
-        goal: goal,
-        detailTitle: notification.detailTitle,
-        detailMessage: notification.detailMessage,
-        routeName: notification.routeName,
-        routeArgumentInt: notification.routeArgumentInt,
-      );
-    }).toList();
+    return appNotifications
+        .where((notification) => notification.userId == resolvedUserId)
+        .map((notification) {
+          final goal = _goalForNotification(notification, goalByIdentity);
+          return NotificationFeedItem(
+            id: notification.id,
+            type: _mapType(notification.type),
+            createdAt: notification.createdAt,
+            title: notification.title,
+            subtitle: notification.subtitle,
+            amount: notification.amount,
+            category: notification.category,
+            goal: goal,
+            detailTitle: notification.detailTitle,
+            detailMessage: notification.detailMessage,
+            routeName: notification.routeName,
+            routeArgumentInt: notification.routeArgumentInt,
+          );
+        })
+        .toList();
   }
 
   static bool _isUnusualExpense(
@@ -251,10 +265,16 @@ abstract final class NotificationFeedService {
 
   static NotificationFeedType _mapType(String type) {
     switch (type) {
+      case AppNotificationTypes.goalCreated:
+        return NotificationFeedType.goalCreated;
       case AppNotificationTypes.goalHalfway:
         return NotificationFeedType.goalHalfway;
       case AppNotificationTypes.goalAchieved:
         return NotificationFeedType.goalAchieved;
+      case AppNotificationTypes.incomeCreated:
+        return NotificationFeedType.incomeCreated;
+      case AppNotificationTypes.incomeDue:
+        return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
       default:
@@ -267,7 +287,7 @@ abstract final class NotificationFeedService {
     Map<String, GoalModel> goalByIdentity,
   ) {
     final id = notification.id;
-    const prefixes = <String>['goal-50-', 'goal-100-'];
+    const prefixes = <String>['goal-created-', 'goal-50-', 'goal-100-'];
 
     for (final prefix in prefixes) {
       if (!id.startsWith(prefix)) {

@@ -32,7 +32,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
 
     Navigator.of(context).pushNamed(
-      authState.hasLoggedInBefore ? AppRoutes.fingerprintAuth : AppRoutes.login,
+      authState.canUseFingerprintLogin
+          ? AppRoutes.fingerprintAuth
+          : AppRoutes.login,
     );
   }
 
@@ -107,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   String _buildGreeting(AuthGreetingState? state) {
-    if (state == null || !state.hasLoggedInBefore) {
+    if (state == null || !state.hasSavedSession) {
       return 'Welcome to SpendAnt.';
     }
 

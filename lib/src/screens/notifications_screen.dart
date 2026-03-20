@@ -10,11 +10,14 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
+import '../services/auth_memory_store.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/spendant_delete_dialog.dart';
 import 'new_expense_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -25,14 +28,14 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  static const int _defaultUserId = 1;
-
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
-  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
+  late final ValueListenable<Box<AppNotificationModel>>
+  _notificationsListenable;
   late final int _notificationColorStartIndex;
 
   List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -66,7 +69,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,
       appNotifications: LocalStorageService.notificationBox.values,
-      userId: _defaultUserId,
+      userId: _currentUserId,
     );
 
     if (mounted) {
@@ -98,6 +101,55 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _refreshNotifications();
   }
 
+  Future<bool> _showDeleteConfirmation({
+    required String title,
+    required String name,
+  }) async {
+    return showSpendAntDeleteDialog(context, title: title, name: name);
+  }
+
+  Future<void> _deleteExpense(NotificationFeedItem notification) async {
+    final expense = notification.expense;
+    if (expense == null) {
+      return;
+    }
+
+    final shouldDelete = await _showDeleteConfirmation(
+      title: 'Delete expense?',
+      name: expense.name,
+    );
+    if (!shouldDelete || !mounted) {
+      return;
+    }
+
+    final deletedFromCloud = await CloudSyncService().deleteExpenseRecord(
+      expense,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(
+            deletedFromCloud
+                ? 'Expense deleted'
+                : 'Expense deleted locally. Cloud cleanup is still pending.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+    await _refreshNotifications();
+  }
+
   Future<void> _openNotificationDetail(
     NotificationFeedItem notification,
   ) async {
@@ -121,8 +173,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         );
         return;
+      case NotificationFeedType.goalCreated:
       case NotificationFeedType.goalHalfway:
       case NotificationFeedType.goalAchieved:
+      case NotificationFeedType.incomeCreated:
+      case NotificationFeedType.incomeDue:
       case NotificationFeedType.budgetWarning:
         final routeName = notification.routeName;
         if (routeName == null) {
@@ -142,7 +197,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final sections = _buildSections(_notifications);
     final userExpenses = LocalStorageService.expenseBox.values.where(
-      (expense) => expense.userId == _defaultUserId,
+      (expense) => expense.userId == _currentUserId,
     );
     final reservedCategoryAccents = ExpenseVisuals.reservedAccentsForMonth(
       userExpenses,
@@ -186,6 +241,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   reservedCategoryAccents:
                                       reservedCategoryAccents,
                                   onTap: () => _openNotificationDetail(item),
+                                  onDelete:
+                                      item.type == NotificationFeedType.expense
+                                      ? () => _deleteExpense(item)
+                                      : null,
+                                  onEdit:
+                                      item.type == NotificationFeedType.expense
+                                      ? () => _openExpenseEditor(item)
+                                      : null,
                                 ),
                               );
                               widgets.add(const SizedBox(height: 12));
@@ -249,7 +312,7 @@ class _NotificationsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      padding: const EdgeInsets.fromLTRB(12, 50, 12, 16),
       child: Row(
         children: [
           IconButton(
@@ -281,6 +344,8 @@ class _NotificationCard extends StatelessWidget {
     required this.colorStartIndex,
     required this.reservedCategoryAccents,
     required this.onTap,
+    this.onDelete,
+    this.onEdit,
   });
 
   final NotificationFeedItem item;
@@ -288,6 +353,8 @@ class _NotificationCard extends StatelessWidget {
   final int colorStartIndex;
   final Map<String, ExpenseAccentVisual> reservedCategoryAccents;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +364,7 @@ class _NotificationCard extends StatelessWidget {
       colorStartIndex: colorStartIndex,
       reservedCategoryAccents: reservedCategoryAccents,
     );
-    final showsEditIcon = item.type == NotificationFeedType.expense;
+    final showsExpenseActions = item.type == NotificationFeedType.expense;
 
     return Material(
       color: Colors.transparent,
@@ -361,22 +428,65 @@ class _NotificationCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              if (item.amount != null) ...[
-                Text(
-                  NotificationFeedService.formatAmount(item.amount!),
-                  style: GoogleFonts.nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black54,
-                  ),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Icon(
-                showsEditIcon ? Icons.edit_outlined : Icons.arrow_forward,
-                color: AppPalette.ink,
-                size: 21,
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (item.amount != null)
+                    Text(
+                      NotificationFeedService.formatAmount(item.amount!),
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  if (showsExpenseActions) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: AppPalette.ink,
+                          ),
+                          tooltip: 'Delete expense',
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 18,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        IconButton(
+                          onPressed: onEdit,
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: AppPalette.ink,
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 18,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    const Icon(
+                      Icons.arrow_forward,
+                      color: AppPalette.ink,
+                      size: 21,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -633,6 +743,12 @@ class _NotificationVisuals {
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.warning_amber_rounded,
         );
+      case NotificationFeedType.goalCreated:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.flag_outlined,
+        );
       case NotificationFeedType.goalHalfway:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -644,6 +760,18 @@ class _NotificationVisuals {
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
+        );
+      case NotificationFeedType.incomeCreated:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.account_balance_wallet_outlined,
+        );
+      case NotificationFeedType.incomeDue:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.payments_outlined,
         );
       case NotificationFeedType.budgetWarning:
         return _NotificationVisuals(

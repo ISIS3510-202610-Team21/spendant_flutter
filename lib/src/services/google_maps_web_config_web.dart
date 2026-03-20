@@ -5,7 +5,7 @@ import 'dart:html' as html;
 
 const String _googleMapsApiKeyStorageKey = 'GOOGLE_MAPS_API_KEY';
 const String _fallbackGoogleMapsApiKey =
-    'AIzaSyBw9W_7GwOntgGVTqYpnSj8k7_9_W-7zWU';
+    'AIzaSyBcQzrsXQKaKegZ3FzDsffd_dKsEdEBxbc';
 const String _googleMapsScriptId = 'spendant-google-maps-js';
 const String _googleMapsLoadedFlag = 'spendantGoogleMapsLoaded';
 

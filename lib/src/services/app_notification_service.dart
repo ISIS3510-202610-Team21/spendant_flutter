@@ -1,26 +1,37 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
+import '../models/income_model.dart';
+import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
 
 abstract final class AppNotificationService {
-  static const int _defaultUserId = 1;
-  static const String _bootstrapKey = 'app_notification_bootstrap_v1';
-  static const String _trackedSignalIdsKey =
+  static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v1';
+  static const String _trackedSignalIdsKeyPrefix =
       'app_notification_tracked_signal_ids_v1';
   static const String _goalRouteName = '/set-goal';
   static const String _budgetRouteName = '/budget';
 
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+  static String get _bootstrapKey => '$_bootstrapKeyPrefix-$_currentUserId';
+  static String get _trackedSignalIdsKey =>
+      '$_trackedSignalIdsKeyPrefix-$_currentUserId';
 
   static Future<void>? _activeRefresh;
 
   static Future<void> initialize() async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final didBootstrap = prefs.getBool(_bootstrapKey) ?? false;
     if (didBootstrap) {
@@ -54,6 +65,10 @@ abstract final class AppNotificationService {
   }
 
   static Future<void> _refreshInternal() async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final trackedSignals = {
       ...(prefs.getStringList(_trackedSignalIdsKey) ?? const <String>[]),
@@ -61,14 +76,17 @@ abstract final class AppNotificationService {
     var shouldPersistTrackedSignals = false;
 
     final now = DateTime.now();
-    final goals =
-        LocalStorageService.goalBox.values
-            .where((goal) => goal.userId == _defaultUserId)
-            .toList();
+    final goals = LocalStorageService.goalBox.values
+        .where((goal) => goal.userId == _currentUserId)
+        .toList();
+    final incomes = LocalStorageService.incomeBox.values
+        .where((income) => income.userId == _currentUserId)
+        .toList();
 
     for (final goal in goals) {
       final halfwaySignalId = _goalSignalId(goal, '50');
-      if (_goalProgress(goal) >= 0.5 && !trackedSignals.contains(halfwaySignalId)) {
+      if (_goalProgress(goal) >= 0.5 &&
+          !trackedSignals.contains(halfwaySignalId)) {
         trackedSignals.add(halfwaySignalId);
         shouldPersistTrackedSignals = true;
         await _upsertNotification(
@@ -78,7 +96,8 @@ abstract final class AppNotificationService {
       }
 
       final completedSignalId = _goalSignalId(goal, '100');
-      if (_goalProgress(goal) >= 1 && !trackedSignals.contains(completedSignalId)) {
+      if (_goalProgress(goal) >= 1 &&
+          !trackedSignals.contains(completedSignalId)) {
         trackedSignals.add(completedSignalId);
         shouldPersistTrackedSignals = true;
         await _upsertNotification(
@@ -88,8 +107,31 @@ abstract final class AppNotificationService {
       }
     }
 
+    for (final income in incomes) {
+      final dueOccurrence = _latestDueIncomeOccurrence(income, now: now);
+      if (dueOccurrence == null) {
+        continue;
+      }
+
+      final dueSignalId = _incomeDueSignalId(income, dueOccurrence);
+      if (trackedSignals.contains(dueSignalId)) {
+        continue;
+      }
+
+      trackedSignals.add(dueSignalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildIncomeDueNotification(
+          income,
+          now: now,
+          dueOccurrence: dueOccurrence,
+        ),
+        notifySystem: true,
+      );
+    }
+
     final summary = DailyBudgetService.buildSummaryForUser(
-      _defaultUserId,
+      _currentUserId,
       now: now,
     );
     if (summary.isSpendableBudgetExhausted) {
@@ -120,7 +162,10 @@ abstract final class AppNotificationService {
     final trackedSignals = <String>{};
 
     final goals = LocalStorageService.goalBox.values.where(
-      (goal) => goal.userId == _defaultUserId,
+      (goal) => goal.userId == _currentUserId,
+    );
+    final incomes = LocalStorageService.incomeBox.values.where(
+      (income) => income.userId == _currentUserId,
     );
     for (final goal in goals) {
       final progress = _goalProgress(goal);
@@ -131,9 +176,15 @@ abstract final class AppNotificationService {
         trackedSignals.add(_goalSignalId(goal, '100'));
       }
     }
+    for (final income in incomes) {
+      final dueOccurrence = _latestDueIncomeOccurrence(income, now: now);
+      if (dueOccurrence != null) {
+        trackedSignals.add(_incomeDueSignalId(income, dueOccurrence));
+      }
+    }
 
     final summary = DailyBudgetService.buildSummaryForUser(
-      _defaultUserId,
+      _currentUserId,
       now: now,
     );
     if (summary.isSpendableBudgetExhausted) {
@@ -159,6 +210,25 @@ abstract final class AppNotificationService {
     return 'goal-$milestone-${_goalIdentity(goal)}';
   }
 
+  static String _incomeSignalId(IncomeModel income, String signal) {
+    return 'income:$signal:${_incomeIdentity(income)}';
+  }
+
+  static String _incomeNotificationId(IncomeModel income, String signal) {
+    return 'income-$signal-${_incomeIdentity(income)}';
+  }
+
+  static String _incomeDueSignalId(IncomeModel income, DateTime occurrence) {
+    return 'income:due:${_incomeIdentity(income)}:${_dayKey(occurrence)}';
+  }
+
+  static String _incomeDueNotificationId(
+    IncomeModel income,
+    DateTime occurrence,
+  ) {
+    return 'income-due-${_incomeIdentity(income)}-${_dayKey(occurrence)}';
+  }
+
   static String _goalIdentity(GoalModel goal) {
     final key = goal.serverId ?? goal.key?.toString();
     if (key != null && key.isNotEmpty) {
@@ -166,6 +236,15 @@ abstract final class AppNotificationService {
     }
 
     return goal.createdAt.microsecondsSinceEpoch.toString();
+  }
+
+  static String _incomeIdentity(IncomeModel income) {
+    final key = income.serverId ?? income.key?.toString();
+    if (key != null && key.isNotEmpty) {
+      return key;
+    }
+
+    return income.createdAt.microsecondsSinceEpoch.toString();
   }
 
   static String _budgetSignalId(DateTime now) {
@@ -183,6 +262,25 @@ abstract final class AppNotificationService {
     return '${day.year}-$month-$date';
   }
 
+  static AppNotificationModel _buildGoalCreatedNotification(
+    GoalModel goal, {
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = _goalNotificationId(goal, 'created')
+      ..type = AppNotificationTypes.goalCreated
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'New goal created'
+      ..subtitle = goal.name
+      ..amount = goal.targetAmount
+      ..detailTitle = 'Goal created'
+      ..detailMessage =
+          'Your goal ${goal.name} was created for COP ${_currencyFormat.format(goal.targetAmount.round())}. Open Goals to track it and keep saving.'
+      ..routeName = _goalRouteName
+      ..routeArgumentInt = 1;
+  }
+
   static AppNotificationModel _buildGoalHalfwayNotification(
     GoalModel goal, {
     required DateTime now,
@@ -191,6 +289,7 @@ abstract final class AppNotificationService {
       ..id = _goalNotificationId(goal, '50')
       ..type = AppNotificationTypes.goalHalfway
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Goal at 50%'
       ..subtitle = goal.name
       ..amount = goal.currentAmount
@@ -209,6 +308,7 @@ abstract final class AppNotificationService {
       ..id = _goalNotificationId(goal, '100')
       ..type = AppNotificationTypes.goalAchieved
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Goal completed'
       ..subtitle = goal.name
       ..amount = goal.targetAmount
@@ -217,6 +317,43 @@ abstract final class AppNotificationService {
           'You hit COP ${_currencyFormat.format(goal.targetAmount.round())} for ${goal.name}. Review the goal screen to decide your next move.'
       ..routeName = _goalRouteName
       ..routeArgumentInt = 1;
+  }
+
+  static AppNotificationModel _buildIncomeCreatedNotification(
+    IncomeModel income, {
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = _incomeNotificationId(income, 'created')
+      ..type = AppNotificationTypes.incomeCreated
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'New income added'
+      ..subtitle = income.name
+      ..amount = income.amount
+      ..detailTitle = 'Income created'
+      ..detailMessage =
+          'Your income ${income.name} was added for COP ${_currencyFormat.format(income.amount.round())}. Open Budget and Income to review it.'
+      ..routeName = _budgetRouteName;
+  }
+
+  static AppNotificationModel _buildIncomeDueNotification(
+    IncomeModel income, {
+    required DateTime now,
+    required DateTime dueOccurrence,
+  }) {
+    return AppNotificationModel()
+      ..id = _incomeDueNotificationId(income, dueOccurrence)
+      ..type = AppNotificationTypes.incomeDue
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'Income available'
+      ..subtitle = income.name
+      ..amount = income.amount
+      ..detailTitle = 'Income arrived'
+      ..detailMessage =
+          'Your recurring income ${income.name} reached its next cycle on ${DateFormat('d/M/y').format(dueOccurrence)}. Review Budget and Income to plan around it.'
+      ..routeName = _budgetRouteName;
   }
 
   static AppNotificationModel _buildBudgetWarningNotification(
@@ -242,6 +379,7 @@ abstract final class AppNotificationService {
       ..id = _budgetNotificationId(now)
       ..type = AppNotificationTypes.budgetWarning
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Daily budget exhausted'
       ..subtitle = goalImpactAmount > 0
           ? 'Goals at risk: $goalImpactLabel'
@@ -250,6 +388,117 @@ abstract final class AppNotificationService {
       ..detailTitle = 'Daily budget warning'
       ..detailMessage = detailMessage
       ..routeName = _budgetRouteName;
+  }
+
+  static DateTime? _latestDueIncomeOccurrence(
+    IncomeModel income, {
+    required DateTime now,
+  }) {
+    if (income.type != 'FREQUENTLY') {
+      return null;
+    }
+
+    final interval = income.recurrenceInterval ?? 1;
+    if (interval < 1) {
+      return null;
+    }
+
+    final start = DateUtils.dateOnly(income.startDate);
+    final today = DateUtils.dateOnly(now);
+    if (today.isBefore(start)) {
+      return null;
+    }
+
+    switch (income.recurrenceUnit ?? 'WEEKS') {
+      case 'DAYS':
+        final elapsedDays = today.difference(start).inDays;
+        final cycle = elapsedDays ~/ interval;
+        if (cycle < 1) {
+          return null;
+        }
+        return start.add(Duration(days: cycle * interval));
+      case 'WEEKS':
+        final cycleDays = interval * 7;
+        final elapsedDays = today.difference(start).inDays;
+        final cycle = elapsedDays ~/ cycleDays;
+        if (cycle < 1) {
+          return null;
+        }
+        return start.add(Duration(days: cycle * cycleDays));
+      case 'MONTHS':
+        final rawMonths =
+            (today.year - start.year) * 12 + (today.month - start.month);
+        var elapsedMonths = rawMonths;
+        if (today.day < start.day) {
+          elapsedMonths--;
+        }
+        if (elapsedMonths < interval) {
+          return null;
+        }
+        final cycle = elapsedMonths ~/ interval;
+        return _addMonths(start, cycle * interval);
+      default:
+        return null;
+    }
+  }
+
+  static DateTime _addMonths(DateTime date, int monthsToAdd) {
+    final targetMonth = date.month + monthsToAdd;
+    final year = date.year + ((targetMonth - 1) ~/ 12);
+    final month = ((targetMonth - 1) % 12) + 1;
+    final lastDayOfMonth = DateTime(year, month + 1, 0).day;
+    final day = math.min(date.day, lastDayOfMonth);
+    return DateTime(year, month, day);
+  }
+
+  static Future<void> notifyGoalCreated(GoalModel goal) async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
+    final signalId = _goalSignalId(goal, 'created');
+    final prefs = await SharedPreferences.getInstance();
+    final trackedSignals = {
+      ...(prefs.getStringList(_trackedSignalIdsKey) ?? const <String>[]),
+    };
+    if (trackedSignals.contains(signalId)) {
+      return;
+    }
+
+    trackedSignals.add(signalId);
+    await prefs.setStringList(
+      _trackedSignalIdsKey,
+      trackedSignals.toList(growable: false),
+    );
+    await _upsertNotification(
+      _buildGoalCreatedNotification(goal, now: DateTime.now()),
+      notifySystem: true,
+    );
+  }
+
+  static Future<void> notifyIncomeCreated(IncomeModel income) async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
+    final signalId = _incomeSignalId(income, 'created');
+    final prefs = await SharedPreferences.getInstance();
+    final trackedSignals = {
+      ...(prefs.getStringList(_trackedSignalIdsKey) ?? const <String>[]),
+    };
+    if (trackedSignals.contains(signalId)) {
+      return;
+    }
+
+    trackedSignals.add(signalId);
+    await prefs.setStringList(
+      _trackedSignalIdsKey,
+      trackedSignals.toList(growable: false),
+    );
+    await _upsertNotification(
+      _buildIncomeCreatedNotification(income, now: DateTime.now()),
+      notifySystem: true,
+    );
   }
 
   static Future<void> _upsertNotification(
@@ -278,12 +527,14 @@ abstract final class AppNotificationService {
       return;
     }
 
-    await LocalNotificationService.showTrackedNotification(incomingNotification);
+    await LocalNotificationService.showTrackedNotification(
+      incomingNotification,
+    );
   }
 
   static AppNotificationModel? _findStoredNotification(String id) {
     for (final notification in LocalStorageService.notificationBox.values) {
-      if (notification.id == id) {
+      if (notification.id == id && notification.userId == _currentUserId) {
         return notification;
       }
     }

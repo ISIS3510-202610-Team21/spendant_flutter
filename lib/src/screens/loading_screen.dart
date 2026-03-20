@@ -27,9 +27,13 @@ class _LoadingScreenState extends State<LoadingScreen> {
       return;
     }
 
-    Navigator.of(context).pushReplacementNamed(
-      authState.hasLoggedInBefore ? AppRoutes.home : AppRoutes.login,
-    );
+    final nextRoute = authState.canUseFingerprintLogin
+        ? AppRoutes.fingerprintAuth
+        : authState.hasSavedSession
+        ? AppRoutes.home
+        : AppRoutes.login;
+
+    Navigator.of(context).pushReplacementNamed(nextRoute);
   }
 
   @override

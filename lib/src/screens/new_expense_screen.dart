@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
@@ -129,6 +130,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
   ReceiptScanResult? _lastReceiptScanResult;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -679,9 +681,20 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _showScanMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _syncPendingDataInBackground() {
@@ -732,9 +745,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final expense = editingExpense ?? ExpenseModel();
 
     expense
-      ..userId =
-          editingExpense?.userId ??
-          1 // TODO: Get actual user ID from auth
+      ..userId = editingExpense?.userId ?? _currentUserId
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -780,18 +791,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          editingExpense == null
-              ? 'Expense saved locally'
-              : 'Expense updated locally',
-        ),
-      ),
-    );
     navigator.pop(true);
     _syncPendingDataInBackground();
   }
@@ -992,14 +992,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (_lastReceiptScanResult != null &&
-                                      _lastReceiptScanResult!
-                                          .hasDetectedData) ...[
-                                    const SizedBox(height: 20),
-                                    _ReceiptReviewCard(
-                                      result: _lastReceiptScanResult!,
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),
@@ -1068,141 +1060,6 @@ class ExpenseLocationSelection {
 
   final String label;
   final LatLng? position;
-}
-
-class _ReceiptReviewCard extends StatelessWidget {
-  const _ReceiptReviewCard({required this.result});
-
-  final ReceiptScanResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <({IconData icon, String label, String value})>[
-      if (result.name != null && result.name!.trim().isNotEmpty)
-        (
-          icon: Icons.storefront_outlined,
-          label: 'Expense name',
-          value: result.name!.trim(),
-        ),
-      if (result.formattedAmount != null &&
-          result.formattedAmount!.trim().isNotEmpty)
-        (
-          icon: Icons.payments_outlined,
-          label: 'Amount',
-          value: '\$ ${result.formattedAmount!.trim()}',
-        ),
-      if (result.date != null)
-        (
-          icon: Icons.calendar_today_outlined,
-          label: 'Date',
-          value: DateFormat('d/M/y').format(result.date!),
-        ),
-      if (result.time != null)
-        (
-          icon: Icons.access_time,
-          label: 'Time',
-          value: TimeOfDay.fromDateTime(
-            result.time!,
-          ).format(context).toLowerCase(),
-        ),
-      if (result.location != null && result.location!.label.trim().isNotEmpty)
-        (
-          icon: Icons.location_on_outlined,
-          label: 'Location',
-          value: result.location!.label.trim(),
-        ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppPalette.green, width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Receipt added to manual logging',
-            style: GoogleFonts.nunito(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Review the detected values below and confirm the expense when everything looks right.',
-            style: GoogleFonts.nunito(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-            ),
-          ),
-          const SizedBox(height: 14),
-          for (final row in rows) ...[
-            _ReceiptReviewRow(
-              icon: row.icon,
-              label: row.label,
-              value: row.value,
-            ),
-            if (row != rows.last) const SizedBox(height: 10),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiptReviewRow extends StatelessWidget {
-  const _ReceiptReviewRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 1),
-          child: Icon(icon, size: 16, color: AppPalette.ink),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: GoogleFonts.nunito(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppPalette.fieldHint,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppPalette.ink,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2432,9 +2289,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   void _showLocationMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 

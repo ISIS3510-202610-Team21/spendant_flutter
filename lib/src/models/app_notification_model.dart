@@ -1,8 +1,11 @@
 import 'package:hive/hive.dart';
 
 abstract final class AppNotificationTypes {
+  static const goalCreated = 'goal_created';
   static const goalHalfway = 'goal_halfway';
   static const goalAchieved = 'goal_achieved';
+  static const incomeCreated = 'income_created';
+  static const incomeDue = 'income_due';
   static const budgetWarning = 'budget_warning';
 }
 
@@ -10,6 +13,7 @@ class AppNotificationModel extends HiveObject {
   String id = '';
   String type = '';
   DateTime createdAt = DateTime.now();
+  int userId = -1;
   String title = '';
   String detailTitle = '';
   String detailMessage = '';
@@ -28,7 +32,8 @@ class AppNotificationModelAdapter extends TypeAdapter<AppNotificationModel> {
   AppNotificationModel read(BinaryReader reader) {
     final fieldCount = reader.readByte();
     final fields = <int, Object?>{
-      for (var index = 0; index < fieldCount; index++) reader.readByte(): reader.read(),
+      for (var index = 0; index < fieldCount; index++)
+        reader.readByte(): reader.read(),
     };
 
     return AppNotificationModel()
@@ -42,13 +47,14 @@ class AppNotificationModelAdapter extends TypeAdapter<AppNotificationModel> {
       ..amount = fields[7] as double?
       ..category = fields[8] as String?
       ..routeName = fields[9] as String?
-      ..routeArgumentInt = fields[10] as int?;
+      ..routeArgumentInt = fields[10] as int?
+      ..userId = fields[11] as int? ?? -1;
   }
 
   @override
   void write(BinaryWriter writer, AppNotificationModel obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -70,6 +76,8 @@ class AppNotificationModelAdapter extends TypeAdapter<AppNotificationModel> {
       ..writeByte(9)
       ..write(obj.routeName)
       ..writeByte(10)
-      ..write(obj.routeArgumentInt);
+      ..write(obj.routeArgumentInt)
+      ..writeByte(11)
+      ..write(obj.userId);
   }
 }

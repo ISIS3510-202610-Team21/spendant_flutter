@@ -273,8 +273,6 @@ class _IncomeCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    _IncomeSyncBadge(isSynced: income.isSynced),
                   ],
                 ),
                 const SizedBox(height: 3),
@@ -284,19 +282,6 @@ class _IncomeCard extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: AppPalette.ink.withValues(alpha: 0.6),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  income.isSynced
-                      ? 'Uploaded to Firebase'
-                      : 'Saved locally. Pending cloud sync',
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: income.isSynced
-                        ? Colors.green.shade700
-                        : Colors.orange.shade800,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -348,31 +333,6 @@ class _IncomeCard extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _IncomeSyncBadge extends StatelessWidget {
-  const _IncomeSyncBadge({required this.isSynced});
-
-  final bool isSynced;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: isSynced ? const Color(0xFFD7F6DE) : const Color(0xFFFFE1C2),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        isSynced ? 'Nube' : 'Local',
-        style: GoogleFonts.nunito(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: AppPalette.ink,
-        ),
       ),
     );
   }

@@ -133,6 +133,18 @@ class CloudSyncService {
     }
   }
 
+  Future<bool> deleteExpenseRecord(ExpenseModel expense) async {
+    return _deleteRecord(
+      collectionName: 'expenses',
+      serverId: expense.serverId,
+      fallbackDocumentId: _entityDocumentId(
+        firebaseUid: _firebaseUidForEntity(),
+        localId: _localIdFor(expense, 0),
+      ),
+      deleteLocal: () => expense.delete(),
+    );
+  }
+
   Future<bool> deleteIncomeRecord(IncomeModel income) async {
     return _deleteRecord(
       collectionName: 'incomes',

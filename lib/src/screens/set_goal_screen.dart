@@ -827,28 +827,17 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 30),
         child: Column(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: _isSavingGoal ? null : _closeGoalSetup,
-                  icon: const Icon(Icons.close, size: 24),
-                ),
-                Expanded(
-                  child: Text(
-                    'Set Goal',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 48),
-              ],
+            Align(
+              alignment: Alignment.topLeft,
+              child: IconButton(
+                onPressed: _isSavingGoal ? null : _closeGoalSetup,
+                icon: const Icon(Icons.close, size: 24),
+              ),
             ),
-            const SizedBox(height: 18),
+            const Spacer(),
             Text(
               '"We have a plan"',
+              textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 26,
                 fontWeight: FontWeight.w900,
@@ -868,7 +857,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 ),
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 28),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -893,7 +882,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               ],
             ),
             if (guidanceMessage != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
               Text(
                 guidanceMessage,
                 textAlign: TextAlign.center,
@@ -984,10 +973,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 'Try changing the target amount, extending the deadline, or increasing your available income before creating this goal again.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppPalette.fieldHint,
-                  height: 1.3,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppPalette.ink,
+                  height: 1.25,
                 ),
               ),
             ),

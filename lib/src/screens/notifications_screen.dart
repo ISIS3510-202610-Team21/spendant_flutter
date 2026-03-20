@@ -10,6 +10,7 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
@@ -95,6 +96,66 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
     );
 
+    await _refreshNotifications();
+  }
+
+  Future<bool> _showDeleteConfirmation({
+    required String title,
+    required String name,
+  }) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text('Are you sure you want to delete "$name"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldDelete ?? false;
+  }
+
+  Future<void> _deleteExpense(NotificationFeedItem notification) async {
+    final expense = notification.expense;
+    if (expense == null) {
+      return;
+    }
+
+    final shouldDelete = await _showDeleteConfirmation(
+      title: 'Delete expense?',
+      name: expense.name,
+    );
+    if (!shouldDelete || !mounted) {
+      return;
+    }
+
+    final deletedFromCloud = await CloudSyncService().deleteExpenseRecord(
+      expense,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deletedFromCloud
+              ? 'Expense deleted'
+              : 'Expense deleted locally. Cloud cleanup is still pending.',
+        ),
+      ),
+    );
     await _refreshNotifications();
   }
 
@@ -186,6 +247,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   reservedCategoryAccents:
                                       reservedCategoryAccents,
                                   onTap: () => _openNotificationDetail(item),
+                                  onDelete: item.type == NotificationFeedType.expense
+                                      ? () => _deleteExpense(item)
+                                      : null,
+                                  onEdit: item.type == NotificationFeedType.expense
+                                      ? () => _openExpenseEditor(item)
+                                      : null,
                                 ),
                               );
                               widgets.add(const SizedBox(height: 12));
@@ -281,6 +348,8 @@ class _NotificationCard extends StatelessWidget {
     required this.colorStartIndex,
     required this.reservedCategoryAccents,
     required this.onTap,
+    this.onDelete,
+    this.onEdit,
   });
 
   final NotificationFeedItem item;
@@ -288,6 +357,8 @@ class _NotificationCard extends StatelessWidget {
   final int colorStartIndex;
   final Map<String, ExpenseAccentVisual> reservedCategoryAccents;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +368,7 @@ class _NotificationCard extends StatelessWidget {
       colorStartIndex: colorStartIndex,
       reservedCategoryAccents: reservedCategoryAccents,
     );
-    final showsEditIcon = item.type == NotificationFeedType.expense;
+    final showsExpenseActions = item.type == NotificationFeedType.expense;
 
     return Material(
       color: Colors.transparent,
@@ -361,22 +432,57 @@ class _NotificationCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              if (item.amount != null) ...[
-                Text(
-                  NotificationFeedService.formatAmount(item.amount!),
-                  style: GoogleFonts.nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black54,
-                  ),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Icon(
-                showsEditIcon ? Icons.edit_outlined : Icons.arrow_forward,
-                color: AppPalette.ink,
-                size: 21,
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (item.amount != null)
+                    Text(
+                      NotificationFeedService.formatAmount(item.amount!),
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  if (showsExpenseActions) ...[
+                    const SizedBox(height: 8),
+                    IconButton(
+                      onPressed: onDelete,
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: AppPalette.ink,
+                      ),
+                      tooltip: 'Delete expense',
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      splashRadius: 18,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    IconButton(
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      splashRadius: 18,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    const Icon(
+                      Icons.arrow_forward,
+                      color: AppPalette.ink,
+                      size: 21,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

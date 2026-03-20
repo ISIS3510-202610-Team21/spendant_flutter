@@ -1754,7 +1754,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   final ExpenseLocationService _locationService =
       const ExpenseLocationService();
   late final Future<bool> _hasGoogleMapsApiKeyFuture =
-      PlatformConfigurationService.hasGoogleMapsApiKey();
+      PlatformConfigurationService.ensureGoogleMapsIsReady();
   late final TextEditingController _searchController;
 
   GoogleMapController? _mapController;
@@ -1973,7 +1973,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         if (snapshot.data != true) {
           return _buildMapFallback(
             kIsWeb
-                ? 'Google Maps on web needs a JavaScript API key. For local debug, open the app with ?gmapsKey=YOUR_KEY once and it will stay available in this browser.'
+                ? 'Google Maps on web is unavailable right now. You can still use search, type a place name, or save your current location. For local debug, open the app once with ?gmapsKey=YOUR_KEY.'
                 : 'Google Maps needs a configured native API key on this app. The map is blocked until that key is present, but you can still search, type a place name, and save the location.',
           );
         }

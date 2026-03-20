@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/biometric_auth_service.dart';
 import '../theme/spendant_theme.dart';
@@ -17,8 +18,10 @@ class FingerprintAuthScreen extends StatefulWidget {
 class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
 
+  bool _didLoadRedirect = false;
   AuthGreetingState? _authState;
   BiometricAvailability? _availability;
+  PostAuthNavigationArgs? _postAuthNavigationArgs;
   String? _statusMessage;
   bool _isLoading = true;
   bool _isAuthenticating = false;
@@ -27,6 +30,21 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
   void initState() {
     super.initState();
     _loadBiometricState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_didLoadRedirect) {
+      return;
+    }
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is PostAuthNavigationArgs) {
+      _postAuthNavigationArgs = args;
+    }
+    _didLoadRedirect = true;
   }
 
   Future<void> _loadBiometricState() async {
@@ -72,7 +90,10 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     final availability = _availability;
 
     if (authState == null || !authState.hasLoggedInBefore) {
-      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.login,
+        arguments: _postAuthNavigationArgs,
+      );
       return;
     }
 
@@ -106,6 +127,12 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     });
 
     if (result.didAuthenticate) {
+      final redirect = _postAuthNavigationArgs?.redirect;
+      if (redirect != null) {
+        await AppNavigationService.openRedirect(redirect);
+        return;
+      }
+
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
@@ -209,6 +236,7 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
                         TextButton(
                           onPressed: () => Navigator.of(context).pushReplacementNamed(
                             AppRoutes.login,
+                            arguments: _postAuthNavigationArgs,
                           ),
                           style: TextButton.styleFrom(
                             foregroundColor: AppPalette.ink,

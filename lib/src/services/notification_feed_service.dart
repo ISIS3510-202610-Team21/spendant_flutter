@@ -1,10 +1,17 @@
 import 'package:intl/intl.dart';
 
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../theme/expense_visuals.dart';
 
-enum NotificationFeedType { expense, warning, goalAchieved }
+enum NotificationFeedType {
+  expense,
+  warning,
+  goalHalfway,
+  goalAchieved,
+  budgetWarning,
+}
 
 class NotificationFeedItem {
   const NotificationFeedItem({
@@ -19,6 +26,8 @@ class NotificationFeedItem {
     this.category,
     this.expense,
     this.goal,
+    this.routeName,
+    this.routeArgumentInt,
   });
 
   final String id;
@@ -32,6 +41,8 @@ class NotificationFeedItem {
   final String detailMessage;
   final ExpenseModel? expense;
   final GoalModel? goal;
+  final String? routeName;
+  final int? routeArgumentInt;
 }
 
 abstract final class NotificationFeedService {
@@ -40,6 +51,7 @@ abstract final class NotificationFeedService {
   static List<NotificationFeedItem> buildFeed({
     required Iterable<ExpenseModel> expenses,
     required Iterable<GoalModel> goals,
+    required Iterable<AppNotificationModel> appNotifications,
     int userId = 1,
   }) {
     final userExpenses =
@@ -60,7 +72,7 @@ abstract final class NotificationFeedService {
         userExpenses,
         prioritizedLabels: prioritizedLabels,
       ),
-      ..._buildGoalNotifications(userGoals),
+      ..._buildAppNotifications(userGoals, appNotifications),
     ]..sort((left, right) => right.createdAt.compareTo(left.createdAt));
 
     return feed;
@@ -125,25 +137,35 @@ abstract final class NotificationFeedService {
     return warnings.take(4).toList();
   }
 
-  static List<NotificationFeedItem> _buildGoalNotifications(
+  static List<NotificationFeedItem> _buildAppNotifications(
     List<GoalModel> goals,
+    Iterable<AppNotificationModel> appNotifications,
   ) {
-    return goals.where(_isGoalAchieved).map((goal) {
+    final goalByIdentity = <String, GoalModel>{};
+    for (final goal in goals) {
+      final identity = _goalIdentity(goal);
+      if (identity != null) {
+        goalByIdentity[identity] = goal;
+      }
+    }
+
+    return appNotifications.map((notification) {
+      final goal = _goalForNotification(notification, goalByIdentity);
       return NotificationFeedItem(
-        id: 'goal-${goal.key ?? goal.createdAt.microsecondsSinceEpoch}',
-        type: NotificationFeedType.goalAchieved,
-        createdAt: goal.createdAt,
-        title: 'Goal Achieved!',
+        id: notification.id,
+        type: _mapType(notification.type),
+        createdAt: notification.createdAt,
+        title: notification.title,
+        subtitle: notification.subtitle,
+        amount: notification.amount,
+        category: notification.category,
         goal: goal,
-        detailTitle: 'Lvl. Up! Goal\nAccomplished!',
-        detailMessage:
-            "Look at you. You just smashed your goal: COP ${_currencyFormat.format(goal.targetAmount.round())} for ${goal.name}. Your future self is already doing a happy dance. Treat yourself to something small. You've earned the bragging rights.",
+        detailTitle: notification.detailTitle,
+        detailMessage: notification.detailMessage,
+        routeName: notification.routeName,
+        routeArgumentInt: notification.routeArgumentInt,
       );
     }).toList();
-  }
-
-  static bool _isGoalAchieved(GoalModel goal) {
-    return goal.isCompleted || goal.currentAmount >= goal.targetAmount;
   }
 
   static bool _isUnusualExpense(
@@ -225,5 +247,45 @@ abstract final class NotificationFeedService {
     return left.year == right.year &&
         left.month == right.month &&
         left.day == right.day;
+  }
+
+  static NotificationFeedType _mapType(String type) {
+    switch (type) {
+      case AppNotificationTypes.goalHalfway:
+        return NotificationFeedType.goalHalfway;
+      case AppNotificationTypes.goalAchieved:
+        return NotificationFeedType.goalAchieved;
+      case AppNotificationTypes.budgetWarning:
+        return NotificationFeedType.budgetWarning;
+      default:
+        return NotificationFeedType.warning;
+    }
+  }
+
+  static GoalModel? _goalForNotification(
+    AppNotificationModel notification,
+    Map<String, GoalModel> goalByIdentity,
+  ) {
+    final id = notification.id;
+    const prefixes = <String>['goal-50-', 'goal-100-'];
+
+    for (final prefix in prefixes) {
+      if (!id.startsWith(prefix)) {
+        continue;
+      }
+
+      return goalByIdentity[id.substring(prefix.length)];
+    }
+
+    return null;
+  }
+
+  static String? _goalIdentity(GoalModel goal) {
+    final key = goal.serverId ?? goal.key?.toString();
+    if (key != null && key.isNotEmpty) {
+      return key;
+    }
+
+    return goal.createdAt.microsecondsSinceEpoch.toString();
   }
 }

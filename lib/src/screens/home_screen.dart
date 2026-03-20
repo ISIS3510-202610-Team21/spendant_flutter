@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../../app.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../models/app_notification_model.dart';
 import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasUnreadNotifications = true;
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
+  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
   late final int _expenseColorStartIndex;
 
   @override
@@ -39,11 +41,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _expensesListenable = LocalStorageService.expensesListenable;
     _goalsListenable = LocalStorageService.goalsListenable;
+    _notificationsListenable = LocalStorageService.notificationsListenable;
     _expenseColorStartIndex = math.Random().nextInt(
       ExpenseVisuals.rotatingColors.length,
     );
     _expensesListenable.addListener(_handleNotificationSourcesChanged);
     _goalsListenable.addListener(_handleNotificationSourcesChanged);
+    _notificationsListenable.addListener(_handleNotificationSourcesChanged);
     _loadUnreadNotifications();
   }
 
@@ -51,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _expensesListenable.removeListener(_handleNotificationSourcesChanged);
     _goalsListenable.removeListener(_handleNotificationSourcesChanged);
+    _notificationsListenable.removeListener(_handleNotificationSourcesChanged);
     super.dispose();
   }
 
@@ -62,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final notifications = NotificationFeedService.buildFeed(
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,
+      appNotifications: LocalStorageService.notificationBox.values,
       userId: _defaultUserId,
     );
     final hasUnread = await NotificationsStore.hasUnreadNotifications(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
+import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../widgets/auth_chrome.dart';
 
@@ -10,6 +11,10 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    final postAuthNavigationArgs =
+        args is PostAuthNavigationArgs ? args : null;
+
     return AuthCredentialsScreen(
       primaryLabel: 'Login',
       successRoute: AppRoutes.home,
@@ -21,6 +26,7 @@ class LoginScreen extends StatelessWidget {
       antHeight: 460,
       onFooterPressed: () =>
           Navigator.of(context).pushNamed(AppRoutes.register),
+      postAuthRedirect: postAuthNavigationArgs?.redirect,
     );
   }
 }
@@ -37,6 +43,7 @@ class AuthCredentialsScreen extends StatefulWidget {
     required this.antBottom,
     required this.antHeight,
     required this.onFooterPressed,
+    this.postAuthRedirect,
     this.showEmail = false,
   });
 
@@ -49,6 +56,7 @@ class AuthCredentialsScreen extends StatefulWidget {
   final double antBottom;
   final double antHeight;
   final VoidCallback onFooterPressed;
+  final AppRedirect? postAuthRedirect;
   final bool showEmail;
 
   @override
@@ -77,6 +85,11 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     final username = _usernameController.text.trim();
     await AuthMemoryStore.saveLogin(username.isEmpty ? 'there' : username);
     if (!mounted) {
+      return;
+    }
+    final redirect = widget.postAuthRedirect;
+    if (redirect != null) {
+      await AppNavigationService.openRedirect(redirect);
       return;
     }
     Navigator.of(

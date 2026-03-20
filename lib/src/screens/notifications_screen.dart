@@ -6,8 +6,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../services/app_navigation_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
@@ -27,6 +29,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
+  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
   late final int _notificationColorStartIndex;
 
   List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
@@ -36,11 +39,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     _expensesListenable = LocalStorageService.expensesListenable;
     _goalsListenable = LocalStorageService.goalsListenable;
+    _notificationsListenable = LocalStorageService.notificationsListenable;
     _notificationColorStartIndex = math.Random().nextInt(
       ExpenseVisuals.rotatingColors.length,
     );
     _expensesListenable.addListener(_handleStorageChanged);
     _goalsListenable.addListener(_handleStorageChanged);
+    _notificationsListenable.addListener(_handleStorageChanged);
     _refreshNotifications();
   }
 
@@ -48,6 +53,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void dispose() {
     _expensesListenable.removeListener(_handleStorageChanged);
     _goalsListenable.removeListener(_handleStorageChanged);
+    _notificationsListenable.removeListener(_handleStorageChanged);
     super.dispose();
   }
 
@@ -59,6 +65,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final notifications = NotificationFeedService.buildFeed(
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,
+      appNotifications: LocalStorageService.notificationBox.values,
       userId: _defaultUserId,
     );
 
@@ -99,17 +106,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         await _openExpenseEditor(notification);
         return;
       case NotificationFeedType.warning:
+        if (notification.routeName != null) {
+          await AppNavigationService.openRedirect(
+            AppRedirect(
+              routeName: notification.routeName!,
+              routeArgumentInt: notification.routeArgumentInt,
+            ),
+          );
+          return;
+        }
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => _WarningDetailScreen(notification: notification),
           ),
         );
         return;
+      case NotificationFeedType.goalHalfway:
       case NotificationFeedType.goalAchieved:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) =>
-                _GoalAchievedDetailScreen(notification: notification),
+      case NotificationFeedType.budgetWarning:
+        final routeName = notification.routeName;
+        if (routeName == null) {
+          return;
+        }
+        await AppNavigationService.openRedirect(
+          AppRedirect(
+            routeName: routeName,
+            routeArgumentInt: notification.routeArgumentInt,
           ),
         );
         return;
@@ -440,22 +462,6 @@ class _WarningDetailScreen extends StatelessWidget {
   }
 }
 
-class _GoalAchievedDetailScreen extends StatelessWidget {
-  const _GoalAchievedDetailScreen({required this.notification});
-
-  final NotificationFeedItem notification;
-
-  @override
-  Widget build(BuildContext context) {
-    return _NotificationDetailShell(
-      backgroundColor: const Color(0xFF3C80E6),
-      assetPath: 'web/ant/ant_presenting.svg',
-      title: notification.detailTitle,
-      body: notification.detailMessage,
-    );
-  }
-}
-
 class _NotificationDetailShell extends StatelessWidget {
   const _NotificationDetailShell({
     required this.backgroundColor,
@@ -627,11 +633,23 @@ class _NotificationVisuals {
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.warning_amber_rounded,
         );
+      case NotificationFeedType.goalHalfway:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.flag_circle_outlined,
+        );
       case NotificationFeedType.goalAchieved:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
+        );
+      case NotificationFeedType.budgetWarning:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.account_balance_wallet_outlined,
         );
     }
   }

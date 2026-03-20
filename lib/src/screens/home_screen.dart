@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,9 +8,14 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../../app.dart';
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
+import '../models/goal_model.dart';
+import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
+import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
+import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
 
@@ -23,15 +31,48 @@ class _HomeScreenState extends State<HomeScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   bool _hasUnreadNotifications = true;
+  late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
+  late final ValueListenable<Box<GoalModel>> _goalsListenable;
+  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
+  late final int _expenseColorStartIndex;
 
   @override
   void initState() {
     super.initState();
+    _expensesListenable = LocalStorageService.expensesListenable;
+    _goalsListenable = LocalStorageService.goalsListenable;
+    _notificationsListenable = LocalStorageService.notificationsListenable;
+    _expenseColorStartIndex = math.Random().nextInt(
+      ExpenseVisuals.rotatingColors.length,
+    );
+    _expensesListenable.addListener(_handleNotificationSourcesChanged);
+    _goalsListenable.addListener(_handleNotificationSourcesChanged);
+    _notificationsListenable.addListener(_handleNotificationSourcesChanged);
+    _loadUnreadNotifications();
+  }
+
+  @override
+  void dispose() {
+    _expensesListenable.removeListener(_handleNotificationSourcesChanged);
+    _goalsListenable.removeListener(_handleNotificationSourcesChanged);
+    _notificationsListenable.removeListener(_handleNotificationSourcesChanged);
+    super.dispose();
+  }
+
+  void _handleNotificationSourcesChanged() {
     _loadUnreadNotifications();
   }
 
   Future<void> _loadUnreadNotifications() async {
-    final hasUnread = await NotificationsStore.hasUnreadNotifications();
+    final notifications = NotificationFeedService.buildFeed(
+      expenses: LocalStorageService.expenseBox.values,
+      goals: LocalStorageService.goalBox.values,
+      appNotifications: LocalStorageService.notificationBox.values,
+      userId: _defaultUserId,
+    );
+    final hasUnread = await NotificationsStore.hasUnreadNotifications(
+      notificationIds: notifications.map((notification) => notification.id),
+    );
     if (!mounted) {
       return;
     }
@@ -48,6 +89,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final homeDependencies = Listenable.merge(<Listenable>[
+      LocalStorageService.expensesListenable,
+      LocalStorageService.incomesListenable,
+      LocalStorageService.goalsListenable,
+    ]);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -65,22 +112,37 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _buildHeader(),
             Expanded(
-              child: ValueListenableBuilder<Box<ExpenseModel>>(
-                valueListenable: LocalStorageService.expensesListenable,
-                builder: (context, box, _) {
-                  final expenses = box.values
-                      .where((expense) => expense.userId == _defaultUserId)
-                      .toList()
-                    ..sort(
-                      (left, right) => _expenseDateTime(
-                        right,
-                      ).compareTo(_expenseDateTime(left)),
-                    );
+              child: AnimatedBuilder(
+                animation: homeDependencies,
+                builder: (context, _) {
+                  final box = LocalStorageService.expenseBox;
+                  final expenses =
+                      box.values
+                          .where((expense) => expense.userId == _defaultUserId)
+                          .toList()
+                        ..sort(
+                          (left, right) => _expenseDateTime(
+                            right,
+                          ).compareTo(_expenseDateTime(left)),
+                        );
 
-                  final todayTotal = _sumForDay(expenses, DateTime.now());
+                  final summary = DailyBudgetService.buildSummaryForUser(
+                    _defaultUserId,
+                  );
+
                   final monthTotal = _sumForMonth(expenses, DateTime.now());
                   final categoryStats = _buildCategoryStats(expenses);
-                  final expenseGroups = _buildExpenseGroups(expenses);
+                  final prioritizedLabels = categoryStats
+                      .map((stat) => stat.label)
+                      .toList(growable: false);
+                  final reservedCategoryAccents = _buildReservedCategoryAccents(
+                    categoryStats,
+                  );
+                  final expenseGroups = _buildExpenseGroups(
+                    expenses,
+                    prioritizedLabels,
+                    reservedCategoryAccents,
+                  );
                   final maxCategoryAmount = categoryStats.fold<double>(
                     0,
                     (current, stat) =>
@@ -91,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
                     children: [
                       Text(
-                        'Your expenses for today',
+                        'Your Budget for today',
                         style: GoogleFonts.nunito(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -100,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       _AmountHeadline(
-                        amount: todayTotal,
+                        amount: summary.spendableDailyBudget,
                         amountColor: AppPalette.green,
                       ),
                       const SizedBox(height: 20),
@@ -118,32 +180,49 @@ class _HomeScreenState extends State<HomeScreen> {
                         amountColor: AppPalette.expenseRed,
                         fontSize: 40,
                       ),
-                      const SizedBox(height: 28),
-                      SizedBox(
-                        height: 260,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            const gap = 18.0;
-                            final width = (constraints.maxWidth - (gap * 3)) / 4;
+                      if (categoryStats.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        SizedBox(
+                          height: 260,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final itemCount = categoryStats.length;
+                              const gap = 18.0;
+                              final totalGap = gap * (itemCount - 1);
+                              final availableWidth =
+                                  constraints.maxWidth - totalGap;
+                              final itemWidth = math.min(
+                                110.0,
+                                availableWidth / itemCount,
+                              );
 
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                for (final stat in categoryStats)
-                                  SizedBox(
-                                    width: width,
-                                    child: _CategoryBarCard(
-                                      stat: stat,
-                                      maxAmount: maxCategoryAmount,
+                              return Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < itemCount;
+                                    index++
+                                  ) ...[
+                                    SizedBox(
+                                      width: itemWidth,
+                                      child: _CategoryBarCard(
+                                        stat: categoryStats[index],
+                                        maxAmount: maxCategoryAmount,
+                                      ),
                                     ),
-                                  ),
-                              ],
-                            );
-                          },
+                                    if (index < itemCount - 1)
+                                      const SizedBox(width: gap),
+                                  ],
+                                ],
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 22),
+                        const SizedBox(height: 22),
+                      ] else
+                        const SizedBox(height: 22),
                       if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
                       for (final group in expenseGroups) ...[
                         Text(
@@ -226,12 +305,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  double _sumForDay(List<ExpenseModel> expenses, DateTime day) {
-    return expenses
-        .where((expense) => _isSameDay(expense.date, day))
-        .fold(0, (total, expense) => total + expense.amount);
-  }
-
   double _sumForMonth(List<ExpenseModel> expenses, DateTime day) {
     return expenses
         .where(
@@ -242,32 +315,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<_CategoryStat> _buildCategoryStats(List<ExpenseModel> expenses) {
-    final monthExpenses = expenses.where((expense) {
-      final now = DateTime.now();
-      return expense.date.year == now.year && expense.date.month == now.month;
+    final visibleEntries = ExpenseVisuals.topCategoryTotalsForMonth(expenses);
+
+    return List<_CategoryStat>.generate(visibleEntries.length, (index) {
+      final entry = visibleEntries[index];
+      return _CategoryStat(
+        label: entry.label,
+        amount: entry.amount,
+        color: ExpenseVisuals.reservedChartColors[index],
+        iconAssetPath: ExpenseVisuals.iconAssetPathFor(entry.label),
+      );
     });
-
-    final totals = <String, double>{
-      'Food': 0,
-      'Transport': 0,
-      'Services': 0,
-      'Other': 0,
-    };
-
-    for (final expense in monthExpenses) {
-      final category = _normalizeCategory(expense.primaryCategory);
-      totals[category] = (totals[category] ?? 0) + expense.amount;
-    }
-
-    return <_CategoryStat>[
-      _CategoryStat.fromKey('Food', totals['Food'] ?? 0),
-      _CategoryStat.fromKey('Transport', totals['Transport'] ?? 0),
-      _CategoryStat.fromKey('Services', totals['Services'] ?? 0),
-      _CategoryStat.fromKey('Other', totals['Other'] ?? 0),
-    ];
   }
 
-  List<_ExpenseDayGroup> _buildExpenseGroups(List<ExpenseModel> expenses) {
+  List<_ExpenseDayGroup> _buildExpenseGroups(
+    List<ExpenseModel> expenses,
+    List<String> prioritizedLabels,
+    Map<String, ExpenseAccentVisual> reservedCategoryAccents,
+  ) {
     final grouped = <DateTime, List<ExpenseModel>>{};
 
     for (final expense in expenses) {
@@ -282,6 +347,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final orderedDates = grouped.keys.toList()
       ..sort((left, right) => right.compareTo(left));
 
+    var colorIndex = 0;
+
     return orderedDates.take(6).map((date) {
       final dayExpenses = grouped[date]!
         ..sort(
@@ -292,39 +359,54 @@ class _HomeScreenState extends State<HomeScreen> {
 
       return _ExpenseDayGroup(
         title: _titleForDate(date),
-        entries: dayExpenses.map(_buildExpenseEntry).toList(),
+        entries: dayExpenses
+            .map(
+              (expense) => _buildExpenseEntry(
+                expense,
+                colorIndex++,
+                prioritizedLabels,
+                reservedCategoryAccents,
+              ),
+            )
+            .toList(),
       );
     }).toList();
   }
 
-  _ExpenseEntry _buildExpenseEntry(ExpenseModel expense) {
-    final category = _normalizeCategory(expense.primaryCategory);
-    final detailLabel = expense.detailLabels.isNotEmpty
-        ? expense.detailLabels.first
-        : category;
-    final visual = _CategoryVisuals.of(category);
+  _ExpenseEntry _buildExpenseEntry(
+    ExpenseModel expense,
+    int colorIndex,
+    List<String> prioritizedLabels,
+    Map<String, ExpenseAccentVisual> reservedCategoryAccents,
+  ) {
+    final detailLabel = ExpenseVisuals.resolveDisplayLabel(
+      expense,
+      prioritizedLabels: prioritizedLabels,
+    );
+    final accentVisual =
+        reservedCategoryAccents[detailLabel] ??
+        ExpenseVisuals.rotatingAccent(
+          itemIndex: colorIndex,
+          startIndex: _expenseColorStartIndex,
+        );
 
     return _ExpenseEntry(
       name: expense.name,
       category: detailLabel,
       amount: 'COP ${_currencyFormat.format(expense.amount.round())}',
-      color: visual.tileColor,
-      iconAssetPath: visual.iconAssetPath,
-      iconColor: visual.color,
+      color: accentVisual.backgroundColor,
+      iconAssetPath: ExpenseVisuals.iconAssetPathFor(detailLabel),
+      iconColor: accentVisual.accentColor,
     );
   }
 
-  String _normalizeCategory(String? category) {
-    switch (category?.trim()) {
-      case 'Food':
-        return 'Food';
-      case 'Transport':
-        return 'Transport';
-      case 'Services':
-        return 'Services';
-      default:
-        return 'Other';
-    }
+  Map<String, ExpenseAccentVisual> _buildReservedCategoryAccents(
+    List<_CategoryStat> categoryStats,
+  ) {
+    return <String, ExpenseAccentVisual>{
+      for (final stat in categoryStats)
+        stat.label: ExpenseVisuals.accentFromColor(stat.color),
+    };
   }
 
   String _titleForDate(DateTime date) {
@@ -436,24 +518,20 @@ class _CategoryBarCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              SvgPicture.asset(
-                stat.iconAssetPath,
-                width: 30,
-                height: 30,
-                colorFilter: const ColorFilter.mode(
-                  AppPalette.ink,
-                  BlendMode.srcIn,
-                ),
-              ),
+              SvgPicture.asset(stat.iconAssetPath, width: 30, height: 30),
               const SizedBox(height: 8),
               Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
                 child: Text(
                   stat.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
                   style: GoogleFonts.nunito(
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                     color: AppPalette.ink,
+                    height: 1,
                   ),
                 ),
               ),
@@ -486,15 +564,7 @@ class _ExpenseListTile extends StatelessWidget {
           CircleAvatar(
             radius: 24,
             backgroundColor: entry.iconColor,
-            child: SvgPicture.asset(
-              entry.iconAssetPath,
-              width: 24,
-              height: 24,
-              colorFilter: const ColorFilter.mode(
-                AppPalette.ink,
-                BlendMode.srcIn,
-              ),
-            ),
+            child: SvgPicture.asset(entry.iconAssetPath, width: 24, height: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -568,16 +638,6 @@ class _CategoryStat {
     required this.iconAssetPath,
   });
 
-  factory _CategoryStat.fromKey(String key, double amount) {
-    final visual = _CategoryVisuals.of(key);
-    return _CategoryStat(
-      label: key,
-      amount: amount,
-      color: visual.color,
-      iconAssetPath: visual.iconAssetPath,
-    );
-  }
-
   final String label;
   final double amount;
   final Color color;
@@ -607,45 +667,4 @@ class _ExpenseEntry {
   final Color color;
   final String iconAssetPath;
   final Color iconColor;
-}
-
-class _CategoryVisual {
-  const _CategoryVisual({
-    required this.color,
-    required this.tileColor,
-    required this.iconAssetPath,
-  });
-
-  final Color color;
-  final Color tileColor;
-  final String iconAssetPath;
-}
-
-abstract final class _CategoryVisuals {
-  static const Map<String, _CategoryVisual> _values = <String, _CategoryVisual>{
-    'Food': _CategoryVisual(
-      color: AppPalette.food,
-      tileColor: Color(0xFFCFE2FF),
-      iconAssetPath: 'web/icons/Food.svg',
-    ),
-    'Transport': _CategoryVisual(
-      color: AppPalette.transport,
-      tileColor: Color(0xFFF6D1C4),
-      iconAssetPath: 'web/icons/Transport.svg',
-    ),
-    'Services': _CategoryVisual(
-      color: AppPalette.services,
-      tileColor: Color(0xFFF7E5A8),
-      iconAssetPath: 'web/icons/Services.svg',
-    ),
-    'Other': _CategoryVisual(
-      color: AppPalette.other,
-      tileColor: Color(0xFFFBC5C4),
-      iconAssetPath: 'web/icons/Other.svg',
-    ),
-  };
-
-  static _CategoryVisual of(String category) {
-    return _values[category] ?? _values['Other']!;
-  }
 }

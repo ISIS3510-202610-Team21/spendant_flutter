@@ -1,9 +1,19 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive/hive.dart';
 
-import '../models/expense_draft.dart';
+import '../models/app_notification_model.dart';
+import '../models/expense_model.dart';
+import '../models/goal_model.dart';
+import '../services/app_navigation_service.dart';
+import '../services/local_storage_service.dart';
+import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
+import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import 'new_expense_screen.dart';
 
@@ -15,95 +25,113 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  static final List<_NotificationSection> _sections = <_NotificationSection>[
-    _NotificationSection(
-      title: 'Today',
-      items: <_NotificationItem>[
-        _NotificationItem.expense(
-          timeLabel: '5 minutes ago',
-          title: 'Chick & Chips Lunch',
-          subtitle: 'Food',
-          amountLabel: 'COP 23,000',
-          backgroundColor: const Color(0xFFCFE2FF),
-          iconBackgroundColor: AppPalette.food,
-          iconAssetPath: 'web/icons/Food.svg',
-          draft: ExpenseDraft(
-            name: 'Chick & Chips Lunch',
-            amount: '23,000',
-            primaryCategory: 'Food',
-            detailLabels: <String>['Social/Group Hangouts'],
-            date: DateTime(2026, 3, 17),
-            time: TimeOfDay(hour: 12, minute: 35),
-            locationLabel: 'Campus Food Court',
-          ),
-        ),
-        _NotificationItem.expense(
-          timeLabel: '5 minutes ago',
-          title: 'TM to University',
-          subtitle: 'Transport',
-          amountLabel: 'COP 23,000',
-          backgroundColor: const Color(0xFFF6D1C4),
-          iconBackgroundColor: AppPalette.transport,
-          iconAssetPath: 'web/icons/Transport.svg',
-          draft: ExpenseDraft(
-            name: 'TM to University',
-            amount: '23,000',
-            primaryCategory: 'Transport',
-            detailLabels: <String>['Commute'],
-            date: DateTime(2026, 3, 17),
-            time: TimeOfDay(hour: 7, minute: 50),
-            locationLabel: 'TransMilenio station',
-          ),
-        ),
-        _NotificationItem.warning(
-          timeLabel: '15 minutes ago',
-          title: 'New Warning!',
-          backgroundColor: const Color(0xFFCFF7D8),
-        ),
-      ],
-    ),
-    _NotificationSection(
-      title: 'Yesterday',
-      items: <_NotificationItem>[
-        _NotificationItem.goal(
-          timeLabel: 'Yesterday, 18:05',
-          title: 'Goal Achieved!',
-          backgroundColor: const Color(0xFFCFF7D8),
-        ),
-      ],
-    ),
-  ];
+  static const int _defaultUserId = 1;
+
+  late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
+  late final ValueListenable<Box<GoalModel>> _goalsListenable;
+  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
+  late final int _notificationColorStartIndex;
+
+  List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
 
   @override
   void initState() {
     super.initState();
-    NotificationsStore.markNotificationsAsViewed();
+    _expensesListenable = LocalStorageService.expensesListenable;
+    _goalsListenable = LocalStorageService.goalsListenable;
+    _notificationsListenable = LocalStorageService.notificationsListenable;
+    _notificationColorStartIndex = math.Random().nextInt(
+      ExpenseVisuals.rotatingColors.length,
+    );
+    _expensesListenable.addListener(_handleStorageChanged);
+    _goalsListenable.addListener(_handleStorageChanged);
+    _notificationsListenable.addListener(_handleStorageChanged);
+    _refreshNotifications();
   }
 
-  Future<void> _openExpenseEditor(ExpenseDraft draft) async {
+  @override
+  void dispose() {
+    _expensesListenable.removeListener(_handleStorageChanged);
+    _goalsListenable.removeListener(_handleStorageChanged);
+    _notificationsListenable.removeListener(_handleStorageChanged);
+    super.dispose();
+  }
+
+  void _handleStorageChanged() {
+    _refreshNotifications();
+  }
+
+  Future<void> _refreshNotifications() async {
+    final notifications = NotificationFeedService.buildFeed(
+      expenses: LocalStorageService.expenseBox.values,
+      goals: LocalStorageService.goalBox.values,
+      appNotifications: LocalStorageService.notificationBox.values,
+      userId: _defaultUserId,
+    );
+
+    if (mounted) {
+      setState(() {
+        _notifications = notifications;
+      });
+    }
+
+    await NotificationsStore.markNotificationsAsViewed(
+      notifications.map((notification) => notification.id),
+    );
+  }
+
+  Future<void> _openExpenseEditor(NotificationFeedItem notification) async {
+    final expense = notification.expense;
+    if (expense == null) {
+      return;
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NewExpenseScreen(
           headerTitle: 'Edit Expense',
-          initialDraft: draft,
+          editingExpense: expense,
         ),
       ),
     );
+
+    await _refreshNotifications();
   }
 
-  Future<void> _openNotificationDetail(_NotificationType type) async {
-    switch (type) {
-      case _NotificationType.expense:
+  Future<void> _openNotificationDetail(
+    NotificationFeedItem notification,
+  ) async {
+    switch (notification.type) {
+      case NotificationFeedType.expense:
+        await _openExpenseEditor(notification);
         return;
-      case _NotificationType.warning:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const _WarningDetailScreen()),
-        );
-        return;
-      case _NotificationType.goal:
+      case NotificationFeedType.warning:
+        if (notification.routeName != null) {
+          await AppNavigationService.openRedirect(
+            AppRedirect(
+              routeName: notification.routeName!,
+              routeArgumentInt: notification.routeArgumentInt,
+            ),
+          );
+          return;
+        }
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => const _GoalAchievedDetailScreen(),
+            builder: (_) => _WarningDetailScreen(notification: notification),
+          ),
+        );
+        return;
+      case NotificationFeedType.goalHalfway:
+      case NotificationFeedType.goalAchieved:
+      case NotificationFeedType.budgetWarning:
+        final routeName = notification.routeName;
+        if (routeName == null) {
+          return;
+        }
+        await AppNavigationService.openRedirect(
+          AppRedirect(
+            routeName: routeName,
+            routeArgumentInt: notification.routeArgumentInt,
           ),
         );
         return;
@@ -112,6 +140,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final sections = _buildSections(_notifications);
+    final userExpenses = LocalStorageService.expenseBox.values.where(
+      (expense) => expense.userId == _defaultUserId,
+    );
+    final reservedCategoryAccents = ExpenseVisuals.reservedAccentsForMonth(
+      userExpenses,
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -119,43 +155,88 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           children: [
             _NotificationsHeader(onClose: () => Navigator.of(context).pop()),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
-                children: [
-                  for (final section in _sections) ...[
-                    Text(
-                      section.title,
-                      style: GoogleFonts.nunito(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    for (final item in section.items) ...[
-                      _NotificationCard(
-                        item: item,
-                        onTap: () {
-                          if (item.type == _NotificationType.expense &&
-                              item.draft != null) {
-                            _openExpenseEditor(item.draft!);
-                            return;
+              child: sections.isEmpty
+                  ? const _EmptyNotificationsState()
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
+                      children: [
+                        ...() {
+                          var colorIndex = 0;
+                          final widgets = <Widget>[];
+
+                          for (final section in sections) {
+                            widgets.add(
+                              Text(
+                                section.title,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppPalette.ink,
+                                ),
+                              ),
+                            );
+                            widgets.add(const SizedBox(height: 12));
+
+                            for (final item in section.items) {
+                              widgets.add(
+                                _NotificationCard(
+                                  item: item,
+                                  colorIndex: colorIndex++,
+                                  colorStartIndex: _notificationColorStartIndex,
+                                  reservedCategoryAccents:
+                                      reservedCategoryAccents,
+                                  onTap: () => _openNotificationDetail(item),
+                                ),
+                              );
+                              widgets.add(const SizedBox(height: 12));
+                            }
+
+                            widgets.add(const SizedBox(height: 4));
                           }
 
-                          _openNotificationDetail(item.type);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    const SizedBox(height: 4),
-                  ],
-                ],
-              ),
+                          return widgets;
+                        }(),
+                      ],
+                    ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<_NotificationSection> _buildSections(
+    List<NotificationFeedItem> notifications,
+  ) {
+    final todayItems = <NotificationFeedItem>[];
+    final yesterdayItems = <NotificationFeedItem>[];
+    final earlierItems = <NotificationFeedItem>[];
+
+    for (final notification in notifications) {
+      if (NotificationFeedService.isToday(notification.createdAt)) {
+        todayItems.add(notification);
+        continue;
+      }
+      if (NotificationFeedService.isYesterday(notification.createdAt)) {
+        yesterdayItems.add(notification);
+        continue;
+      }
+      earlierItems.add(notification);
+    }
+
+    final sections = <_NotificationSection>[];
+    if (todayItems.isNotEmpty) {
+      sections.add(_NotificationSection(title: 'Today', items: todayItems));
+    }
+    if (yesterdayItems.isNotEmpty) {
+      sections.add(
+        _NotificationSection(title: 'Yesterday', items: yesterdayItems),
+      );
+    }
+    if (earlierItems.isNotEmpty) {
+      sections.add(_NotificationSection(title: 'Earlier', items: earlierItems));
+    }
+    return sections;
   }
 }
 
@@ -194,14 +275,29 @@ class _NotificationsHeader extends StatelessWidget {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({required this.item, required this.onTap});
+  const _NotificationCard({
+    required this.item,
+    required this.colorIndex,
+    required this.colorStartIndex,
+    required this.reservedCategoryAccents,
+    required this.onTap,
+  });
 
-  final _NotificationItem item;
+  final NotificationFeedItem item;
+  final int colorIndex;
+  final int colorStartIndex;
+  final Map<String, ExpenseAccentVisual> reservedCategoryAccents;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final showsActionIcon = item.type == _NotificationType.expense;
+    final visuals = _NotificationVisuals.fromItem(
+      item,
+      colorIndex: colorIndex,
+      colorStartIndex: colorStartIndex,
+      reservedCategoryAccents: reservedCategoryAccents,
+    );
+    final showsEditIcon = item.type == NotificationFeedType.expense;
 
     return Material(
       color: Colors.transparent,
@@ -210,7 +306,7 @@ class _NotificationCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            color: item.backgroundColor,
+            color: visuals.backgroundColor,
             borderRadius: BorderRadius.circular(2),
             border: const Border(
               bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
@@ -220,18 +316,14 @@ class _NotificationCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 21,
-                backgroundColor: item.iconBackgroundColor,
-                child: item.iconAssetPath != null
+                backgroundColor: visuals.iconBackgroundColor,
+                child: visuals.iconAssetPath != null
                     ? SvgPicture.asset(
-                        item.iconAssetPath!,
+                        visuals.iconAssetPath!,
                         width: 22,
                         height: 22,
-                        colorFilter: const ColorFilter.mode(
-                          AppPalette.ink,
-                          BlendMode.srcIn,
-                        ),
                       )
-                    : Icon(item.icon, color: AppPalette.ink, size: 22),
+                    : Icon(visuals.icon, color: AppPalette.ink, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -239,7 +331,7 @@ class _NotificationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.timeLabel,
+                      NotificationFeedService.formatTimestamp(item.createdAt),
                       style: GoogleFonts.nunito(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -270,9 +362,9 @@ class _NotificationCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              if (item.amountLabel != null) ...[
+              if (item.amount != null) ...[
                 Text(
-                  item.amountLabel!,
+                  NotificationFeedService.formatAmount(item.amount!),
                   style: GoogleFonts.nunito(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
@@ -282,7 +374,7 @@ class _NotificationCard extends StatelessWidget {
                 const SizedBox(width: 10),
               ],
               Icon(
-                showsActionIcon ? Icons.edit_outlined : Icons.arrow_forward,
+                showsEditIcon ? Icons.edit_outlined : Icons.arrow_forward,
                 color: AppPalette.ink,
                 size: 21,
               ),
@@ -295,16 +387,19 @@ class _NotificationCard extends StatelessWidget {
 }
 
 class _WarningDetailScreen extends StatelessWidget {
-  const _WarningDetailScreen();
+  const _WarningDetailScreen({required this.notification});
+
+  final NotificationFeedItem notification;
 
   @override
   Widget build(BuildContext context) {
+    final category = notification.category ?? 'Other';
+
     return _NotificationDetailShell(
       backgroundColor: const Color(0xFFFF632D),
-      assetPath: 'web/ant/Surprised.svg',
-      title: '"Hey! Everything alright\nover there?"',
-      body:
-          'We noticed some unusual activity in Transport. Before your future self gets the wrong idea, was this purchase planned or is it a midterm stress treat? Think about it for two minutes.',
+      assetPath: 'web/ant/ant_suprised.svg',
+      title: notification.detailTitle,
+      body: notification.detailMessage,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
@@ -313,10 +408,19 @@ class _WarningDetailScreen extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 22,
-              backgroundColor: AppPalette.transport,
-              child: Icon(Icons.train_outlined, color: AppPalette.ink),
+              backgroundColor: _NotificationVisuals.warningIconBackground,
+              child: notification.category != null
+                  ? SvgPicture.asset(
+                      ExpenseVisuals.iconAssetPathFor(category),
+                      width: 22,
+                      height: 22,
+                    )
+                  : const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppPalette.ink,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -324,7 +428,7 @@ class _WarningDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Uber',
+                    notification.expense?.name ?? 'Large expense',
                     style: GoogleFonts.nunito(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
@@ -332,7 +436,7 @@ class _WarningDetailScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Transport',
+                    category,
                     style: GoogleFonts.nunito(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -342,32 +446,18 @@ class _WarningDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              'COP 51,500',
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: Colors.black54,
+            if (notification.amount != null)
+              Text(
+                NotificationFeedService.formatAmount(notification.amount!),
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black54,
+                ),
               ),
-            ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _GoalAchievedDetailScreen extends StatelessWidget {
-  const _GoalAchievedDetailScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return _NotificationDetailShell(
-      backgroundColor: const Color(0xFF3C80E6),
-      assetPath: 'web/ant/Presenting.svg',
-      title: 'Lvl. Up! Goal\nAccomplished!',
-      body:
-          "Look at you. You just smashed your goal: \$660,000 for FEP. Your future self is already doing a happy dance. Treat yourself to something small. You've earned the bragging rights.",
     );
   }
 }
@@ -429,11 +519,12 @@ class _NotificationDetailShell extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    SvgPicture.asset(assetPath, height: 240, fit: BoxFit.contain),
-                    if (child != null) ...[
-                      const SizedBox(height: 22),
-                      child!,
-                    ],
+                    SvgPicture.asset(
+                      assetPath,
+                      height: 240,
+                      fit: BoxFit.contain,
+                    ),
+                    if (child != null) ...[const SizedBox(height: 22), child!],
                   ],
                 ),
               ),
@@ -452,85 +543,114 @@ class _NotificationDetailShell extends StatelessWidget {
   }
 }
 
-enum _NotificationType { expense, warning, goal }
+class _EmptyNotificationsState extends StatelessWidget {
+  const _EmptyNotificationsState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SvgPicture.asset('web/ant/ant_idle.svg', height: 170),
+            const SizedBox(height: 20),
+            Text(
+              'No notifications yet',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Create expenses or complete goals and updates will appear here.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.fieldHint,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _NotificationSection {
   const _NotificationSection({required this.title, required this.items});
 
   final String title;
-  final List<_NotificationItem> items;
+  final List<NotificationFeedItem> items;
 }
 
-class _NotificationItem {
-  const _NotificationItem({
-    required this.type,
-    required this.timeLabel,
-    required this.title,
+class _NotificationVisuals {
+  const _NotificationVisuals({
     required this.backgroundColor,
     required this.iconBackgroundColor,
     required this.icon,
-    this.subtitle,
-    this.amountLabel,
     this.iconAssetPath,
-    this.draft,
   });
 
-  _NotificationItem.expense({
-    required String timeLabel,
-    required String title,
-    required String subtitle,
-    required String amountLabel,
-    required Color backgroundColor,
-    required Color iconBackgroundColor,
-    required String iconAssetPath,
-    required ExpenseDraft draft,
-  }) : this(
-         type: _NotificationType.expense,
-         timeLabel: timeLabel,
-         title: title,
-         subtitle: subtitle,
-         amountLabel: amountLabel,
-         backgroundColor: backgroundColor,
-         iconBackgroundColor: iconBackgroundColor,
-         icon: Icons.edit_outlined,
-         iconAssetPath: iconAssetPath,
-         draft: draft,
-       );
+  static const Color warningIconBackground = Color(0xFF5AD070);
 
-  _NotificationItem.warning({
-    required String timeLabel,
-    required String title,
-    required Color backgroundColor,
-  }) : this(
-         type: _NotificationType.warning,
-         timeLabel: timeLabel,
-         title: title,
-         backgroundColor: backgroundColor,
-         iconBackgroundColor: const Color(0xFF5AD070),
-         icon: Icons.warning_amber_rounded,
-       );
-
-  _NotificationItem.goal({
-    required String timeLabel,
-    required String title,
-    required Color backgroundColor,
-  }) : this(
-         type: _NotificationType.goal,
-         timeLabel: timeLabel,
-         title: title,
-         backgroundColor: backgroundColor,
-         iconBackgroundColor: const Color(0xFF5AD070),
-         icon: Icons.flag_outlined,
-       );
-
-  final _NotificationType type;
-  final String timeLabel;
-  final String title;
-  final String? subtitle;
-  final String? amountLabel;
   final Color backgroundColor;
   final Color iconBackgroundColor;
   final IconData icon;
   final String? iconAssetPath;
-  final ExpenseDraft? draft;
+
+  factory _NotificationVisuals.fromItem(
+    NotificationFeedItem item, {
+    required int colorIndex,
+    required int colorStartIndex,
+    required Map<String, ExpenseAccentVisual> reservedCategoryAccents,
+  }) {
+    final accentVisual =
+        reservedCategoryAccents[item.category] ??
+        ExpenseVisuals.rotatingAccent(
+          itemIndex: colorIndex,
+          startIndex: colorStartIndex,
+        );
+
+    switch (item.type) {
+      case NotificationFeedType.expense:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.edit_outlined,
+          iconAssetPath: ExpenseVisuals.iconAssetPathFor(
+            item.category ?? 'Other',
+          ),
+        );
+      case NotificationFeedType.warning:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.warning_amber_rounded,
+        );
+      case NotificationFeedType.goalHalfway:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.flag_circle_outlined,
+        );
+      case NotificationFeedType.goalAchieved:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.flag_outlined,
+        );
+      case NotificationFeedType.budgetWarning:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.account_balance_wallet_outlined,
+        );
+    }
+  }
 }

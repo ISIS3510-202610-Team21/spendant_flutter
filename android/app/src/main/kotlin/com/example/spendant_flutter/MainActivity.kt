@@ -9,6 +9,11 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        NotificationReaderBridge.register(
+            flutterEngine.dartExecutor.binaryMessenger,
+            this,
+        )
+
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "spendant_flutter/platform_config"

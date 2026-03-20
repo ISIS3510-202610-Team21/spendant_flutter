@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'google_maps_web_config_stub.dart'
+    if (dart.library.html) 'google_maps_web_config_web.dart';
+
 abstract final class PlatformConfigurationService {
   static const MethodChannel _channel = MethodChannel(
     'spendant_flutter/platform_config',
@@ -8,10 +11,16 @@ abstract final class PlatformConfigurationService {
 
   static Future<bool> hasGoogleMapsApiKey() async {
     if (kIsWeb) {
-      return false;
+      return hasConfiguredGoogleMapsApiKeyOnWeb();
     }
 
-    final hasKey = await _channel.invokeMethod<bool>('hasGoogleMapsApiKey');
-    return hasKey ?? false;
+    try {
+      final hasKey = await _channel.invokeMethod<bool>('hasGoogleMapsApiKey');
+      return hasKey ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
   }
 }

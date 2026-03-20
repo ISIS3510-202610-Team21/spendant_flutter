@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -9,6 +11,7 @@ import '../models/goal_model.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
+import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import 'new_expense_screen.dart';
 
@@ -24,6 +27,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
+  late final int _notificationColorStartIndex;
 
   List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
 
@@ -32,6 +36,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     _expensesListenable = LocalStorageService.expensesListenable;
     _goalsListenable = LocalStorageService.goalsListenable;
+    _notificationColorStartIndex = math.Random().nextInt(
+      ExpenseVisuals.rotatingColors.length,
+    );
     _expensesListenable.addListener(_handleStorageChanged);
     _goalsListenable.addListener(_handleStorageChanged);
     _refreshNotifications();
@@ -84,7 +91,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _refreshNotifications();
   }
 
-  Future<void> _openNotificationDetail(NotificationFeedItem notification) async {
+  Future<void> _openNotificationDetail(
+    NotificationFeedItem notification,
+  ) async {
     switch (notification.type) {
       case NotificationFeedType.expense:
         await _openExpenseEditor(notification);
@@ -99,7 +108,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case NotificationFeedType.goalAchieved:
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => _GoalAchievedDetailScreen(notification: notification),
+            builder: (_) =>
+                _GoalAchievedDetailScreen(notification: notification),
           ),
         );
         return;
@@ -109,6 +119,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final sections = _buildSections(_notifications);
+    final userExpenses = LocalStorageService.expenseBox.values.where(
+      (expense) => expense.userId == _defaultUserId,
+    );
+    final reservedCategoryAccents = ExpenseVisuals.reservedAccentsForMonth(
+      userExpenses,
+    );
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -122,25 +138,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
                       children: [
-                        for (final section in sections) ...[
-                          Text(
-                            section.title,
-                            style: GoogleFonts.nunito(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              color: AppPalette.ink,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          for (final item in section.items) ...[
-                            _NotificationCard(
-                              item: item,
-                              onTap: () => _openNotificationDetail(item),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          const SizedBox(height: 4),
-                        ],
+                        ...() {
+                          var colorIndex = 0;
+                          final widgets = <Widget>[];
+
+                          for (final section in sections) {
+                            widgets.add(
+                              Text(
+                                section.title,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppPalette.ink,
+                                ),
+                              ),
+                            );
+                            widgets.add(const SizedBox(height: 12));
+
+                            for (final item in section.items) {
+                              widgets.add(
+                                _NotificationCard(
+                                  item: item,
+                                  colorIndex: colorIndex++,
+                                  colorStartIndex: _notificationColorStartIndex,
+                                  reservedCategoryAccents:
+                                      reservedCategoryAccents,
+                                  onTap: () => _openNotificationDetail(item),
+                                ),
+                              );
+                              widgets.add(const SizedBox(height: 12));
+                            }
+
+                            widgets.add(const SizedBox(height: 4));
+                          }
+
+                          return widgets;
+                        }(),
                       ],
                     ),
             ),
@@ -220,14 +253,28 @@ class _NotificationsHeader extends StatelessWidget {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({required this.item, required this.onTap});
+  const _NotificationCard({
+    required this.item,
+    required this.colorIndex,
+    required this.colorStartIndex,
+    required this.reservedCategoryAccents,
+    required this.onTap,
+  });
 
   final NotificationFeedItem item;
+  final int colorIndex;
+  final int colorStartIndex;
+  final Map<String, ExpenseAccentVisual> reservedCategoryAccents;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final visuals = _NotificationVisuals.fromItem(item);
+    final visuals = _NotificationVisuals.fromItem(
+      item,
+      colorIndex: colorIndex,
+      colorStartIndex: colorStartIndex,
+      reservedCategoryAccents: reservedCategoryAccents,
+    );
     final showsEditIcon = item.type == NotificationFeedType.expense;
 
     return Material(
@@ -344,11 +391,14 @@ class _WarningDetailScreen extends StatelessWidget {
               backgroundColor: _NotificationVisuals.warningIconBackground,
               child: notification.category != null
                   ? SvgPicture.asset(
-                      _CategoryVisuals.of(category).iconAssetPath,
+                      ExpenseVisuals.iconAssetPathFor(category),
                       width: 22,
                       height: 22,
                     )
-                  : const Icon(Icons.warning_amber_rounded, color: AppPalette.ink),
+                  : const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppPalette.ink,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -463,11 +513,12 @@ class _NotificationDetailShell extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    SvgPicture.asset(assetPath, height: 240, fit: BoxFit.contain),
-                    if (child != null) ...[
-                      const SizedBox(height: 22),
-                      child!,
-                    ],
+                    SvgPicture.asset(
+                      assetPath,
+                      height: 240,
+                      fit: BoxFit.contain,
+                    ),
+                    if (child != null) ...[const SizedBox(height: 22), child!],
                   ],
                 ),
               ),
@@ -547,68 +598,40 @@ class _NotificationVisuals {
   final IconData icon;
   final String? iconAssetPath;
 
-  factory _NotificationVisuals.fromItem(NotificationFeedItem item) {
+  factory _NotificationVisuals.fromItem(
+    NotificationFeedItem item, {
+    required int colorIndex,
+    required int colorStartIndex,
+    required Map<String, ExpenseAccentVisual> reservedCategoryAccents,
+  }) {
+    final accentVisual =
+        reservedCategoryAccents[item.category] ??
+        ExpenseVisuals.rotatingAccent(
+          itemIndex: colorIndex,
+          startIndex: colorStartIndex,
+        );
+
     switch (item.type) {
       case NotificationFeedType.expense:
-        final categoryVisuals = _CategoryVisuals.of(item.category ?? 'Other');
         return _NotificationVisuals(
-          backgroundColor: categoryVisuals.tileColor,
-          iconBackgroundColor: categoryVisuals.color,
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.edit_outlined,
-          iconAssetPath: categoryVisuals.iconAssetPath,
+          iconAssetPath: ExpenseVisuals.iconAssetPathFor(
+            item.category ?? 'Other',
+          ),
         );
       case NotificationFeedType.warning:
-        return const _NotificationVisuals(
-          backgroundColor: Color(0xFFCFF7D8),
-          iconBackgroundColor: warningIconBackground,
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.warning_amber_rounded,
         );
       case NotificationFeedType.goalAchieved:
-        return const _NotificationVisuals(
-          backgroundColor: Color(0xFFCFF7D8),
-          iconBackgroundColor: warningIconBackground,
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
-        );
-    }
-  }
-}
-
-class _CategoryVisuals {
-  const _CategoryVisuals({
-    required this.color,
-    required this.tileColor,
-    required this.iconAssetPath,
-  });
-
-  final Color color;
-  final Color tileColor;
-  final String iconAssetPath;
-
-  static _CategoryVisuals of(String category) {
-    switch (category) {
-      case 'Food':
-        return const _CategoryVisuals(
-          color: AppPalette.food,
-          tileColor: Color(0xFFCFE2FF),
-          iconAssetPath: 'web/icons/Food.svg',
-        );
-      case 'Transport':
-        return const _CategoryVisuals(
-          color: AppPalette.transport,
-          tileColor: Color(0xFFF6D1C4),
-          iconAssetPath: 'web/icons/Transport.svg',
-        );
-      case 'Services':
-        return const _CategoryVisuals(
-          color: AppPalette.services,
-          tileColor: Color(0xFFF7E5A8),
-          iconAssetPath: 'web/icons/Services.svg',
-        );
-      default:
-        return const _CategoryVisuals(
-          color: AppPalette.other,
-          tileColor: Color(0xFFFBC5C4),
-          iconAssetPath: 'web/icons/Gifts.svg',
         );
     }
   }

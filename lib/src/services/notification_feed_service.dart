@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../theme/expense_visuals.dart';
 
 enum NotificationFeedType { expense, warning, goalAchieved }
 
@@ -41,14 +42,24 @@ abstract final class NotificationFeedService {
     required Iterable<GoalModel> goals,
     int userId = 1,
   }) {
-    final userExpenses = expenses.where((expense) => expense.userId == userId).toList()
-      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+    final userExpenses =
+        expenses.where((expense) => expense.userId == userId).toList()
+          ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
     final userGoals = goals.where((goal) => goal.userId == userId).toList()
       ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+    final prioritizedLabels = ExpenseVisuals.topCategoryTotalsForMonth(
+      userExpenses,
+    ).map((entry) => entry.label).toList(growable: false);
 
     final feed = <NotificationFeedItem>[
-      ..._buildExpenseNotifications(userExpenses),
-      ..._buildWarningNotifications(userExpenses),
+      ..._buildExpenseNotifications(
+        userExpenses,
+        prioritizedLabels: prioritizedLabels,
+      ),
+      ..._buildWarningNotifications(
+        userExpenses,
+        prioritizedLabels: prioritizedLabels,
+      ),
       ..._buildGoalNotifications(userGoals),
     ]..sort((left, right) => right.createdAt.compareTo(left.createdAt));
 
@@ -56,17 +67,21 @@ abstract final class NotificationFeedService {
   }
 
   static List<NotificationFeedItem> _buildExpenseNotifications(
-    List<ExpenseModel> expenses,
-  ) {
+    List<ExpenseModel> expenses, {
+    required List<String> prioritizedLabels,
+  }) {
     return expenses.take(8).map((expense) {
-      final category = normalizeCategory(expense.primaryCategory);
+      final category = ExpenseVisuals.resolveDisplayLabel(
+        expense,
+        prioritizedLabels: prioritizedLabels,
+      );
 
       return NotificationFeedItem(
         id: 'expense-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
         type: NotificationFeedType.expense,
         createdAt: expense.createdAt,
         title: expense.name,
-        subtitle: expense.detailLabels.isNotEmpty ? expense.detailLabels.first : category,
+        subtitle: category,
         amount: expense.amount,
         category: category,
         expense: expense,
@@ -77,8 +92,9 @@ abstract final class NotificationFeedService {
   }
 
   static List<NotificationFeedItem> _buildWarningNotifications(
-    List<ExpenseModel> expenses,
-  ) {
+    List<ExpenseModel> expenses, {
+    required List<String> prioritizedLabels,
+  }) {
     final warnings = <NotificationFeedItem>[];
 
     for (final expense in expenses) {
@@ -86,7 +102,10 @@ abstract final class NotificationFeedService {
         continue;
       }
 
-      final category = normalizeCategory(expense.primaryCategory);
+      final category = ExpenseVisuals.resolveDisplayLabel(
+        expense,
+        prioritizedLabels: prioritizedLabels,
+      );
       warnings.add(
         NotificationFeedItem(
           id: 'warning-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
@@ -106,7 +125,9 @@ abstract final class NotificationFeedService {
     return warnings.take(4).toList();
   }
 
-  static List<NotificationFeedItem> _buildGoalNotifications(List<GoalModel> goals) {
+  static List<NotificationFeedItem> _buildGoalNotifications(
+    List<GoalModel> goals,
+  ) {
     return goals.where(_isGoalAchieved).map((goal) {
       return NotificationFeedItem(
         id: 'goal-${goal.key ?? goal.createdAt.microsecondsSinceEpoch}',
@@ -147,7 +168,8 @@ abstract final class NotificationFeedService {
         comparableExpenses.fold<double>(0, (sum, item) => sum + item.amount) /
         comparableExpenses.length;
 
-    return expense.amount >= average * 1.8 && (expense.amount - average) >= 15000;
+    return expense.amount >= average * 1.8 &&
+        (expense.amount - average) >= 15000;
   }
 
   static String normalizeCategory(String? category) {

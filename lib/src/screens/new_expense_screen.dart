@@ -30,11 +30,7 @@ class _ExpenseLabelGroup {
 const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   _ExpenseLabelGroup(
     label: 'Academic Essentials',
-    sublabels: <String>[
-      'Commute',
-      'Learning Materials',
-      'University Fees',
-    ],
+    sublabels: <String>['Commute', 'Learning Materials', 'University Fees'],
   ),
   _ExpenseLabelGroup(
     label: 'Lifestyle & Social',
@@ -60,11 +56,7 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   ),
   _ExpenseLabelGroup(
     label: 'Strategic & Utility Tags',
-    sublabels: <String>[
-      'Emergency',
-      'Impulse',
-      'Owed',
-    ],
+    sublabels: <String>['Emergency', 'Impulse', 'Owed'],
   ),
 ];
 
@@ -129,6 +121,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
+  String? _selectedDetailLabelPreview;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
@@ -159,10 +152,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         'en_US',
       ).format(editingExpense.amount.round());
       _selectedCategory = editingExpense.primaryCategory;
-      _selectedDetailLabels = <String>[...editingExpense.detailLabels];
-      _selectedCategory =
-          _derivePrimaryCategory(_selectedDetailLabels) ??
-          editingExpense.primaryCategory;
+      _applySelectedLabels(<String>[...editingExpense.detailLabels]);
+      _selectedCategory ??= editingExpense.primaryCategory;
       _selectedDate = editingExpense.date;
 
       final timeParts = editingExpense.time.split(':');
@@ -175,7 +166,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         _selectedLocation = ExpenseLocationSelection(
           label: editingExpense.locationName!.trim(),
           position:
-              editingExpense.latitude != null && editingExpense.longitude != null
+              editingExpense.latitude != null &&
+                  editingExpense.longitude != null
               ? LatLng(editingExpense.latitude!, editingExpense.longitude!)
               : null,
         );
@@ -191,9 +183,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     _expenseNameController.text = draft.name;
     _expenseValueController.text = draft.amount;
     _selectedCategory = draft.primaryCategory;
-    _selectedDetailLabels = <String>[...draft.detailLabels];
-    _selectedCategory =
-        _derivePrimaryCategory(_selectedDetailLabels) ?? draft.primaryCategory;
+    _applySelectedLabels(<String>[...draft.detailLabels]);
+    _selectedCategory ??= draft.primaryCategory;
     _selectedDate = draft.date;
     _selectedTime = draft.time;
 
@@ -225,6 +216,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _applySelectedLabels(List<String> labels) {
     _selectedDetailLabels = labels;
     _selectedCategory = _derivePrimaryCategory(labels);
+    _selectedDetailLabelPreview = _pickRandomLabel(labels);
+  }
+
+  String? _pickRandomLabel(List<String> labels) {
+    if (labels.isEmpty) {
+      return null;
+    }
+
+    return labels[math.Random().nextInt(labels.length)];
   }
 
   Future<void> _pickDate() async {
@@ -420,14 +420,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     setState(() {
       _applySelectedLabels(selected);
-    });
-  }
-
-  void _removeSelectedLabel(String label) {
-    setState(() {
-      final updated = List<String>.from(_selectedDetailLabels)
-        ..remove(label);
-      _applySelectedLabels(updated);
     });
   }
 
@@ -717,7 +709,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    _selectedCategory ??= _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
+    _selectedCategory ??=
+        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
 
     // Validate required fields
     if (_expenseNameController.text.trim().isEmpty) {
@@ -737,11 +730,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
 
     final editingExpense = widget.editingExpense;
+    final expense = editingExpense ?? ExpenseModel();
 
-    // Create expense model
-    final expense = ExpenseModel()
+    expense
       ..userId =
-          editingExpense?.userId ?? 1 // TODO: Get actual user ID from auth
+          editingExpense?.userId ??
+          1 // TODO: Get actual user ID from auth
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -750,20 +744,27 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
       ..locationName = _selectedLocation?.label
-      ..source =
-          (editingExpense?.source.trim().isNotEmpty ?? false)
+      ..source = (editingExpense?.source.trim().isNotEmpty ?? false)
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
       ..receiptImagePath = editingExpense?.receiptImagePath
       ..isPendingCategory = false
       ..isRecurring = editingExpense?.isRecurring ?? false
+      ..recurrenceInterval = editingExpense?.recurrenceInterval
+      ..recurrenceUnit = editingExpense?.recurrenceUnit
+      ..nextOccurrenceDate = editingExpense?.nextOccurrenceDate
       ..isSynced = false
+      ..serverId = editingExpense?.serverId
       ..createdAt = editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
       ..detailLabels = List<String>.from(_selectedDetailLabels);
 
     try {
-      await LocalStorageService().saveExpense(expense);
+      if (editingExpense == null) {
+        await LocalStorageService().saveExpense(expense);
+      } else {
+        await expense.save();
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -784,7 +785,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final navigator = Navigator.of(context);
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('Expense saved locally')),
+      SnackBar(
+        content: Text(
+          editingExpense == null
+              ? 'Expense saved locally'
+              : 'Expense updated locally',
+        ),
+      ),
     );
     navigator.pop(true);
     _syncPendingDataInBackground();
@@ -930,11 +937,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                         label: 'Label',
                                         onPressed: _pickLabels,
                                       ),
-                                      for (final label in _selectedDetailLabels)
+                                      if (_selectedDetailLabelPreview != null)
                                         _SelectedExpenseLabelChip(
-                                          label: label,
-                                          onTap: () =>
-                                              _removeSelectedLabel(label),
+                                          label: _selectedDetailLabelPreview!,
+                                          onTap: _pickLabels,
                                         ),
                                     ],
                                   ),
@@ -1211,8 +1217,7 @@ class _MockReceiptScannerScreen extends StatefulWidget {
       _MockReceiptScannerScreenState();
 }
 
-class _MockReceiptScannerScreenState
-    extends State<_MockReceiptScannerScreen> {
+class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
   bool _scanning = false;
 
   static final ReceiptScanResult _mockResult = ReceiptScanResult(
@@ -1220,9 +1225,7 @@ class _MockReceiptScannerScreenState
     formattedAmount: '25,020',
     date: DateTime(2026, 3, 19),
     time: DateTime(2026, 3, 19, 13, 45),
-    location: const ReceiptScanLocation(
-      label: 'Calle 20 #6-76, Bogotá',
-    ),
+    location: const ReceiptScanLocation(label: 'Calle 20 #6-76, Bogotá'),
     rawText: '',
   );
 
@@ -1352,11 +1355,7 @@ class _MockReceiptScannerScreenState
                     ),
 
                   // Corner guides
-                  Positioned(
-                    top: 60,
-                    left: 40,
-                    child: _CornerGuide(rotate: 0),
-                  ),
+                  Positioned(top: 60, left: 40, child: _CornerGuide(rotate: 0)),
                   Positioned(
                     top: 60,
                     right: 40,
@@ -2279,10 +2278,7 @@ class _SublabelChip extends StatelessWidget {
 }
 
 class _SelectedExpenseLabelChip extends StatelessWidget {
-  const _SelectedExpenseLabelChip({
-    required this.label,
-    required this.onTap,
-  });
+  const _SelectedExpenseLabelChip({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;

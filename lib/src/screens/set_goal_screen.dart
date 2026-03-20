@@ -687,11 +687,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               return ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
-                  _GoalBudgetCard(
-                    summary: summary,
-                    currencyFormat: _currencyFormat,
-                  ),
-                  const SizedBox(height: 14),
                   if (!summary.hasIncome) ...[
                     const _GoalRulesNotice(
                       message:
@@ -881,7 +876,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 const SizedBox(
                   width: 170,
                   height: 210,
-                  child: AntAsset('web/ant/Presenting.svg'),
+                  child: AntAsset('web/ant/ant_presenting.svg'),
                 ),
                 const SizedBox(width: 8),
                 Flexible(
@@ -982,14 +977,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 height: 1.25,
               ),
             ),
-            const SizedBox(height: 26),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-              ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Text(
                 'Try changing the target amount, extending the deadline, or increasing your available income before creating this goal again.',
                 textAlign: TextAlign.center,
@@ -1187,184 +1177,34 @@ class _GoalTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    onPressed: onDelete,
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: AppPalette.ink,
-                    ),
-                    tooltip: 'Delete goal',
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    onPressed: onEdit,
-                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                  ),
-                ],
+              IconButton(
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppPalette.ink,
+                ),
+                tooltip: 'Delete goal',
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                splashRadius: 18,
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
+              ),
+              const SizedBox(height: 2),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                splashRadius: 18,
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalBudgetCard extends StatelessWidget {
-  const _GoalBudgetCard({
-    required this.summary,
-    required this.currencyFormat,
-  });
-
-  final DailyBudgetSummary summary;
-  final NumberFormat currencyFormat;
-
-  String _formatCop(double amount) {
-    return 'COP ${currencyFormat.format(amount.round())}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final statusTitle = switch (summary) {
-      DailyBudgetSummary(:final hasIncome) when !hasIncome =>
-        'No active income',
-      DailyBudgetSummary(:final isInternalBudgetExhausted)
-          when isInternalBudgetExhausted =>
-        'Goal budget exhausted',
-      DailyBudgetSummary(:final isSpendableBudgetExhausted)
-          when isSpendableBudgetExhausted =>
-        'Spendable budget exhausted',
-      _ => 'Budget available for goals',
-    };
-
-    final statusMessage = switch (summary) {
-      DailyBudgetSummary(:final hasIncome) when !hasIncome =>
-        'Add at least one income to unlock daily budget planning for your goals.',
-      DailyBudgetSummary(
-        :final internalDailyBudget,
-        :final totalGoalDailyCommitment,
-        :final spendableDailyBudget,
-      )
-          when summary.isInternalBudgetExhausted =>
-        'Your goals already reserve ${_formatCop(totalGoalDailyCommitment)} per day, which uses all of the internal daily budget of ${_formatCop(internalDailyBudget)}. Spendable budget left today: ${_formatCop(spendableDailyBudget)}.',
-      DailyBudgetSummary(
-        :final spendableDailyBudget,
-        :final totalGoalDailyCommitment,
-      )
-          when summary.isSpendableBudgetExhausted =>
-        'You have ${_formatCop(spendableDailyBudget)} left to spend today. Be careful: your goals still reserve ${_formatCop(totalGoalDailyCommitment)} per day.',
-      DailyBudgetSummary(
-        :final spendableDailyBudget,
-        :final internalDailyBudget,
-        :final totalGoalDailyCommitment,
-      ) =>
-        'You can still spend ${_formatCop(spendableDailyBudget)} today. Goals are reserving ${_formatCop(totalGoalDailyCommitment)} per day from an internal daily budget of ${_formatCop(internalDailyBudget)}.',
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            statusTitle,
-            style: GoogleFonts.nunito(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _BudgetMetricRow(
-            label: 'Daily income',
-            value: _formatCop(summary.totalDailyIncome),
-          ),
-          _BudgetMetricRow(
-            label: 'Internal daily budget',
-            value: _formatCop(summary.internalDailyBudget),
-          ),
-          _BudgetMetricRow(
-            label: 'Goal reserve in use',
-            value: _formatCop(summary.totalGoalDailyCommitment),
-          ),
-          _BudgetMetricRow(
-            label: 'Spendable today',
-            value: _formatCop(summary.spendableDailyBudget),
-            emphasize: true,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            statusMessage,
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.fieldHint,
-              height: 1.25,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BudgetMetricRow extends StatelessWidget {
-  const _BudgetMetricRow({
-    required this.label,
-    required this.value,
-    this.emphasize = false,
-  });
-
-  final String label;
-  final String value;
-  final bool emphasize;
-
-  @override
-  Widget build(BuildContext context) {
-    final valueColor = emphasize ? AppPalette.green : AppPalette.ink;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppPalette.fieldHint,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: valueColor,
-            ),
           ),
         ],
       ),

@@ -11,6 +11,7 @@ import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import '../services/auth_memory_store.dart';
 import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
@@ -27,14 +28,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const int _defaultUserId = 1;
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   bool _hasUnreadNotifications = true;
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
-  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
+  late final ValueListenable<Box<AppNotificationModel>>
+  _notificationsListenable;
   late final int _expenseColorStartIndex;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -68,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,
       appNotifications: LocalStorageService.notificationBox.values,
-      userId: _defaultUserId,
+      userId: _currentUserId,
     );
     final hasUnread = await NotificationsStore.hasUnreadNotifications(
       notificationIds: notifications.map((notification) => notification.id),
@@ -118,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final box = LocalStorageService.expenseBox;
                   final expenses =
                       box.values
-                          .where((expense) => expense.userId == _defaultUserId)
+                          .where((expense) => expense.userId == _currentUserId)
                           .toList()
                         ..sort(
                           (left, right) => _expenseDateTime(
@@ -127,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         );
 
                   final summary = DailyBudgetService.buildSummaryForUser(
-                    _defaultUserId,
+                    _currentUserId,
                   );
 
                   final monthTotal = _sumForMonth(expenses, DateTime.now());
@@ -162,9 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 6),
                       _AmountHeadline(
-                        amount: summary.remainingSpendableBudget <= 0
-                            ? 0
-                            : summary.remainingSpendableBudget,
+                        amount: summary.spendableDailyBudget,
                         amountColor: AppPalette.green,
                       ),
                       const SizedBox(height: 20),
@@ -354,9 +354,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return orderedDates.take(6).map((date) {
       final dayExpenses = grouped[date]!
         ..sort(
-          (left, right) => _expenseDateTime(
-            right,
-          ).compareTo(_expenseDateTime(left)),
+          (left, right) =>
+              _expenseDateTime(right).compareTo(_expenseDateTime(left)),
         );
 
       return _ExpenseDayGroup(
@@ -464,9 +463,10 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = NumberFormat('#,###', 'en_US').format(
-      amount.round(),
-    );
+    final formattedAmount = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(amount.round());
 
     return RichText(
       text: TextSpan(
@@ -613,19 +613,18 @@ class _EmptyExpensesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Text(
-        'No local expenses yet. Add one with the + button and it will appear here immediately, even without internet.',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.nunito(
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          color: AppPalette.ink,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Text(
+          'No expenses yet.\nTap + to add one.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.fieldHint,
+            height: 1.5,
+          ),
         ),
       ),
     );

@@ -3,15 +3,16 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/expense_model.dart';
+import 'auth_memory_store.dart';
 import 'google_pay_notification_parser.dart';
 import 'local_storage_service.dart';
 import 'notification_reader_service.dart';
 
 abstract final class GooglePayExpenseImportService {
-  static const int _defaultUserId = 1;
   static const String _processedEventIdsKey =
       'processed_google_pay_notification_event_ids_v1';
   static const int _maxProcessedEventIds = 240;
+  static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   static StreamSubscription<NotificationReaderEvent>? _subscription;
   static Future<void>? _activeRefresh;
@@ -64,6 +65,10 @@ abstract final class GooglePayExpenseImportService {
   }
 
   static Future<void> _importEvent(NotificationReaderEvent event) async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final parsedExpense = GooglePayNotificationParser.parse(event);
     if (parsedExpense == null) {
       return;
@@ -89,7 +94,7 @@ abstract final class GooglePayExpenseImportService {
     );
 
     final expense = ExpenseModel()
-      ..userId = _defaultUserId
+      ..userId = _currentUserId
       ..name = parsedExpense.name
       ..amount = parsedExpense.amount
       ..date = expenseDate

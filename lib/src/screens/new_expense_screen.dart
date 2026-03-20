@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
@@ -129,6 +130,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
   ReceiptScanResult? _lastReceiptScanResult;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -679,9 +681,20 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   void _showScanMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _syncPendingDataInBackground() {
@@ -732,9 +745,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final expense = editingExpense ?? ExpenseModel();
 
     expense
-      ..userId =
-          editingExpense?.userId ??
-          1 // TODO: Get actual user ID from auth
+      ..userId = editingExpense?.userId ?? _currentUserId
       ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
@@ -780,18 +791,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          editingExpense == null
-              ? 'Expense saved locally'
-              : 'Expense updated locally',
-        ),
-      ),
-    );
     navigator.pop(true);
     _syncPendingDataInBackground();
   }
@@ -2432,9 +2432,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   void _showLocationMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 

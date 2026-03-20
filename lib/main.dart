@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'src/services/app_notification_service.dart';
+import 'src/services/auth_memory_store.dart';
 import 'src/services/cloud_sync_service.dart';
 import 'src/services/firebase_uid_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
@@ -30,6 +31,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
   Future<Object?> _initializeCriticalServices() async {
     try {
       await LocalStorageService.init();
+      await AuthMemoryStore.initialize();
       debugPrint('LocalStorageService initialized');
       unawaited(_initializeOptionalServices());
       return null;

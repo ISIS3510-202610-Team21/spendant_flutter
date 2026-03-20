@@ -7,23 +7,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
+import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
 
 abstract final class AppNotificationService {
-  static const int _defaultUserId = 1;
-  static const String _bootstrapKey = 'app_notification_bootstrap_v1';
-  static const String _trackedSignalIdsKey =
+  static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v1';
+  static const String _trackedSignalIdsKeyPrefix =
       'app_notification_tracked_signal_ids_v1';
   static const String _goalRouteName = '/set-goal';
   static const String _budgetRouteName = '/budget';
 
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+  static String get _bootstrapKey => '$_bootstrapKeyPrefix-$_currentUserId';
+  static String get _trackedSignalIdsKey =>
+      '$_trackedSignalIdsKeyPrefix-$_currentUserId';
 
   static Future<void>? _activeRefresh;
 
   static Future<void> initialize() async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final didBootstrap = prefs.getBool(_bootstrapKey) ?? false;
     if (didBootstrap) {
@@ -57,6 +65,10 @@ abstract final class AppNotificationService {
   }
 
   static Future<void> _refreshInternal() async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final trackedSignals = {
       ...(prefs.getStringList(_trackedSignalIdsKey) ?? const <String>[]),
@@ -65,10 +77,10 @@ abstract final class AppNotificationService {
 
     final now = DateTime.now();
     final goals = LocalStorageService.goalBox.values
-        .where((goal) => goal.userId == _defaultUserId)
+        .where((goal) => goal.userId == _currentUserId)
         .toList();
     final incomes = LocalStorageService.incomeBox.values
-        .where((income) => income.userId == _defaultUserId)
+        .where((income) => income.userId == _currentUserId)
         .toList();
 
     for (final goal in goals) {
@@ -119,7 +131,7 @@ abstract final class AppNotificationService {
     }
 
     final summary = DailyBudgetService.buildSummaryForUser(
-      _defaultUserId,
+      _currentUserId,
       now: now,
     );
     if (summary.isSpendableBudgetExhausted) {
@@ -150,10 +162,10 @@ abstract final class AppNotificationService {
     final trackedSignals = <String>{};
 
     final goals = LocalStorageService.goalBox.values.where(
-      (goal) => goal.userId == _defaultUserId,
+      (goal) => goal.userId == _currentUserId,
     );
     final incomes = LocalStorageService.incomeBox.values.where(
-      (income) => income.userId == _defaultUserId,
+      (income) => income.userId == _currentUserId,
     );
     for (final goal in goals) {
       final progress = _goalProgress(goal);
@@ -172,7 +184,7 @@ abstract final class AppNotificationService {
     }
 
     final summary = DailyBudgetService.buildSummaryForUser(
-      _defaultUserId,
+      _currentUserId,
       now: now,
     );
     if (summary.isSpendableBudgetExhausted) {
@@ -258,6 +270,7 @@ abstract final class AppNotificationService {
       ..id = _goalNotificationId(goal, 'created')
       ..type = AppNotificationTypes.goalCreated
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'New goal created'
       ..subtitle = goal.name
       ..amount = goal.targetAmount
@@ -276,6 +289,7 @@ abstract final class AppNotificationService {
       ..id = _goalNotificationId(goal, '50')
       ..type = AppNotificationTypes.goalHalfway
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Goal at 50%'
       ..subtitle = goal.name
       ..amount = goal.currentAmount
@@ -294,6 +308,7 @@ abstract final class AppNotificationService {
       ..id = _goalNotificationId(goal, '100')
       ..type = AppNotificationTypes.goalAchieved
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Goal completed'
       ..subtitle = goal.name
       ..amount = goal.targetAmount
@@ -312,6 +327,7 @@ abstract final class AppNotificationService {
       ..id = _incomeNotificationId(income, 'created')
       ..type = AppNotificationTypes.incomeCreated
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'New income added'
       ..subtitle = income.name
       ..amount = income.amount
@@ -330,6 +346,7 @@ abstract final class AppNotificationService {
       ..id = _incomeDueNotificationId(income, dueOccurrence)
       ..type = AppNotificationTypes.incomeDue
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Income available'
       ..subtitle = income.name
       ..amount = income.amount
@@ -362,6 +379,7 @@ abstract final class AppNotificationService {
       ..id = _budgetNotificationId(now)
       ..type = AppNotificationTypes.budgetWarning
       ..createdAt = now
+      ..userId = _currentUserId
       ..title = 'Daily budget exhausted'
       ..subtitle = goalImpactAmount > 0
           ? 'Goals at risk: $goalImpactLabel'
@@ -434,6 +452,10 @@ abstract final class AppNotificationService {
   }
 
   static Future<void> notifyGoalCreated(GoalModel goal) async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final signalId = _goalSignalId(goal, 'created');
     final prefs = await SharedPreferences.getInstance();
     final trackedSignals = {
@@ -455,6 +477,10 @@ abstract final class AppNotificationService {
   }
 
   static Future<void> notifyIncomeCreated(IncomeModel income) async {
+    if (_currentUserId < 0) {
+      return;
+    }
+
     final signalId = _incomeSignalId(income, 'created');
     final prefs = await SharedPreferences.getInstance();
     final trackedSignals = {
@@ -501,12 +527,14 @@ abstract final class AppNotificationService {
       return;
     }
 
-    await LocalNotificationService.showTrackedNotification(incomingNotification);
+    await LocalNotificationService.showTrackedNotification(
+      incomingNotification,
+    );
   }
 
   static AppNotificationModel? _findStoredNotification(String id) {
     for (final notification in LocalStorageService.notificationBox.values) {
-      if (notification.id == id) {
+      if (notification.id == id && notification.userId == _currentUserId) {
         return notification;
       }
     }

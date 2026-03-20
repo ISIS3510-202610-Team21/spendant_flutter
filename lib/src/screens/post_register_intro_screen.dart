@@ -84,24 +84,16 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     _waitingForNotificationReaderAccess = false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
-        ),
-      ),
+    await _showInfoDialog(
+      'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
     );
     await _goHome();
   }
 
   Future<void> _requestPostingPermission() async {
     if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Notification permission is only available on mobile devices.',
-          ),
-        ),
+      await _showInfoDialog(
+        'Notification permission is only available on mobile devices.',
       );
       return;
     }
@@ -112,23 +104,15 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (status.isPermanentlyDenied || status.isRestricted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'SpendAnt alerts are blocked right now. You can enable them later from system settings.',
-          ),
-        ),
+      await _showInfoDialog(
+        'SpendAnt alerts are blocked right now. You can enable them later from system settings.',
       );
       return;
     }
 
     if (!status.isGranted && !status.isLimited) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'SpendAnt alert notifications were not enabled on this device.',
-          ),
-        ),
+      await _showInfoDialog(
+        'SpendAnt alert notifications were not enabled on this device.',
       );
     }
   }
@@ -146,10 +130,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Calendar sync will be available in a later update.'),
-        ),
+      await _showInfoDialog(
+        'Calendar sync will be available in a later update.',
       );
       setState(() {
         _step = 2;
@@ -168,12 +150,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (defaultTargetPlatform != TargetPlatform.android) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Automatic Google Pay import is only available on Android.',
-          ),
-        ),
+      await _showInfoDialog(
+        'Automatic Google Pay import is only available on Android.',
       );
       await _goHome();
       return;
@@ -189,12 +167,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Android also needs notification reading access to import Google Pay purchases. Enable it in the next screen.',
-        ),
-      ),
+    await _showInfoDialog(
+      'Android also needs notification reading access to import Google Pay purchases. Enable it in the next screen.',
     );
     setState(() {
       _waitingForNotificationReaderAccess = true;
@@ -209,15 +183,28 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       setState(() {
         _waitingForNotificationReaderAccess = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'The notification reader settings could not be opened on this device.',
-          ),
-        ),
+      await _showInfoDialog(
+        'The notification reader settings could not be opened on this device.',
       );
       await _goHome();
     }
+  }
+
+  Future<void> _showInfoDialog(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _handleSecondaryAction() async {

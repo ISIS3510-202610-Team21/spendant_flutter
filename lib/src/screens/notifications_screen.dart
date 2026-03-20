@@ -10,6 +10,7 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
@@ -27,14 +28,14 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  static const int _defaultUserId = 1;
-
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
-  late final ValueListenable<Box<AppNotificationModel>> _notificationsListenable;
+  late final ValueListenable<Box<AppNotificationModel>>
+  _notificationsListenable;
   late final int _notificationColorStartIndex;
 
   List<NotificationFeedItem> _notifications = <NotificationFeedItem>[];
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -68,7 +69,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,
       appNotifications: LocalStorageService.notificationBox.values,
-      userId: _defaultUserId,
+      userId: _currentUserId,
     );
 
     if (mounted) {
@@ -104,11 +105,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     required String title,
     required String name,
   }) async {
-    return showSpendAntDeleteDialog(
-      context,
-      title: title,
-      name: name,
-    );
+    return showSpendAntDeleteDialog(context, title: title, name: name);
   }
 
   Future<void> _deleteExpense(NotificationFeedItem notification) async {
@@ -132,14 +129,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          deletedFromCloud
-              ? 'Expense deleted'
-              : 'Expense deleted locally. Cloud cleanup is still pending.',
-        ),
-      ),
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(
+            deletedFromCloud
+                ? 'Expense deleted'
+                : 'Expense deleted locally. Cloud cleanup is still pending.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
     );
     await _refreshNotifications();
   }
@@ -191,7 +197,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final sections = _buildSections(_notifications);
     final userExpenses = LocalStorageService.expenseBox.values.where(
-      (expense) => expense.userId == _defaultUserId,
+      (expense) => expense.userId == _currentUserId,
     );
     final reservedCategoryAccents = ExpenseVisuals.reservedAccentsForMonth(
       userExpenses,
@@ -235,10 +241,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   reservedCategoryAccents:
                                       reservedCategoryAccents,
                                   onTap: () => _openNotificationDetail(item),
-                                  onDelete: item.type == NotificationFeedType.expense
+                                  onDelete:
+                                      item.type == NotificationFeedType.expense
                                       ? () => _deleteExpense(item)
                                       : null,
-                                  onEdit: item.type == NotificationFeedType.expense
+                                  onEdit:
+                                      item.type == NotificationFeedType.expense
                                       ? () => _openExpenseEditor(item)
                                       : null,
                                 ),

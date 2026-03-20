@@ -35,6 +35,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   );
   late String? _avatarBase64 = widget.initialAvatarBase64;
   Uint8List? _avatarBytes;
+  String? _errorText;
 
   @override
   void initState() {
@@ -84,23 +85,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The profile picture could not be loaded'),
-        ),
-      );
+      setState(() {
+        _errorText = 'The profile picture could not be loaded.';
+      });
     }
   }
 
   void _save() {
     final trimmedName = _nameController.text.trim();
     if (trimmedName.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter a username')));
+      setState(() {
+        _errorText = 'Please enter a username.';
+      });
       return;
     }
 
+    setState(() {
+      _errorText = null;
+    });
     Navigator.of(
       context,
     ).pop(ProfileEditResult(name: trimmedName, avatarBase64: _avatarBase64));
@@ -202,6 +204,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         controller: _nameController,
                         autofocus: true,
                         textInputAction: TextInputAction.done,
+                        onChanged: (_) {
+                          if (_errorText == null) {
+                            return;
+                          }
+
+                          setState(() {
+                            _errorText = null;
+                          });
+                        },
                         onSubmitted: (_) => _save(),
                         decoration: const InputDecoration(
                           border: InputBorder.none,
@@ -217,6 +228,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                       ),
                     ),
+                    if (_errorText != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorText!,
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFB00020),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 130),
                     Center(
                       child: SizedBox(

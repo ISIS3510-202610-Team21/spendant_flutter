@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 
@@ -25,6 +26,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
   String? _cloudMessage;
   bool _isSyncing = false;
   bool _isVerifying = false;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -58,7 +60,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
 
   Future<void> _addTestExpense() async {
     final expense = ExpenseModel()
-      ..userId = 1
+      ..userId = _currentUserId
       ..name = 'Test Gasto ${DateTime.now().millisecond}'
       ..amount = 50000
       ..date = DateTime.now()
@@ -78,14 +80,12 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Gasto de prueba guardado localmente')),
-    );
+    _showMessage('Gasto de prueba guardado localmente');
   }
 
   Future<void> _addTestGoal() async {
     final goal = GoalModel()
-      ..userId = 1
+      ..userId = _currentUserId
       ..name = 'Meta de prueba'
       ..targetAmount = 500000
       ..currentAmount = 0.0
@@ -101,14 +101,12 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Meta de prueba guardada localmente')),
-    );
+    _showMessage('Meta de prueba guardada localmente');
   }
 
   Future<void> _addTestIncome() async {
     final income = IncomeModel()
-      ..userId = 1
+      ..userId = _currentUserId
       ..name = 'Ingreso prueba ${DateTime.now().millisecond}'
       ..amount = 250000
       ..type = 'FREQUENTLY'
@@ -125,9 +123,7 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ingreso de prueba guardado localmente')),
-    );
+    _showMessage('Ingreso de prueba guardado localmente');
   }
 
   Future<void> _syncPendingData() async {
@@ -232,14 +228,27 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final pendingExpenses = expenses.where((expense) => !expense.isSynced).length;
+    final pendingExpenses = expenses
+        .where((expense) => !expense.isSynced)
+        .length;
     final pendingGoals = goals.where((goal) => !goal.isSynced).length;
     final pendingIncomes = incomes.where((income) => !income.isSynced).length;
 
@@ -317,7 +326,9 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.cloud_upload_outlined),
-                    label: Text(_isSyncing ? 'Sincronizando...' : 'Sincronizar'),
+                    label: Text(
+                      _isSyncing ? 'Sincronizando...' : 'Sincronizar',
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: _isVerifying ? null : _verifyCloudState,
@@ -440,7 +451,9 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
               )
             else
               Column(
-                children: expenses.map(_buildExpenseTile).toList(growable: false),
+                children: expenses
+                    .map(_buildExpenseTile)
+                    .toList(growable: false),
               ),
           ],
         ),

@@ -8,11 +8,12 @@ import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
 import '../services/app_notification_service.dart';
+import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
-import '../widgets/spendant_delete_dialog.dart';
 import '../widgets/spendant_bottom_nav.dart';
+import '../widgets/spendant_delete_dialog.dart';
 
 // ─────────────────────────────────────────────────────────
 // BUDGET SCREEN (lista de ingresos)
@@ -21,7 +22,6 @@ import '../widgets/spendant_bottom_nav.dart';
 class BudgetScreen extends StatelessWidget {
   const BudgetScreen({super.key});
 
-  static const int _defaultUserId = 1;
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   static const List<Color> _cardColors = [
@@ -30,6 +30,8 @@ class BudgetScreen extends StatelessWidget {
     Color(0xFFD5EAF9),
     Color(0xFFD5F9E0),
   ];
+
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   String _recurrenceLabel(IncomeModel income) {
     if (income.type == 'JUST_ONCE') return 'Just once';
@@ -45,11 +47,7 @@ class BudgetScreen extends StatelessWidget {
     required String title,
     required String name,
   }) async {
-    return showSpendAntDeleteDialog(
-      context,
-      title: title,
-      name: name,
-    );
+    return showSpendAntDeleteDialog(context, title: title, name: name);
   }
 
   Future<void> _confirmDeleteIncome(
@@ -72,14 +70,23 @@ class BudgetScreen extends StatelessWidget {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          deletedFromCloud
-              ? 'Income deleted'
-              : 'Income deleted locally. Cloud cleanup is still pending.',
-        ),
-      ),
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(
+            deletedFromCloud
+                ? 'Income deleted'
+                : 'Income deleted locally. Cloud cleanup is still pending.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -94,10 +101,9 @@ class BudgetScreen extends StatelessWidget {
             child: ValueListenableBuilder<Box<IncomeModel>>(
               valueListenable: LocalStorageService.incomesListenable,
               builder: (context, box, _) {
-                final incomes = box.values
-                    .where((i) => i.userId == _defaultUserId)
-                    .toList()
-                  ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                final incomes =
+                    box.values.where((i) => i.userId == _currentUserId).toList()
+                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
@@ -128,15 +134,11 @@ class BudgetScreen extends StatelessWidget {
                     Center(
                       child: ElevatedButton(
                         onPressed: () async {
-                          final didSave = await Navigator.of(context)
-                              .push<bool>(
-                                MaterialPageRoute(
-                                  builder: (_) => const NewIncomeScreen(),
-                                ),
-                              );
-                          if (didSave == true) {
-                            unawaited(CloudSyncService().syncAllPendingData());
-                          }
+                          await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (_) => const NewIncomeScreen(),
+                            ),
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppPalette.ink,
@@ -247,19 +249,13 @@ class _IncomeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        income.name,
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  income.name,
+                  style: GoogleFonts.nunito(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -316,7 +312,10 @@ class _IncomeCard extends StatelessWidget {
                   const SizedBox(width: 2),
                   IconButton(
                     onPressed: onEdit,
-                    icon: const Icon(Icons.edit_outlined, color: AppPalette.ink),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppPalette.ink,
+                    ),
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
                     splashRadius: 18,
@@ -372,8 +371,6 @@ class NewIncomeScreen extends StatefulWidget {
 }
 
 class _NewIncomeScreenState extends State<NewIncomeScreen> {
-  static const int _defaultUserId = 1;
-
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _intervalController = TextEditingController(
@@ -386,6 +383,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   bool _isSavingIncome = false;
 
   bool get _isEditing => widget.editingIncome != null;
+  int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
@@ -475,7 +473,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       final editingIncome = widget.editingIncome;
       if (editingIncome == null) {
         final income = IncomeModel()
-          ..userId = _defaultUserId
+          ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..amount = parsedAmount
           ..type = _type
@@ -488,7 +486,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         createdIncome = income;
       } else {
         editingIncome
-          ..userId = _defaultUserId
+          ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..amount = parsedAmount
           ..type = _type
@@ -514,19 +512,10 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       return;
     }
 
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          _isEditing ? 'Income updated locally' : 'Income saved locally',
-        ),
-      ),
-    );
     if (createdIncome != null) {
       unawaited(AppNotificationService.notifyIncomeCreated(createdIncome));
     }
+    final navigator = Navigator.of(context);
     navigator.pop(true);
     _syncPendingDataInBackground();
   }
@@ -544,9 +533,20 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -584,9 +584,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                         controller: _amountController,
                         hintText: r'$ 0',
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          const _CurrencyThousandsFormatter(),
-                        ],
+                        inputFormatters: [const _CurrencyThousandsFormatter()],
                       ),
                       const SizedBox(height: 28),
                       Center(
@@ -613,8 +611,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                             _TypeChip(
                               label: 'Frequently',
                               selected: _type == 'FREQUENTLY',
-                              onTap: () =>
-                                  setState(() => _type = 'FREQUENTLY'),
+                              onTap: () => setState(() => _type = 'FREQUENTLY'),
                             ),
                           ],
                         ),
@@ -632,10 +629,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                       ],
                       const SizedBox(height: 24),
                       Center(
-                        child: _DateRow(
-                          date: _selectedDate,
-                          onTap: _pickDate,
-                        ),
+                        child: _DateRow(date: _selectedDate, onTap: _pickDate),
                       ),
                     ],
                   ),
@@ -925,9 +919,10 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digitsOnly.isEmpty) return const TextEditingValue();
 
-    final formatted = NumberFormat('#,###', 'en_US').format(
-      int.parse(digitsOnly),
-    );
+    final formatted = NumberFormat(
+      '#,###',
+      'en_US',
+    ).format(int.parse(digitsOnly));
 
     return TextEditingValue(
       text: formatted,

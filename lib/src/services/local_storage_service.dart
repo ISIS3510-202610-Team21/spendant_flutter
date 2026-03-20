@@ -59,7 +59,8 @@ class LocalStorageService {
     }
   }
 
-  static Box<ExpenseModel> get expenseBox => Hive.box<ExpenseModel>(_expensesBox);
+  static Box<ExpenseModel> get expenseBox =>
+      Hive.box<ExpenseModel>(_expensesBox);
   static Box<IncomeModel> get incomeBox => Hive.box<IncomeModel>(_incomesBox);
   static Box<GoalModel> get goalBox => Hive.box<GoalModel>(_goalsBox);
   static Box<AppNotificationModel> get notificationBox =>
@@ -71,8 +72,8 @@ class LocalStorageService {
       expenseBox.listenable();
   static ValueListenable<Box<GoalModel>> get goalsListenable =>
       goalBox.listenable();
-  static ValueListenable<Box<AppNotificationModel>> get notificationsListenable =>
-      notificationBox.listenable();
+  static ValueListenable<Box<AppNotificationModel>>
+  get notificationsListenable => notificationBox.listenable();
   static ValueListenable<Box<IncomeModel>> get incomesListenable =>
       incomeBox.listenable();
   static ValueListenable<Box<LabelModel>> get labelsListenable =>
@@ -234,6 +235,32 @@ class LocalStorageService {
 
   Future<void> saveUser(UserModel user) async {
     await userBox.add(user);
+  }
+
+  Future<UserModel?> findUserByUsername(String username) async {
+    final normalized = username.trim().toLowerCase();
+    for (final user in userBox.values) {
+      if (user.username.trim().toLowerCase() == normalized) {
+        return user;
+      }
+    }
+
+    return null;
+  }
+
+  Future<UserModel?> findUserByEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    for (final user in userBox.values) {
+      if (user.email.trim().toLowerCase() == normalized) {
+        return user;
+      }
+    }
+
+    return null;
+  }
+
+  UserModel? getUserById(int userId) {
+    return userBox.get(userId);
   }
 
   Future<UserModel?> getUser(int index) async {

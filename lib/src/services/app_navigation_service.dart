@@ -77,11 +77,19 @@ abstract final class AppNavigationService {
     }
 
     final authState = await AuthMemoryStore.loadGreetingState();
+    if (authState.hasSavedSession && !authState.canUseFingerprintLogin) {
+      navigator.pushNamedAndRemoveUntil(
+        redirect.routeName,
+        (route) => false,
+        arguments: redirect.routeArgumentInt,
+      );
+      return;
+    }
+
     final args = PostAuthNavigationArgs(redirect: redirect);
-    final initialRoute = authState.hasLoggedInBefore
+    final initialRoute = authState.canUseFingerprintLogin
         ? _fingerprintRouteName
         : _loginRouteName;
-
     navigator.pushNamedAndRemoveUntil(
       initialRoute,
       (route) => false,

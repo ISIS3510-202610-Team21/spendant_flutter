@@ -7,7 +7,6 @@ import 'package:hive/hive.dart';
 import 'src/models/expense_model.dart';
 import 'src/models/goal_model.dart';
 import 'src/models/income_model.dart';
-import 'src/screens/debug_storage_screen.dart';
 import 'src/screens/budget_screen.dart';
 import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/home_screen.dart';
@@ -41,7 +40,7 @@ abstract final class AppRoutes {
   static const budget = '/budget';
 }
 
-class SpendAntApp extends StatelessWidget {
+class SpendAntApp extends StatefulWidget {
   const SpendAntApp({super.key});
 
   @override

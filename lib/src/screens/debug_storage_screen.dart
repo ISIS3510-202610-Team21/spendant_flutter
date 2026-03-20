@@ -45,7 +45,10 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
       ..createdAt = DateTime.now();
 
     await storage.saveExpense(expense);
-    _refresh();
+    await _refresh();
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Gasto de prueba guardado')),
     );
@@ -63,7 +66,10 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
       ..isSynced = false;
 
     await storage.saveGoal(goal);
-    _refresh();
+    await _refresh();
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Meta de prueba guardada')),
     );
@@ -121,7 +127,6 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                             .asMap()
                             .entries
                             .map((entry) {
-                              final i = entry.key;
                               final exp = entry.value;
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
@@ -210,7 +215,6 @@ class _DebugStorageScreenState extends State<DebugStorageScreen> {
                             .asMap()
                             .entries
                             .map((entry) {
-                              final i = entry.key;
                               final goal = entry.value;
                               final progress = goal.getProgressPercent();
                               return Container(

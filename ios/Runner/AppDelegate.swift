@@ -1,12 +1,40 @@
 import Flutter
+import GoogleMaps
 import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private func googleMapsApiKey() -> String? {
+    let bundleApiKey = Bundle.main.object(
+      forInfoDictionaryKey: "GMSApiKey"
+    ) as? String
+    let environmentApiKey =
+      ProcessInfo.processInfo.environment["GOOGLE_MAPS_API_KEY"] ??
+      ProcessInfo.processInfo.environment["MAPS_API_KEY"]
+
+    let candidates = [bundleApiKey, environmentApiKey]
+    for candidate in candidates {
+      let trimmed = candidate?.trimmingCharacters(
+        in: .whitespacesAndNewlines
+      ) ?? ""
+      if trimmed.isEmpty || trimmed.hasPrefix("YOUR_") || trimmed.contains("$(") {
+        continue
+      }
+
+      return trimmed
+    }
+
+    return nil
+  }
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if let apiKey = googleMapsApiKey() {
+      GMSServices.provideAPIKey(apiKey)
+    }
+
     if let controller = window?.rootViewController as? FlutterViewController {
       let channel = FlutterMethodChannel(
         name: "spendant_flutter/platform_config",
@@ -16,10 +44,7 @@ import UIKit
       channel.setMethodCallHandler { call, result in
         switch call.method {
         case "hasGoogleMapsApiKey":
-          let apiKey = Bundle.main.object(
-            forInfoDictionaryKey: "GMSApiKey"
-          ) as? String
-          result(!(apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true))
+          result(self.googleMapsApiKey() != nil)
         default:
           result(FlutterMethodNotImplemented)
         }

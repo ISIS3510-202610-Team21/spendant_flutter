@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
@@ -1749,15 +1751,83 @@ class LocationPickerScreen extends StatefulWidget {
 class _LocationPickerScreenState extends State<LocationPickerScreen> {
   static const LatLng _defaultCenter = LatLng(4.60971, -74.08175);
 
-  late LatLng _selectedPoint = widget.initialValue?.position ?? _defaultCenter;
+  final ExpenseLocationService _locationService =
+      const ExpenseLocationService();
   late final Future<bool> _hasGoogleMapsApiKeyFuture =
       PlatformConfigurationService.hasGoogleMapsApiKey();
+  late final TextEditingController _searchController;
+
+  GoogleMapController? _mapController;
+  LatLng? _selectedPoint;
+  String? _resolvedLabel;
+  bool _isFetchingCurrentLocation = false;
+  bool _isSearchingLocation = false;
+  bool _isResolvingLocation = false;
+  String? _statusMessage;
+  int _selectionRequestId = 0;
+
+  bool get _canSave {
+    return _selectedPoint != null ||
+        _searchController.text.trim().isNotEmpty ||
+        (_resolvedLabel?.trim().isNotEmpty ?? false);
+  }
+
+  String get _selectionLabel {
+    final typedLabel = _searchController.text.trim();
+    if (typedLabel.isNotEmpty) {
+      return typedLabel;
+    }
+
+    final resolvedLabel = _resolvedLabel?.trim();
+    if (resolvedLabel != null && resolvedLabel.isNotEmpty) {
+      return resolvedLabel;
+    }
+
+    final point = _selectedPoint;
+    if (point != null) {
+      return ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+    }
+
+    return '';
+  }
+
+  LatLng get _cameraTarget => _selectedPoint ?? _defaultCenter;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _selectedPoint = widget.initialValue?.position;
+
+    final initialLabel = widget.initialValue?.label.trim();
+    _resolvedLabel = initialLabel != null && initialLabel.isNotEmpty
+        ? initialLabel
+        : null;
+    _searchController = TextEditingController(text: _resolvedLabel ?? '');
+
+    if (_selectedPoint != null &&
+        (_resolvedLabel == null ||
+            ExpenseLocationService.looksLikeCoordinateLabel(_resolvedLabel!))) {
+      unawaited(_refreshSelectionLabel(syncSearchField: true));
+    } else if (_selectedPoint == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_prefillCurrentLocationIfAvailable());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final label =
-        '${_selectedPoint.latitude.toStringAsFixed(4)}, ${_selectedPoint.longitude.toStringAsFixed(4)}';
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -1765,16 +1835,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'New Expense',
+              title: 'Pick Location',
               onClose: () => Navigator.of(context).pop(),
-              onConfirm: () {
-                Navigator.of(context).pop(
-                  ExpenseLocationSelection(
-                    position: _selectedPoint,
-                    label: label,
-                  ),
-                );
-              },
+              onConfirm: _submitSelection,
             ),
             Expanded(
               child: Padding(
@@ -1782,16 +1845,85 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 child: Column(
                   children: [
                     TextField(
-                      readOnly: true,
+                      controller: _searchController,
+                      textInputAction: TextInputAction.search,
+                      onChanged: (_) {
+                        setState(() {
+                          _statusMessage = null;
+                        });
+                      },
+                      onSubmitted: (_) => _searchLocation(),
                       decoration: InputDecoration(
-                        hintText: 'Search label',
+                        hintText: 'Search place or address',
                         prefixIcon: const Icon(Icons.search),
-                        suffixIcon: const Icon(Icons.location_on_outlined),
+                        suffixIcon: _isSearchingLocation
+                            ? const Padding(
+                                padding: EdgeInsets.all(14),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: AppPalette.green,
+                                  ),
+                                ),
+                              )
+                            : IconButton(
+                                onPressed: _searchLocation,
+                                icon: const Icon(Icons.arrow_forward_rounded),
+                              ),
                         fillColor: Colors.white,
                         filled: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(999),
                           borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: _isFetchingCurrentLocation
+                              ? null
+                              : _useCurrentLocation,
+                          icon: _isFetchingCurrentLocation
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppPalette.green,
+                                  ),
+                                )
+                              : const Icon(Icons.my_location_rounded, size: 18),
+                          label: Text(
+                            _isFetchingCurrentLocation
+                                ? 'Locating...'
+                                : 'Use current location',
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppPalette.green,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: GoogleFonts.nunito(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _helperText,
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF4E4E4E),
                         ),
                       ),
                     ),
@@ -1808,30 +1940,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                                 left: 16,
                                 right: 16,
                                 bottom: 16,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 120,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.of(context).pop(
-                                          ExpenseLocationSelection(
-                                            position: _selectedPoint,
-                                            label: label,
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppPalette.green,
-                                        foregroundColor: AppPalette.ink,
-                                      ),
-                                      child: Text(
-                                        'Save',
-                                        style: GoogleFonts.nunito(
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                child: _LocationPickerFooter(
+                                  label: _selectionLabel,
+                                  onSave: _canSave ? _submitSelection : null,
                                 ),
                               ),
                             ],
@@ -1850,12 +1961,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   Widget _buildMapSurface() {
-    if (kIsWeb) {
-      return _buildMapFallback(
-        'Google Maps on web needs a configured JavaScript API key. The crash is blocked for now, and you can still save the current point.',
-      );
-    }
-
     return FutureBuilder<bool>(
       future: _hasGoogleMapsApiKeyFuture,
       builder: (context, snapshot) {
@@ -1867,28 +1972,32 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
         if (snapshot.data != true) {
           return _buildMapFallback(
-            'Google Maps needs a configured native API key on this app. The map was not opened to avoid the Android crash, but you can still save the current point.',
+            kIsWeb
+                ? 'Google Maps on web needs a JavaScript API key. For local debug, open the app with ?gmapsKey=YOUR_KEY once and it will stay available in this browser.'
+                : 'Google Maps needs a configured native API key on this app. The map is blocked until that key is present, but you can still search, type a place name, and save the location.',
           );
         }
 
         return GoogleMap(
           initialCameraPosition: CameraPosition(
-            target: _selectedPoint,
+            target: _cameraTarget,
             zoom: 16,
           ),
+          onMapCreated: (controller) {
+            _mapController = controller;
+          },
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
-          onTap: (point) {
-            setState(() {
-              _selectedPoint = point;
-            });
-          },
-          markers: {
-            Marker(
-              markerId: const MarkerId('selected-location'),
-              position: _selectedPoint,
-            ),
-          },
+          onTap: _selectPoint,
+          markers: _selectedPoint == null
+              ? const <Marker>{}
+              : <Marker>{
+                  Marker(
+                    markerId: const MarkerId('selected-location'),
+                    position: _selectedPoint!,
+                    infoWindow: InfoWindow(title: _selectionLabel),
+                  ),
+                },
         );
       },
     );
@@ -1908,6 +2017,477 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           color: AppPalette.ink,
         ),
       ),
+    );
+  }
+
+  String get _helperText {
+    final label = _selectionLabel;
+    final point = _selectedPoint;
+
+    if (_isFetchingCurrentLocation) {
+      return 'Detecting your current location...';
+    }
+
+    if (_isSearchingLocation) {
+      return label.isNotEmpty ? 'Searching for "$label"...' : 'Searching...';
+    }
+
+    if (_isResolvingLocation) {
+      return 'Resolving the selected point...';
+    }
+
+    if (point == null) {
+      if (label.isNotEmpty) {
+        if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+          return '$label\n${_statusMessage!}';
+        }
+        return label;
+      }
+
+      if (_statusMessage != null) {
+        return _statusMessage!;
+      }
+
+      return 'Search a place, use your current location, or tap the map to pin where the expense happened.';
+    }
+
+    final coordinates = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+
+    if (label.isEmpty ||
+        ExpenseLocationService.looksLikeCoordinateLabel(label)) {
+      if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+        return '$coordinates\n${_statusMessage!}';
+      }
+      return coordinates;
+    }
+
+    if (_statusMessage != null && _statusMessage!.trim().isNotEmpty) {
+      return '$label - $coordinates\n${_statusMessage!}';
+    }
+
+    return '$label - $coordinates';
+  }
+
+  Future<void> _searchLocation() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      _showLocationMessage('Type a place or address first.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _isSearchingLocation = true;
+      _isResolvingLocation = false;
+      _statusMessage = null;
+    });
+
+    final result = await _locationService.search(query);
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    if (result == null) {
+      setState(() {
+        _isSearchingLocation = false;
+        _isResolvingLocation = false;
+        _resolvedLabel = query;
+        _statusMessage =
+            'Using the typed place name. Add your current location or a pin if you want coordinates too.';
+      });
+      return;
+    }
+
+    final point = LatLng(result.latitude, result.longitude);
+
+    setState(() {
+      _isSearchingLocation = false;
+      _isResolvingLocation = false;
+      _selectedPoint = point;
+      _resolvedLabel = result.label;
+      _statusMessage = 'Search matched this place.';
+    });
+
+    _replaceSearchText(result.label);
+    await _moveCamera(point);
+  }
+
+  Future<void> _prefillCurrentLocationIfAvailable() async {
+    if (!mounted || _selectedPoint != null) {
+      return;
+    }
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return;
+      }
+
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      if (!mounted || _selectedPoint != null) {
+        return;
+      }
+
+      final point = LatLng(position.latitude, position.longitude);
+      final previousAutoLabel = _resolvedLabel;
+      final provisionalLabel = ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+      final requestId = ++_selectionRequestId;
+
+      setState(() {
+        _selectedPoint = point;
+        _resolvedLabel = provisionalLabel;
+        _isResolvingLocation = true;
+        _statusMessage = 'Using your current location.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(provisionalLabel);
+      }
+
+      await _moveCamera(point);
+
+      final resolvedLabel = await _locationService.resolveLabel(
+        latitude: point.latitude,
+        longitude: point.longitude,
+      );
+      if (!mounted || requestId != _selectionRequestId) {
+        return;
+      }
+
+      setState(() {
+        _resolvedLabel = resolvedLabel;
+        _isResolvingLocation = false;
+        _statusMessage = 'Using your current location.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(resolvedLabel);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isResolvingLocation = false;
+      });
+    }
+  }
+
+  Future<void> _useCurrentLocation() async {
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _isFetchingCurrentLocation = true;
+      _statusMessage = null;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _statusMessage =
+              'Location services are turned off. Type a place name instead.';
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _statusMessage =
+              'Location permission was denied. Type a place name instead.';
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _statusMessage =
+              'Location permission is blocked in settings. Type a place name instead.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+
+      final point = LatLng(position.latitude, position.longitude);
+      final previousAutoLabel = _resolvedLabel;
+      final provisionalLabel = ExpenseLocationService.formatCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+      final requestId = ++_selectionRequestId;
+
+      setState(() {
+        _selectedPoint = point;
+        _resolvedLabel = provisionalLabel;
+        _isResolvingLocation = true;
+        _statusMessage = 'Current location detected.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(provisionalLabel);
+      }
+
+      await _moveCamera(point);
+
+      final resolvedLabel = await _locationService.resolveLabel(
+        latitude: point.latitude,
+        longitude: point.longitude,
+      );
+      if (!mounted || requestId != _selectionRequestId) {
+        return;
+      }
+
+      setState(() {
+        _resolvedLabel = resolvedLabel;
+        _isResolvingLocation = false;
+        _statusMessage = 'Current location detected.';
+      });
+
+      if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+        _replaceSearchText(resolvedLabel);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _statusMessage =
+            'Current location could not be detected. Type a place name instead.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingCurrentLocation = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectPoint(LatLng point) async {
+    final previousAutoLabel = _resolvedLabel;
+    final provisionalLabel = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _selectedPoint = point;
+      _resolvedLabel = provisionalLabel;
+      _isResolvingLocation = true;
+      _statusMessage = null;
+    });
+
+    if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(provisionalLabel);
+    }
+
+    final resolvedLabel = await _locationService.resolveLabel(
+      latitude: point.latitude,
+      longitude: point.longitude,
+    );
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    setState(() {
+      _resolvedLabel = resolvedLabel;
+      _isResolvingLocation = false;
+    });
+
+    if (_shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(resolvedLabel);
+    }
+  }
+
+  Future<void> _refreshSelectionLabel({bool syncSearchField = false}) async {
+    final point = _selectedPoint;
+    if (point == null) {
+      return;
+    }
+
+    final previousAutoLabel = _resolvedLabel;
+    final provisionalLabel = ExpenseLocationService.formatCoordinates(
+      point.latitude,
+      point.longitude,
+    );
+    final requestId = ++_selectionRequestId;
+
+    setState(() {
+      _resolvedLabel = provisionalLabel;
+      _isResolvingLocation = true;
+    });
+
+    if (syncSearchField &&
+        _shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(provisionalLabel);
+    }
+
+    final resolvedLabel = await _locationService.resolveLabel(
+      latitude: point.latitude,
+      longitude: point.longitude,
+    );
+    if (!mounted || requestId != _selectionRequestId) {
+      return;
+    }
+
+    setState(() {
+      _resolvedLabel = resolvedLabel;
+      _isResolvingLocation = false;
+    });
+
+    if (syncSearchField &&
+        _shouldSyncSearchField(previousAutoLabel, provisionalLabel)) {
+      _replaceSearchText(resolvedLabel);
+    }
+  }
+
+  bool _shouldSyncSearchField(
+    String? previousAutoLabel,
+    String provisionalLabel,
+  ) {
+    final currentText = _searchController.text.trim();
+    if (currentText.isEmpty) {
+      return true;
+    }
+
+    if (currentText == provisionalLabel) {
+      return true;
+    }
+
+    if (previousAutoLabel != null && currentText == previousAutoLabel.trim()) {
+      return true;
+    }
+
+    return ExpenseLocationService.looksLikeCoordinateLabel(currentText);
+  }
+
+  Future<void> _moveCamera(LatLng point) async {
+    if (_mapController == null) {
+      return;
+    }
+
+    await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(point, 16));
+  }
+
+  void _submitSelection() {
+    final label = _selectionLabel.trim();
+    final point = _selectedPoint;
+    if (label.isEmpty && point == null) {
+      _showLocationMessage(
+        'Search a place, type a label, or tap the map before saving.',
+      );
+      return;
+    }
+
+    final resolvedLabel = label.isNotEmpty
+        ? label
+        : ExpenseLocationService.formatCoordinates(
+            point!.latitude,
+            point.longitude,
+          );
+
+    Navigator.of(
+      context,
+    ).pop(ExpenseLocationSelection(label: resolvedLabel, position: point));
+  }
+
+  void _replaceSearchText(String value) {
+    _searchController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _LocationPickerFooter extends StatelessWidget {
+  const _LocationPickerFooter({required this.label, required this.onSave});
+
+  final String label;
+  final VoidCallback? onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (label.trim().isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.nunito(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppPalette.ink,
+              ),
+            ),
+          ),
+        if (label.trim().isNotEmpty) const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: onSave,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppPalette.green,
+              foregroundColor: AppPalette.ink,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            child: Text(
+              'Save',
+              style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

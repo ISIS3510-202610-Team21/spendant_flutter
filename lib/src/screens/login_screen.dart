@@ -8,6 +8,7 @@ import '../models/user_model.dart';
 import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/firebase_uid_service.dart';
 import '../services/local_storage_service.dart';
 import '../widgets/auth_chrome.dart';
 
@@ -17,8 +18,7 @@ class LoginScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments;
-    final postAuthNavigationArgs =
-        args is PostAuthNavigationArgs ? args : null;
+    final postAuthNavigationArgs = args is PostAuthNavigationArgs ? args : null;
 
     return AuthCredentialsScreen(
       primaryLabel: 'Login',
@@ -95,7 +95,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     return '@$safeValue';
   }
 
-  Future<void> _saveUserLocally(String username) async {
+  Future<void> _saveUserLocally(String username, {String? firebaseUid}) async {
     final normalizedUsername = username.isEmpty ? 'there' : username;
     final userBox = LocalStorageService.userBox;
     final now = DateTime.now();
@@ -106,6 +106,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
         existingUser.username = normalizedUsername;
         existingUser.displayName = normalizedUsername;
         existingUser.handle = _buildHandle(normalizedUsername);
+        if (firebaseUid != null && firebaseUid.isNotEmpty) {
+          existingUser.firebaseUid = firebaseUid;
+        }
         existingUser.isSynced = false;
         if (existingUser.createdAt.millisecondsSinceEpoch <= 0) {
           existingUser.createdAt = now;
@@ -120,6 +123,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       ..displayName = normalizedUsername
       ..handle = _buildHandle(normalizedUsername)
       ..email = ''
+      ..firebaseUid = firebaseUid
       ..createdAt = now
       ..isSynced = false;
 
@@ -128,8 +132,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
 
   Future<void> _submit() async {
     final username = _usernameController.text.trim();
+    final firebaseUid = await FirebaseUidService.ensureFirebaseUid();
     await AuthMemoryStore.saveLogin(username.isEmpty ? 'there' : username);
-    await _saveUserLocally(username);
+    await _saveUserLocally(username, firebaseUid: firebaseUid);
     unawaited(CloudSyncService().syncAllPendingData());
     if (!mounted) {
       return;
@@ -155,10 +160,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
               Positioned(
                 left: widget.antLeft,
                 bottom: widget.antBottom,
-                child: AntAsset(
-                  widget.antAssetPath,
-                  height: widget.antHeight,
-                ),
+                child: AntAsset(widget.antAssetPath, height: widget.antHeight),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(

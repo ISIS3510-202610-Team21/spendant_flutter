@@ -7,6 +7,7 @@ import 'app.dart';
 import 'firebase_options.dart';
 import 'src/services/app_notification_service.dart';
 import 'src/services/cloud_sync_service.dart';
+import 'src/services/firebase_uid_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
@@ -57,6 +58,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      await FirebaseUidService.ensureFirebaseUid();
       debugPrint('Firebase initialized');
     } catch (error) {
       debugPrint('Error initializing Firebase: $error');

@@ -7,6 +7,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import '../models/label_model.dart';
 import '../models/user_model.dart';
+import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
 
 class CloudSyncSummary {
@@ -185,6 +186,8 @@ class CloudSyncService {
       return const CloudSyncSummary();
     }
 
+    await FirebaseUidService.ensureFirebaseUid();
+
     var uploadedExpenses = 0;
     var uploadedIncomes = 0;
     var uploadedGoals = 0;
@@ -195,19 +198,28 @@ class CloudSyncService {
     final expenseBox = LocalStorageService.expenseBox;
     for (var index = 0; index < expenseBox.length; index++) {
       final expense = expenseBox.getAt(index);
-      if (expense == null || expense.isSynced) {
+      if (expense == null) {
         continue;
       }
 
       try {
         final localId = _localIdFor(expense, index);
+        final expectedDocumentId = _entityDocumentId(
+          firebaseUid: _firebaseUidForEntity(),
+          localId: localId,
+        );
+        if (!_shouldSyncRecord(
+          isSynced: expense.isSynced,
+          serverId: expense.serverId,
+          expectedDocumentId: expectedDocumentId,
+        )) {
+          continue;
+        }
+
         final documentId = await _upsertDocument(
           collectionName: 'expenses',
           serverId: expense.serverId,
-          fallbackDocumentId: _entityDocumentId(
-            firebaseUid: _firebaseUidForEntity(),
-            localId: localId,
-          ),
+          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
           preferFallbackDocumentId: true,
           deleteLegacyDocumentWhenMigrating: true,
@@ -223,19 +235,28 @@ class CloudSyncService {
     final incomeBox = LocalStorageService.incomeBox;
     for (var index = 0; index < incomeBox.length; index++) {
       final income = incomeBox.getAt(index);
-      if (income == null || income.isSynced) {
+      if (income == null) {
         continue;
       }
 
       try {
         final localId = _localIdFor(income, index);
+        final expectedDocumentId = _entityDocumentId(
+          firebaseUid: _firebaseUidForEntity(),
+          localId: localId,
+        );
+        if (!_shouldSyncRecord(
+          isSynced: income.isSynced,
+          serverId: income.serverId,
+          expectedDocumentId: expectedDocumentId,
+        )) {
+          continue;
+        }
+
         final documentId = await _upsertDocument(
           collectionName: 'incomes',
           serverId: income.serverId,
-          fallbackDocumentId: _entityDocumentId(
-            firebaseUid: _firebaseUidForEntity(),
-            localId: localId,
-          ),
+          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
           preferFallbackDocumentId: true,
           deleteLegacyDocumentWhenMigrating: true,
@@ -251,19 +272,28 @@ class CloudSyncService {
     final goalBox = LocalStorageService.goalBox;
     for (var index = 0; index < goalBox.length; index++) {
       final goal = goalBox.getAt(index);
-      if (goal == null || goal.isSynced) {
+      if (goal == null) {
         continue;
       }
 
       try {
         final localId = _localIdFor(goal, index);
+        final expectedDocumentId = _entityDocumentId(
+          firebaseUid: _firebaseUidForEntity(),
+          localId: localId,
+        );
+        if (!_shouldSyncRecord(
+          isSynced: goal.isSynced,
+          serverId: goal.serverId,
+          expectedDocumentId: expectedDocumentId,
+        )) {
+          continue;
+        }
+
         final documentId = await _upsertDocument(
           collectionName: 'goals',
           serverId: goal.serverId,
-          fallbackDocumentId: _entityDocumentId(
-            firebaseUid: _firebaseUidForEntity(),
-            localId: localId,
-          ),
+          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
           preferFallbackDocumentId: true,
           deleteLegacyDocumentWhenMigrating: true,
@@ -299,13 +329,21 @@ class CloudSyncService {
     final userBox = LocalStorageService.userBox;
     for (var index = 0; index < userBox.length; index++) {
       final user = userBox.getAt(index);
-      if (user == null || user.isSynced) {
+      if (user == null) {
         continue;
       }
 
       try {
         final localId = _localIdFor(user, index);
         final uid = _firebaseUidForUser(user, localId);
+        if (!_shouldSyncRecord(
+          isSynced: user.isSynced,
+          serverId: user.serverId,
+          expectedDocumentId: uid,
+        )) {
+          continue;
+        }
+
         final documentId = await _upsertDocument(
           collectionName: 'users',
           serverId: user.serverId,
@@ -524,6 +562,23 @@ class CloudSyncService {
     return missing;
   }
 
+  bool _shouldSyncRecord({
+    required bool isSynced,
+    required String? serverId,
+    required String expectedDocumentId,
+  }) {
+    if (!isSynced) {
+      return true;
+    }
+
+    final normalizedServerId = serverId?.trim();
+    if (normalizedServerId == null || normalizedServerId.isEmpty) {
+      return true;
+    }
+
+    return normalizedServerId != expectedDocumentId;
+  }
+
   Future<String> _upsertDocument({
     required String collectionName,
     required String? serverId,
@@ -733,6 +788,11 @@ class CloudSyncService {
   }
 
   String _firebaseUidForEntity() {
+    final currentFirebaseUid = FirebaseUidService.currentFirebaseUid();
+    if (currentFirebaseUid != null && currentFirebaseUid.isNotEmpty) {
+      return currentFirebaseUid;
+    }
+
     final box = LocalStorageService.userBox;
     for (var index = 0; index < box.length; index++) {
       final user = box.getAt(index);
@@ -750,6 +810,12 @@ class CloudSyncService {
     if (firebaseUid != null && firebaseUid.isNotEmpty) {
       return firebaseUid;
     }
+
+    final currentFirebaseUid = FirebaseUidService.currentFirebaseUid();
+    if (currentFirebaseUid != null && currentFirebaseUid.isNotEmpty) {
+      return currentFirebaseUid;
+    }
+
     return 'user_$localId';
   }
 

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../firebase_options.dart';
 import '../models/user_model.dart';
+import 'auth_memory_store.dart';
 import 'local_storage_service.dart';
 
 abstract final class FirebaseUidService {
@@ -41,6 +42,24 @@ abstract final class FirebaseUidService {
     }
   }
 
+  static Future<String?> bindFirebaseUidToUser(UserModel user) async {
+    final uid = currentFirebaseUid() ?? await ensureFirebaseUid();
+    final trimmedUid = uid?.trim() ?? '';
+    if (trimmedUid.isEmpty) {
+      return null;
+    }
+
+    if (user.firebaseUid?.trim() == trimmedUid) {
+      return trimmedUid;
+    }
+
+    user
+      ..firebaseUid = trimmedUid
+      ..isSynced = false;
+    await user.save();
+    return trimmedUid;
+  }
+
   static Future<bool> _ensureFirebaseInitialized() async {
     try {
       if (Firebase.apps.isEmpty) {
@@ -67,26 +86,23 @@ abstract final class FirebaseUidService {
   }
 
   static Future<void> _persistFirebaseUid(String uid) async {
-    final box = LocalStorageService.userBox;
-    for (var index = 0; index < box.length; index++) {
-      final user = box.getAt(index);
-      if (user == null) {
-        continue;
-      }
-
-      if (user.firebaseUid?.trim() == uid) {
-        return;
-      }
-
-      user.firebaseUid = uid;
-      user.isSynced = false;
-      await user.save();
+    final activeUserId = AuthMemoryStore.currentUserId;
+    if (activeUserId == null) {
       return;
     }
 
-    final user = UserModel()
+    final user = LocalStorageService().getUserById(activeUserId);
+    if (user == null) {
+      return;
+    }
+
+    if (user.firebaseUid?.trim() == uid) {
+      return;
+    }
+
+    user
       ..firebaseUid = uid
       ..isSynced = false;
-    await LocalStorageService().saveUser(user);
+    await user.save();
   }
 }

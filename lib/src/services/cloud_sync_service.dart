@@ -329,7 +329,7 @@ class CloudSyncService {
     final userBox = LocalStorageService.userBox;
     for (var index = 0; index < userBox.length; index++) {
       final user = userBox.getAt(index);
-      if (user == null) {
+      if (user == null || !_isUserReadyForCloudSync(user)) {
         continue;
       }
 
@@ -739,11 +739,26 @@ class CloudSyncService {
     return <String, Object?>{
       'uid': uid,
       'username': username,
-      'email': user.email,
+      'email': user.email.trim(),
       'displayName': displayName,
       'handle': _normalizedHandle(user, username),
       'createdAt': _toEpochMillis(user.createdAt),
     };
+  }
+
+  bool _isUserReadyForCloudSync(UserModel user) {
+    final username = user.username.trim();
+    final email = user.email.trim();
+    final displayName = user.displayName?.trim() ?? '';
+    final handle = user.handle?.trim() ?? '';
+    final firebaseUid = _firebaseUidForUser(user, -1).trim();
+
+    return username.isNotEmpty &&
+        email.isNotEmpty &&
+        displayName.isNotEmpty &&
+        handle.isNotEmpty &&
+        firebaseUid.isNotEmpty &&
+        !firebaseUid.startsWith('user_');
   }
 
   int _localIdFor(HiveObject object, int fallbackIndex) {

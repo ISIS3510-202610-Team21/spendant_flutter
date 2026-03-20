@@ -259,6 +259,17 @@ class LocalStorageService {
     return null;
   }
 
+  Future<UserModel?> findUserByFirebaseUid(String firebaseUid) async {
+    final normalized = firebaseUid.trim();
+    for (final user in userBox.values) {
+      if ((user.firebaseUid?.trim() ?? '') == normalized) {
+        return user;
+      }
+    }
+
+    return null;
+  }
+
   UserModel? getUserById(int userId) {
     return userBox.get(userId);
   }

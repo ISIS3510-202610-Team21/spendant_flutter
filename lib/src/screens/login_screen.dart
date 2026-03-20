@@ -9,7 +9,9 @@ import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/firebase_uid_service.dart';
 import '../widgets/auth_chrome.dart';
+import '../theme/spendant_theme.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -157,6 +159,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     final savedAccess = await _resolveSavedAccessFor(user, localUserId);
     user.isFingerprintEnabled = savedAccess.fingerprintEnabled;
     await user.save();
+    await FirebaseUidService.bindFirebaseUidToUser(user);
 
     await AuthMemoryStore.saveSession(
       userId: localUserId,
@@ -279,19 +282,11 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(cancelLabel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(confirmLabel),
-            ),
-          ],
+        return _SpendAntAuthDecisionDialog(
+          title: title,
+          message: message,
+          confirmLabel: confirmLabel,
+          cancelLabel: cancelLabel,
         );
       },
     );
@@ -306,15 +301,10 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     return showDialog<void>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Continue'),
-            ),
-          ],
+        return _SpendAntAuthDecisionDialog(
+          title: title,
+          message: message,
+          confirmLabel: 'Continue',
         );
       },
     );
@@ -348,7 +338,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                         TextField(
                           controller: _usernameController,
                           textInputAction: TextInputAction.next,
-                          decoration: _fieldDecoration('Username'),
+                          decoration: _fieldDecoration(
+                            _isRegisterMode ? 'Username' : 'Username or email',
+                          ),
                         ),
                         if (widget.showEmail) ...[
                           const SizedBox(height: 14),
@@ -474,4 +466,96 @@ class _SavedAccessChoice {
 
   final bool rememberLogin;
   final bool fingerprintEnabled;
+}
+
+class _SpendAntAuthDecisionDialog extends StatelessWidget {
+  const _SpendAntAuthDecisionDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    this.cancelLabel,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final String? cancelLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+        decoration: BoxDecoration(
+          color: AppPalette.field,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: GoogleFonts.nunito(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.fieldHint,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (cancelLabel != null) ...[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(
+                      cancelLabel!,
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.fieldHint,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(
+                    confirmLabel,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

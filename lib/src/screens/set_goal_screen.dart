@@ -164,6 +164,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     });
   }
 
+  void _goToHome() {
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+  }
+
   void _startGoalSetup({GoalModel? goal}) {
     FocusScope.of(context).unfocus();
 
@@ -654,7 +660,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           child: Row(
             children: [
               IconButton(
-                onPressed: () => setState(() => _viewState = 0),
+                onPressed: _goToHome,
                 icon: const Icon(Icons.close, size: 28, color: AppPalette.ink),
               ),
               Expanded(

@@ -14,6 +14,7 @@ import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import '../widgets/spendant_delete_dialog.dart';
+import '../../app.dart';
 
 // ─────────────────────────────────────────────────────────
 // BUDGET SCREEN (lista de ingresos)
@@ -32,6 +33,12 @@ class BudgetScreen extends StatelessWidget {
   ];
 
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+
+  void _goToHome(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+  }
 
   String _recurrenceLabel(IncomeModel income) {
     if (income.type == 'JUST_ONCE') return 'Just once';
@@ -96,7 +103,7 @@ class BudgetScreen extends StatelessWidget {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _BudgetHeader(onClose: () => Navigator.of(context).pop()),
+          _BudgetHeader(onClose: () => _goToHome(context)),
           Expanded(
             child: ValueListenableBuilder<Box<IncomeModel>>(
               valueListenable: LocalStorageService.incomesListenable,

@@ -10,7 +10,8 @@ class RegisterScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return AuthCredentialsScreen(
       primaryLabel: 'Register',
-      showConfirmPassword: true,
+      successRoute: AppRoutes.registerIntro,
+      showEmail: true,
       footerText: 'Already got an account?',
       footerActionLabel: 'Login',
       antAssetPath: 'web/ant/ant_login.svg',

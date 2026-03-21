@@ -34,8 +34,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_waving.svg',
       message:
-          "To help us spot campus spending\npatterns, import your class\ncalendar as an .ics file.\nWe'll prioritize recurring classes\nand only use it from 6:30 AM\nto 9:00 PM.",
-      primaryLabel: 'Import .ics',
+          'To help us spot patterns in your\nspending, import a calendar .ics file\nso SpendAnt can understand your\nupcoming plans and routines.',
+      primaryLabel: 'Import Calendar (.ics)',
       secondaryLabel: 'Skip',
     ),
     _RegisterIntroStep(
@@ -287,7 +287,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
               const SizedBox(height: 28),
               BlackPrimaryButton(
                 label: step.primaryLabel,
-                width: _step == 2 ? 244 : 154,
+                width: _step == 1 || _step == 2 ? 244 : 154,
                 height: 44,
                 onPressed: _handlePrimaryAction,
               ),

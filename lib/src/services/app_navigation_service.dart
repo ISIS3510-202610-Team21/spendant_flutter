@@ -1,47 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'auth_memory_store.dart';
-
-class AppRedirect {
-  const AppRedirect({required this.routeName, this.routeArgumentInt});
-
-  final String routeName;
-  final int? routeArgumentInt;
-
-  Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'routeName': routeName,
-      'routeArgumentInt': routeArgumentInt,
-    };
-  }
-
-  static AppRedirect? fromMap(Map<String, Object?>? map) {
-    if (map == null) {
-      return null;
-    }
-
-    final routeName = map['routeName'];
-    if (routeName is! String || routeName.isEmpty) {
-      return null;
-    }
-
-    final routeArgumentInt = map['routeArgumentInt'];
-    return AppRedirect(
-      routeName: routeName,
-      routeArgumentInt: routeArgumentInt is int ? routeArgumentInt : null,
-    );
-  }
-}
-
-class PostAuthNavigationArgs {
-  const PostAuthNavigationArgs({required this.redirect});
-
-  final AppRedirect redirect;
-}
+import 'fingerprint_login_service.dart';
+import 'post_auth_navigation.dart';
 
 abstract final class AppNavigationService {
   static const String _loginRouteName = '/login';
-  static const String _fingerprintRouteName = '/fingerprint-auth';
+  static const String _locationPermissionIntroRouteName =
+      '/location-permission-intro';
 
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
@@ -78,6 +44,16 @@ abstract final class AppNavigationService {
 
     final authState = await AuthMemoryStore.loadGreetingState();
     if (authState.hasSavedSession && !authState.canUseFingerprintLogin) {
+      if (authState.needsLocationPermissionPrompt) {
+        final args = PostAuthNavigationArgs(redirect: redirect);
+        navigator.pushNamedAndRemoveUntil(
+          _locationPermissionIntroRouteName,
+          (route) => false,
+          arguments: args,
+        );
+        return;
+      }
+
       navigator.pushNamedAndRemoveUntil(
         redirect.routeName,
         (route) => false,
@@ -87,11 +63,18 @@ abstract final class AppNavigationService {
     }
 
     final args = PostAuthNavigationArgs(redirect: redirect);
-    final initialRoute = authState.canUseFingerprintLogin
-        ? _fingerprintRouteName
-        : _loginRouteName;
+    if (authState.canUseFingerprintLogin) {
+      final result = await FingerprintLoginService.authenticate(
+        navigator,
+        redirect: redirect,
+      );
+      if (result.didAuthenticate) {
+        return;
+      }
+    }
+
     navigator.pushNamedAndRemoveUntil(
-      initialRoute,
+      _loginRouteName,
       (route) => false,
       arguments: args,
     );

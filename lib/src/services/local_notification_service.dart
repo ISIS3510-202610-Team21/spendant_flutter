@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/app_notification_model.dart';
 import 'app_navigation_service.dart';
+import 'post_auth_navigation.dart';
 
 abstract final class LocalNotificationService {
   static const String _androidNotificationIcon = 'ic_stat_spendant';
@@ -12,7 +13,8 @@ abstract final class LocalNotificationService {
       AndroidNotificationChannel(
         'spendant_alerts',
         'SpendAnt Alerts',
-        description: 'Goal and budget alerts generated locally by SpendAnt.',
+        description:
+            'Goal, budget, and spending alerts generated locally by SpendAnt.',
         importance: Importance.max,
       );
 

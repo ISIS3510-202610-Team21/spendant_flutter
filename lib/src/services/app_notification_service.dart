@@ -9,15 +9,20 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
+import 'expense_moment_service.dart';
+import 'habit_fixer_monitor_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
+import 'spending_advice_service.dart';
+import 'weekly_smart_insight_service.dart';
 
 abstract final class AppNotificationService {
-  static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v1';
+  static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v2';
   static const String _trackedSignalIdsKeyPrefix =
-      'app_notification_tracked_signal_ids_v1';
+      'app_notification_tracked_signal_ids_v2';
   static const String _goalRouteName = '/set-goal';
   static const String _budgetRouteName = '/budget';
+  static const String _notificationsRouteName = '/notifications';
 
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
@@ -76,6 +81,13 @@ abstract final class AppNotificationService {
     var shouldPersistTrackedSignals = false;
 
     final now = DateTime.now();
+    final expenses = LocalStorageService.expenseBox.values
+        .where(
+          (expense) =>
+              expense.userId == _currentUserId &&
+              !ExpenseMomentService.isFutureExpense(expense, now: now),
+        )
+        .toList();
     final goals = LocalStorageService.goalBox.values
         .where((goal) => goal.userId == _currentUserId)
         .toList();
@@ -130,6 +142,50 @@ abstract final class AppNotificationService {
       );
     }
 
+    final spendingAdvices = SpendingAdviceService.buildInsights(
+      expenses: expenses,
+      now: now,
+    );
+    for (final advice in spendingAdvices) {
+      if (trackedSignals.contains(advice.signalId)) {
+        continue;
+      }
+
+      trackedSignals.add(advice.signalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildSpendingAdviceNotification(advice, now: now),
+        notifySystem: true,
+      );
+    }
+
+    final habitFixerAdvice = await HabitFixerMonitorService.instance
+        .buildTriggeredAdvice(expenses: expenses, now: now);
+    if (habitFixerAdvice != null &&
+        !trackedSignals.contains(habitFixerAdvice.signalId)) {
+      trackedSignals.add(habitFixerAdvice.signalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildSpendingAdviceNotification(habitFixerAdvice, now: now),
+        notifySystem: true,
+      );
+    }
+
+    final weeklyInsight = WeeklySmartInsightService.buildInsight(
+      expenses: expenses,
+      userId: _currentUserId,
+      now: now,
+    );
+    if (weeklyInsight != null &&
+        !trackedSignals.contains(weeklyInsight.signalId)) {
+      trackedSignals.add(weeklyInsight.signalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildWeeklyInsightNotification(weeklyInsight, now: now),
+        notifySystem: true,
+      );
+    }
+
     final summary = DailyBudgetService.buildSummaryForUser(
       _currentUserId,
       now: now,
@@ -161,6 +217,11 @@ abstract final class AppNotificationService {
   static Set<String> _collectSatisfiedSignalIds({required DateTime now}) {
     final trackedSignals = <String>{};
 
+    final expenses = LocalStorageService.expenseBox.values.where(
+      (expense) =>
+          expense.userId == _currentUserId &&
+          !ExpenseMomentService.isFutureExpense(expense, now: now),
+    );
     final goals = LocalStorageService.goalBox.values.where(
       (goal) => goal.userId == _currentUserId,
     );
@@ -182,6 +243,12 @@ abstract final class AppNotificationService {
         trackedSignals.add(_incomeDueSignalId(income, dueOccurrence));
       }
     }
+    trackedSignals.addAll(
+      SpendingAdviceService.collectSatisfiedSignalIds(
+        expenses: expenses,
+        now: now,
+      ),
+    );
 
     final summary = DailyBudgetService.buildSummaryForUser(
       _currentUserId,
@@ -388,6 +455,54 @@ abstract final class AppNotificationService {
       ..detailTitle = 'Daily budget warning'
       ..detailMessage = detailMessage
       ..routeName = _budgetRouteName;
+  }
+
+  static AppNotificationModel _buildSpendingAdviceNotification(
+    SpendingAdvice advice, {
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = advice.notificationId
+      ..type = _notificationTypeForAdvice(advice.kind)
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = advice.title
+      ..subtitle = advice.subtitle
+      ..amount = advice.amount
+      ..category = advice.category
+      ..detailTitle = advice.detailTitle
+      ..detailMessage = advice.detailMessage
+      ..routeName = _notificationsRouteName;
+  }
+
+  static AppNotificationModel _buildWeeklyInsightNotification(
+    WeeklySmartInsight insight, {
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = insight.notificationId
+      ..type = AppNotificationTypes.weeklyInsight
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = insight.title
+      ..subtitle = insight.subtitle
+      ..amount = insight.amount
+      ..detailTitle = insight.detailTitle
+      ..detailMessage = insight.detailMessage
+      ..routeName = _notificationsRouteName;
+  }
+
+  static String _notificationTypeForAdvice(SpendingAdviceKind kind) {
+    switch (kind) {
+      case SpendingAdviceKind.expenseSpike:
+        return AppNotificationTypes.spendingSpike;
+      case SpendingAdviceKind.categoryAcceleration:
+        return AppNotificationTypes.spendingPace;
+      case SpendingAdviceKind.habitCluster:
+        return AppNotificationTypes.spendingPattern;
+      case SpendingAdviceKind.regretHotspot:
+        return AppNotificationTypes.habitFixerWarning;
+    }
   }
 
   static DateTime? _latestDueIncomeOccurrence(

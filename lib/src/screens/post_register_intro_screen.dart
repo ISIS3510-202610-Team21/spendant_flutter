@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
+import '../services/calendar_availability_service.dart';
 import '../services/notification_reader_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -33,8 +34,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_waving.svg',
       message:
-          "To help us spot patterns in your\nspending, like that recurring\nFriday lunch or upcoming travel,\nwe'd love to sync with your\ncalendar.",
-      primaryLabel: 'Sync Calendar',
+          'To help us spot patterns in your\nspending, import a calendar .ics file\nso SpendAnt can understand your\nupcoming plans and routines.',
+      primaryLabel: 'Import Calendar (.ics)',
       secondaryLabel: 'Skip',
     ),
     _RegisterIntroStep(
@@ -62,14 +63,16 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     super.dispose();
   }
 
-  Future<void> _goHome() async {
+  Future<void> _openLocationPermissionIntro() async {
     if (!mounted) {
       return;
     }
 
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+    final routeArguments = ModalRoute.of(context)?.settings.arguments;
+    await Navigator.of(context).pushReplacementNamed(
+      AppRoutes.locationPermissionIntro,
+      arguments: routeArguments,
+    );
   }
 
   Future<void> _handleAppResume() async {
@@ -87,7 +90,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     await _showInfoDialog(
       'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
     );
-    await _goHome();
+    await _openLocationPermissionIntro();
   }
 
   Future<void> _requestPostingPermission() async {
@@ -117,6 +120,52 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
   }
 
+  Future<void> _handleCalendarImport() async {
+    final result = await CalendarAvailabilityService.instance.importSchedule();
+    if (!mounted) {
+      return;
+    }
+
+    switch (result.status) {
+      case CalendarConnectionStatus.connected:
+        final schedule = result.schedule!;
+        final recurringLabel =
+            '${schedule.recurringEventCount} recurring class${schedule.recurringEventCount == 1 ? '' : 'es'}';
+        final oneTimeLabel =
+            '${schedule.oneTimeEventCount} one-time event${schedule.oneTimeEventCount == 1 ? '' : 's'}';
+        await _showInfoDialog(
+          'Imported ${schedule.fileName}. SpendAnt found $recurringLabel and $oneTimeLabel.\n\n${result.message ?? 'Recurring classes can now block habit warnings during the student schedule window.'}',
+        );
+        return;
+      case CalendarConnectionStatus.emptySchedule:
+        await _showInfoDialog(
+          result.message ??
+              'That .ics file did not contain timed class events.',
+        );
+        return;
+      case CalendarConnectionStatus.canceled:
+      case CalendarConnectionStatus.notConnected:
+        await _showInfoDialog(
+          result.message ??
+              'No class schedule was imported, so habit warnings will stay off until you add an .ics file.',
+        );
+        return;
+      case CalendarConnectionStatus.invalidFile:
+      case CalendarConnectionStatus.error:
+        await _showInfoDialog(
+          result.message ??
+              'The selected .ics file could not be used as a class schedule.',
+        );
+        return;
+      case CalendarConnectionStatus.unsupported:
+        await _showInfoDialog(
+          result.message ??
+              'Class schedule import is not available on this device.',
+        );
+        return;
+    }
+  }
+
   Future<void> _handlePrimaryAction() async {
     if (_step == 0) {
       setState(() {
@@ -126,13 +175,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (_step == 1) {
-      if (!mounted) {
-        return;
-      }
-
-      await _showInfoDialog(
-        'Calendar sync will be available in a later update.',
-      );
+      await _handleCalendarImport();
       setState(() {
         _step = 2;
       });
@@ -145,7 +188,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (kIsWeb) {
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -153,7 +196,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       await _showInfoDialog(
         'Automatic Google Pay import is only available on Android.',
       );
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -163,7 +206,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (hasReaderAccess) {
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -186,7 +229,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       await _showInfoDialog(
         'The notification reader settings could not be opened on this device.',
       );
-      await _goHome();
+      await _openLocationPermissionIntro();
     }
   }
 
@@ -215,7 +258,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    await _goHome();
+    await _openLocationPermissionIntro();
   }
 
   @override
@@ -244,7 +287,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
               const SizedBox(height: 28),
               BlackPrimaryButton(
                 label: step.primaryLabel,
-                width: _step == 2 ? 244 : 154,
+                width: _step == 1 || _step == 2 ? 244 : 154,
                 height: 44,
                 onPressed: _handlePrimaryAction,
               ),

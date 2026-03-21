@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../app.dart';
-import 'app_navigation_service.dart';
 import 'app_notification_service.dart';
 import 'auth_memory_store.dart';
 import 'biometric_auth_service.dart';
+import 'cloud_sync_service.dart';
+import 'post_auth_navigation.dart';
 
 class FingerprintLoginResult {
   const FingerprintLoginResult({required this.didAuthenticate, this.message});
@@ -31,17 +32,11 @@ abstract final class FingerprintLoginService {
     }
 
     final availability = await _biometricAuthService.getAvailability();
-    if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
-      return const FingerprintLoginResult(
+    final unavailableMessage = _availabilityMessage(availability);
+    if (unavailableMessage != null) {
+      return FingerprintLoginResult(
         didAuthenticate: false,
-        message: 'This device does not support fingerprint authentication.',
-      );
-    }
-
-    if (!availability.supportsFingerprintLogin) {
-      return const FingerprintLoginResult(
-        didAuthenticate: false,
-        message: 'Fingerprint login is not available on this device right now.',
+        message: unavailableMessage,
       );
     }
 
@@ -55,15 +50,50 @@ abstract final class FingerprintLoginService {
       );
     }
 
+    try {
+      await CloudSyncService().syncAllPendingData();
+    } catch (_) {
+      // Keep fingerprint login available even when cloud sync is offline.
+    }
+
     await AppNotificationService.initialize();
     await AppNotificationService.refresh();
 
+    final refreshedState = await AuthMemoryStore.loadGreetingState();
+    if (refreshedState.needsLocationPermissionPrompt) {
+      final navigationArgs = redirect == null
+          ? null
+          : PostAuthNavigationArgs(redirect: redirect);
+      navigator.pushNamedAndRemoveUntil(
+        AppRoutes.locationPermissionIntro,
+        (route) => false,
+        arguments: navigationArgs,
+      );
+      return const FingerprintLoginResult(didAuthenticate: true);
+    }
+
     if (redirect != null) {
-      await AppNavigationService.openRedirect(redirect);
+      navigator.pushNamedAndRemoveUntil(
+        redirect.routeName,
+        (route) => false,
+        arguments: redirect.routeArgumentInt,
+      );
       return const FingerprintLoginResult(didAuthenticate: true);
     }
 
     navigator.pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
     return const FingerprintLoginResult(didAuthenticate: true);
+  }
+
+  static String? _availabilityMessage(BiometricAvailability availability) {
+    if (!availability.isDeviceSupported || !availability.canCheckBiometrics) {
+      return 'This device does not support fingerprint authentication.';
+    }
+
+    if (!availability.supportsFingerprintLogin) {
+      return 'Fingerprint login is not available on this device right now.';
+    }
+
+    return null;
   }
 }

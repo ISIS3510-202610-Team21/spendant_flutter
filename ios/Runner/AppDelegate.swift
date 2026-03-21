@@ -4,6 +4,41 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private func googleMapsApiKeyFromDotEnv() -> String? {
+    let flutterAssetsPath = Bundle.main.resourcePath?.appending("/flutter_assets/.env")
+    guard
+      let flutterAssetsPath,
+      let fileContents = try? String(contentsOfFile: flutterAssetsPath, encoding: .utf8)
+    else {
+      return nil
+    }
+
+    let lines = fileContents.components(separatedBy: .newlines)
+    for rawLine in lines {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      if line.isEmpty || line.hasPrefix("#") {
+        continue
+      }
+
+      guard let separatorIndex = line.firstIndex(of: "=") else {
+        continue
+      }
+
+      let key = line[..<separatorIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+      guard key == "GOOGLE_MAPS_API_KEY" || key == "MAPS_API_KEY" else {
+        continue
+      }
+
+      let value = line[line.index(after: separatorIndex)...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !value.isEmpty {
+        return value
+      }
+    }
+
+    return nil
+  }
+
   private func googleMapsApiKey() -> String? {
     let bundleApiKey = Bundle.main.object(
       forInfoDictionaryKey: "GMSApiKey"
@@ -11,8 +46,9 @@ import UIKit
     let environmentApiKey =
       ProcessInfo.processInfo.environment["GOOGLE_MAPS_API_KEY"] ??
       ProcessInfo.processInfo.environment["MAPS_API_KEY"]
+    let dotEnvApiKey = googleMapsApiKeyFromDotEnv()
 
-    let candidates = [bundleApiKey, environmentApiKey]
+    let candidates = [bundleApiKey, environmentApiKey, dotEnvApiKey]
     for candidate in candidates {
       let trimmed = candidate?.trimmingCharacters(
         in: .whitespacesAndNewlines

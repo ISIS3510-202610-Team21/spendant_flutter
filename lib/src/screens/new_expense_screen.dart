@@ -23,6 +23,7 @@ import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
   const _ExpenseLabelGroup({required this.label, required this.sublabels});
@@ -134,6 +135,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   String? _receiptImagePath;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
+  bool _isDeletingExpense = false;
+  bool _isExpenseRegretted = false;
   ReceiptScanResult? _lastReceiptScanResult;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
@@ -182,6 +185,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       }
 
       _receiptImagePath = editingExpense.receiptImagePath;
+      _isExpenseRegretted = editingExpense.isRegretted;
       return;
     }
 
@@ -749,8 +753,77 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
+  Future<void> _deleteEditingExpense() async {
+    final editingExpense = widget.editingExpense;
+    if (editingExpense == null || _isDeletingExpense || _isSavingExpense) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
+    final shouldDelete = await showSpendAntDeleteDialog(
+      context,
+      title: 'Delete expense?',
+      name: editingExpense.name,
+      confirmLabel: 'Delete',
+    );
+    if (!shouldDelete || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isDeletingExpense = true;
+    });
+
+    try {
+      final deletedFromCloud = await CloudSyncService().deleteExpenseRecord(
+        editingExpense,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      if (!deletedFromCloud) {
+        await _showDeleteOutcomeMessage(
+          'Expense deleted locally. The cloud copy could not be removed right now.',
+        );
+        if (!mounted) {
+          return;
+        }
+      }
+
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isDeletingExpense = false;
+      });
+      await _showDeleteOutcomeMessage('The expense could not be deleted.');
+    }
+  }
+
+  Future<void> _showDeleteOutcomeMessage(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _handleConfirm() async {
-    if (_isSavingExpense) {
+    if (_isSavingExpense || _isDeletingExpense) {
       return;
     }
 
@@ -799,6 +872,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
       ..receiptImagePath = receiptImagePath
+      ..isRegretted = _isExpenseRegretted
       ..isPendingCategory = false
       ..isRecurring = editingExpense?.isRecurring ?? false
       ..recurrenceInterval = editingExpense?.recurrenceInterval
@@ -919,7 +993,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               children: [
                 _ExpenseHeader(
                   title: widget.headerTitle,
-                  isSubmitting: _isSavingExpense,
+                  isSubmitting: _isSavingExpense || _isDeletingExpense,
                   onClose: () => Navigator.of(context).maybePop(),
                   onConfirm: () {
                     _handleConfirm();
@@ -966,6 +1040,67 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       _CurrencyThousandsFormatter(),
                                     ],
                                   ),
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: InkWell(
+                                      onTap:
+                                          _isSavingExpense || _isDeletingExpense
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _isExpenseRegretted =
+                                                    !_isExpenseRegretted;
+                                              });
+                                            },
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 4,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Do you regret this expense?',
+                                              style: GoogleFonts.nunito(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppPalette.ink,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: Checkbox(
+                                                value: _isExpenseRegretted,
+                                                onChanged:
+                                                    _isSavingExpense ||
+                                                        _isDeletingExpense
+                                                    ? null
+                                                    : (value) {
+                                                        setState(() {
+                                                          _isExpenseRegretted =
+                                                              value ?? false;
+                                                        });
+                                                      },
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                side: const BorderSide(
+                                                  color: AppPalette.ink,
+                                                  width: 1.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                   const SizedBox(height: 18),
                                   Wrap(
                                     alignment: WrapAlignment.start,
@@ -989,48 +1124,76 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   Center(
                                     child: SizedBox(
                                       width: 148,
-                                      child: ElevatedButton.icon(
-                                        onPressed: _isScanningReceipt
-                                            ? null
-                                            : _scanReceipt,
-                                        icon: _isScanningReceipt
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                        Color
-                                                      >(AppPalette.white),
-                                                ),
-                                              )
-                                            : SvgPicture.asset(
-                                                'web/icons/Camera.svg',
-                                                width: 18,
-                                                height: 18,
-                                                colorFilter:
-                                                    const ColorFilter.mode(
-                                                      AppPalette.white,
-                                                      BlendMode.srcIn,
+                                      child: widget.editingExpense == null
+                                          ? ElevatedButton.icon(
+                                              onPressed: _isScanningReceipt
+                                                  ? null
+                                                  : _scanReceipt,
+                                              icon: _isScanningReceipt
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        valueColor:
+                                                            AlwaysStoppedAnimation<
+                                                              Color
+                                                            >(AppPalette.white),
+                                                      ),
+                                                    )
+                                                  : SvgPicture.asset(
+                                                      'web/icons/Camera.svg',
+                                                      width: 18,
+                                                      height: 18,
+                                                      colorFilter:
+                                                          const ColorFilter.mode(
+                                                            AppPalette.white,
+                                                            BlendMode.srcIn,
+                                                          ),
                                                     ),
+                                              label: Text(
+                                                _isScanningReceipt
+                                                    ? 'Scanning...'
+                                                    : 'Scan Receipt',
                                               ),
-                                        label: Text(
-                                          _isScanningReceipt
-                                              ? 'Scanning...'
-                                              : 'Scan Receipt',
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 14,
-                                          ),
-                                          textStyle: GoogleFonts.nunito(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
+                                              style: ElevatedButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 12,
+                                                      horizontal: 14,
+                                                    ),
+                                                textStyle: GoogleFonts.nunito(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            )
+                                          : ElevatedButton(
+                                              onPressed:
+                                                  _isDeletingExpense ||
+                                                      _isSavingExpense
+                                                  ? null
+                                                  : _deleteEditingExpense,
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: AppPalette.ink,
+                                                foregroundColor:
+                                                    AppPalette.white,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 14,
+                                                      horizontal: 14,
+                                                    ),
+                                                textStyle: GoogleFonts.nunito(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                _isDeletingExpense
+                                                    ? 'Deleting...'
+                                                    : 'Delete Expense',
+                                              ),
+                                            ),
                                     ),
                                   ),
                                 ],
@@ -2611,7 +2774,7 @@ class _ExpenseHeader extends StatelessWidget {
             width: 48,
             child: showConfirm
                 ? IconButton(
-                    onPressed: onConfirm,
+                    onPressed: isSubmitting ? null : onConfirm,
                     icon: const Icon(Icons.check, color: AppPalette.ink),
                   )
                 : null,

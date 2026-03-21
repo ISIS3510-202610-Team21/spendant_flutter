@@ -686,6 +686,7 @@ class CloudSyncService {
       'createdAt': _toEpochMillis(expense.createdAt),
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
+      'isRegretted': expense.isRegretted,
     };
   }
 

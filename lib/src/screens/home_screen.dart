@@ -19,6 +19,7 @@ import '../services/notifications_store.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
+import 'new_expense_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -87,6 +88,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openNotifications() async {
     await Navigator.of(context).pushNamed(AppRoutes.notifications);
     await _loadUnreadNotifications();
+  }
+
+  Future<void> _openExpenseDetail(ExpenseModel expense) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NewExpenseScreen(
+          headerTitle: 'Edit Expense',
+          editingExpense: expense,
+        ),
+      ),
+    );
   }
 
   @override
@@ -237,7 +249,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 10),
                         for (final entry in group.entries) ...[
-                          _ExpenseListTile(entry: entry),
+                          _ExpenseListTile(
+                            entry: entry,
+                            onTap: () => _openExpenseDetail(entry.expense),
+                          ),
                           const SizedBox(height: 12),
                         ],
                       ],
@@ -392,6 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
     return _ExpenseEntry(
+      expense: expense,
       name: expense.name,
       category: detailLabel,
       amount: 'COP ${_currencyFormat.format(expense.amount.round())}',
@@ -546,63 +562,74 @@ class _CategoryBarCard extends StatelessWidget {
 }
 
 class _ExpenseListTile extends StatelessWidget {
-  const _ExpenseListTile({required this.entry});
+  const _ExpenseListTile({required this.entry, required this.onTap});
 
   final _ExpenseEntry entry;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: entry.color,
-        borderRadius: BorderRadius.circular(2),
-        border: const Border(
-          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: entry.color,
+            borderRadius: BorderRadius.circular(2),
+            border: const Border(
+              bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: entry.iconColor,
+                child: SvgPicture.asset(
+                  entry.iconAssetPath,
+                  width: 24,
+                  height: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.name,
+                      style: GoogleFonts.nunito(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      entry.category,
+                      style: GoogleFonts.nunito(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                entry.amount,
+                style: GoogleFonts.nunito(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black54,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: entry.iconColor,
-            child: SvgPicture.asset(entry.iconAssetPath, width: 24, height: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.name,
-                  style: GoogleFonts.nunito(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: AppPalette.ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  entry.category,
-                  style: GoogleFonts.nunito(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            entry.amount,
-            style: GoogleFonts.nunito(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: Colors.black54,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -654,6 +681,7 @@ class _ExpenseDayGroup {
 
 class _ExpenseEntry {
   const _ExpenseEntry({
+    required this.expense,
     required this.name,
     required this.category,
     required this.amount,
@@ -662,6 +690,7 @@ class _ExpenseEntry {
     required this.iconColor,
   });
 
+  final ExpenseModel expense;
   final String name;
   final String category;
   final String amount;

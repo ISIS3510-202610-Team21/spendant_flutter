@@ -9,6 +9,7 @@ import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
 import '../widgets/auth_chrome.dart';
 import '../theme/spendant_theme.dart';
@@ -167,6 +168,11 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       rememberLogin: savedAccess.rememberLogin,
       fingerprintEnabled: savedAccess.fingerprintEnabled,
     );
+    try {
+      await CloudSyncService().syncAllPendingData();
+    } catch (_) {
+      // Keep the local login flow responsive even if cloud sync fails.
+    }
     await AppNotificationService.initialize();
     await AppNotificationService.refresh();
 

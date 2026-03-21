@@ -28,9 +28,7 @@ abstract final class FirebaseUidService {
       }
 
       final auth = FirebaseAuth.instance;
-      var user = auth.currentUser;
-      user ??= (await auth.signInAnonymously()).user;
-      final uid = user?.uid.trim();
+      final uid = auth.currentUser?.uid.trim();
       if (uid == null || uid.isEmpty) {
         return _localFirebaseUid();
       }
@@ -74,6 +72,15 @@ abstract final class FirebaseUidService {
   }
 
   static String? _localFirebaseUid() {
+    final activeUserId = AuthMemoryStore.currentUserId;
+    if (activeUserId != null) {
+      final activeUser = LocalStorageService().getUserById(activeUserId);
+      final activeUid = activeUser?.firebaseUid?.trim();
+      if (activeUid != null && activeUid.isNotEmpty) {
+        return activeUid;
+      }
+    }
+
     final box = LocalStorageService.userBox;
     for (var index = 0; index < box.length; index++) {
       final user = box.getAt(index);

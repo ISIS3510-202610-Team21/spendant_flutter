@@ -6,6 +6,7 @@ import '../services/app_notification_service.dart';
 import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/cloud_sync_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
 
@@ -128,6 +129,11 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
     });
 
     if (result.didAuthenticate) {
+      try {
+        await CloudSyncService().syncAllPendingData();
+      } catch (_) {
+        // Keep fingerprint login available even when cloud sync is offline.
+      }
       await AppNotificationService.initialize();
       await AppNotificationService.refresh();
       if (!mounted) {

@@ -9,6 +9,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
+import 'habit_fixer_monitor_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
 import 'spending_advice_service.dart';
@@ -148,6 +149,18 @@ abstract final class AppNotificationService {
       shouldPersistTrackedSignals = true;
       await _upsertNotification(
         _buildSpendingAdviceNotification(advice, now: now),
+        notifySystem: true,
+      );
+    }
+
+    final habitFixerAdvice = await HabitFixerMonitorService.instance
+        .buildTriggeredAdvice(expenses: expenses, now: now);
+    if (habitFixerAdvice != null &&
+        !trackedSignals.contains(habitFixerAdvice.signalId)) {
+      trackedSignals.add(habitFixerAdvice.signalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildSpendingAdviceNotification(habitFixerAdvice, now: now),
         notifySystem: true,
       );
     }
@@ -447,6 +460,8 @@ abstract final class AppNotificationService {
         return AppNotificationTypes.spendingPace;
       case SpendingAdviceKind.habitCluster:
         return AppNotificationTypes.spendingPattern;
+      case SpendingAdviceKind.regretHotspot:
+        return AppNotificationTypes.habitFixerWarning;
     }
   }
 

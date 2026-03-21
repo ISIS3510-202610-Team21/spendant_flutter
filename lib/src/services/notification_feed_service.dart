@@ -203,6 +203,7 @@ abstract final class NotificationFeedService {
       case AppNotificationTypes.spendingSpike:
       case AppNotificationTypes.spendingPace:
       case AppNotificationTypes.spendingPattern:
+      case AppNotificationTypes.habitFixerWarning:
         return NotificationFeedType.warning;
       default:
         return NotificationFeedType.warning;

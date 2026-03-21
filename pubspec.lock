@@ -361,6 +361,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.5.0"
+  firstfloor_calendar:
+    dependency: "direct main"
+    description:
+      name: firstfloor_calendar
+      sha256: "3f011770f0c258cb706e6d9c461e06bbe62f0f0ec7a606a8470d645477cc87ee"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.8"
   fixnum:
     dependency: transitive
     description:
@@ -1294,7 +1302,7 @@ packages:
     source: hosted
     version: "0.7.7"
   timezone:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: timezone
       sha256: dd14a3b83cfd7cb19e7888f1cbc20f258b8d71b54c06f79ac585f14093a287d1

@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
+import '../services/calendar_availability_service.dart';
 import '../services/notification_reader_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -33,8 +34,8 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_waving.svg',
       message:
-          "To help us spot patterns in your\nspending, like that recurring\nFriday lunch or upcoming travel,\nwe'd love to sync with your\ncalendar.",
-      primaryLabel: 'Sync Calendar',
+          "To help us spot campus spending\npatterns, import your class\ncalendar as an .ics file.\nWe'll prioritize recurring classes\nand only use it from 6:30 AM\nto 9:00 PM.",
+      primaryLabel: 'Import .ics',
       secondaryLabel: 'Skip',
     ),
     _RegisterIntroStep(
@@ -119,6 +120,52 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
   }
 
+  Future<void> _handleCalendarImport() async {
+    final result = await CalendarAvailabilityService.instance.importSchedule();
+    if (!mounted) {
+      return;
+    }
+
+    switch (result.status) {
+      case CalendarConnectionStatus.connected:
+        final schedule = result.schedule!;
+        final recurringLabel =
+            '${schedule.recurringEventCount} recurring class${schedule.recurringEventCount == 1 ? '' : 'es'}';
+        final oneTimeLabel =
+            '${schedule.oneTimeEventCount} one-time event${schedule.oneTimeEventCount == 1 ? '' : 's'}';
+        await _showInfoDialog(
+          'Imported ${schedule.fileName}. SpendAnt found $recurringLabel and $oneTimeLabel.\n\n${result.message ?? 'Recurring classes can now block habit warnings during the student schedule window.'}',
+        );
+        return;
+      case CalendarConnectionStatus.emptySchedule:
+        await _showInfoDialog(
+          result.message ??
+              'That .ics file did not contain timed class events.',
+        );
+        return;
+      case CalendarConnectionStatus.canceled:
+      case CalendarConnectionStatus.notConnected:
+        await _showInfoDialog(
+          result.message ??
+              'No class schedule was imported, so habit warnings will stay off until you add an .ics file.',
+        );
+        return;
+      case CalendarConnectionStatus.invalidFile:
+      case CalendarConnectionStatus.error:
+        await _showInfoDialog(
+          result.message ??
+              'The selected .ics file could not be used as a class schedule.',
+        );
+        return;
+      case CalendarConnectionStatus.unsupported:
+        await _showInfoDialog(
+          result.message ??
+              'Class schedule import is not available on this device.',
+        );
+        return;
+    }
+  }
+
   Future<void> _handlePrimaryAction() async {
     if (_step == 0) {
       setState(() {
@@ -128,13 +175,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (_step == 1) {
-      if (!mounted) {
-        return;
-      }
-
-      await _showInfoDialog(
-        'Calendar sync will be available in a later update.',
-      );
+      await _handleCalendarImport();
       setState(() {
         _step = 2;
       });

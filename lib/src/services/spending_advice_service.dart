@@ -4,7 +4,12 @@ import 'package:intl/intl.dart';
 
 import '../models/expense_model.dart';
 
-enum SpendingAdviceKind { expenseSpike, categoryAcceleration, habitCluster }
+enum SpendingAdviceKind {
+  expenseSpike,
+  categoryAcceleration,
+  habitCluster,
+  regretHotspot,
+}
 
 class SpendingAdvice {
   const SpendingAdvice({

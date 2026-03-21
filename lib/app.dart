@@ -51,8 +51,12 @@ class SpendAntApp extends StatefulWidget {
 
 class _SpendAntAppState extends State<SpendAntApp> {
   static const Duration _syncInterval = Duration(seconds: 20);
+  static const Duration _contextAwareNotificationInterval = Duration(
+    minutes: 2,
+  );
 
   Timer? _syncTimer;
+  Timer? _contextAwareNotificationTimer;
   Timer? _notificationRefreshTimer;
   AppLifecycleListener? _appLifecycleListener;
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
@@ -69,6 +73,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _goalsListenable.addListener(_scheduleAppNotificationRefresh);
     _incomesListenable.addListener(_scheduleAppNotificationRefresh);
     _startPendingSyncLoop();
+    _startContextAwareNotificationLoop();
     _scheduleAppNotificationRefresh();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
@@ -78,6 +83,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _contextAwareNotificationTimer?.cancel();
     _notificationRefreshTimer?.cancel();
     _appLifecycleListener?.dispose();
     _expensesListenable.removeListener(_scheduleAppNotificationRefresh);
@@ -107,6 +113,14 @@ class _SpendAntAppState extends State<SpendAntApp> {
 
   void _syncPendingDataInBackground() {
     unawaited(_runPendingCloudSync());
+  }
+
+  void _startContextAwareNotificationLoop() {
+    _contextAwareNotificationTimer?.cancel();
+    _contextAwareNotificationTimer = Timer.periodic(
+      _contextAwareNotificationInterval,
+      (_) => _scheduleAppNotificationRefresh(),
+    );
   }
 
   Future<void> _runPendingCloudSync() async {

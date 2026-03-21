@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
+import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
 import '../theme/spendant_theme.dart';
 

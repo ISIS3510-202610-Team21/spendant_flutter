@@ -8,7 +8,6 @@ import 'src/models/expense_model.dart';
 import 'src/models/goal_model.dart';
 import 'src/models/income_model.dart';
 import 'src/screens/budget_screen.dart';
-import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
@@ -35,7 +34,6 @@ abstract final class AppRoutes {
   static const register = '/register';
   static const registerIntro = '/register-intro';
   static const locationPermissionIntro = '/location-permission-intro';
-  static const fingerprintAuth = '/fingerprint-auth';
   static const home = '/home';
   static const notifications = '/notifications';
   static const setGoal = '/set-goal';
@@ -181,7 +179,6 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.registerIntro: (_) => const PostRegisterIntroScreen(),
         AppRoutes.locationPermissionIntro: (_) =>
             const LocationPermissionIntroScreen(),
-        AppRoutes.fingerprintAuth: (_) => const FingerprintAuthScreen(),
         AppRoutes.home: (_) => const HomeScreen(),
         AppRoutes.notifications: (_) => const NotificationsScreen(),
         AppRoutes.setGoal: (_) => const SetGoalScreen(),

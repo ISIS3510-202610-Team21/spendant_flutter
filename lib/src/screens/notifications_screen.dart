@@ -17,6 +17,7 @@ import '../services/google_pay_expense_import_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
+import '../services/post_auth_navigation.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import 'new_expense_screen.dart';

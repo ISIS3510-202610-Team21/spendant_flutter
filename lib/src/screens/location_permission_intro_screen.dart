@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../app.dart';
 import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
+import '../services/post_auth_navigation.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
 

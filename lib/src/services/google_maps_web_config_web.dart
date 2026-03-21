@@ -3,9 +3,9 @@
 import 'dart:async';
 import 'dart:html' as html;
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 const String _googleMapsApiKeyStorageKey = 'GOOGLE_MAPS_API_KEY';
-const String _fallbackGoogleMapsApiKey =
-    'AIzaSyBcQzrsXQKaKegZ3FzDsffd_dKsEdEBxbc';
 const String _googleMapsScriptId = 'spendant-google-maps-js';
 const String _googleMapsLoadedFlag = 'spendantGoogleMapsLoaded';
 
@@ -85,7 +85,10 @@ String _configuredGoogleMapsApiKey() {
     return storedKey;
   }
 
-  return _fallbackGoogleMapsApiKey.trim();
+  final envKey =
+      (dotenv.env['GOOGLE_MAPS_API_KEY'] ?? dotenv.env['MAPS_API_KEY'] ?? '')
+          .trim();
+  return envKey;
 }
 
 bool _hasLoadedGoogleMapsJavaScript() {

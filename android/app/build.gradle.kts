@@ -17,29 +17,25 @@ val localProperties = Properties().apply {
     }
 }
 
+val dotEnvProperties = Properties().apply {
+    val file = rootProject.file(".env")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
 fun resolveGoogleMapsApiKey(): String {
+    val dotEnvKey =
+        dotEnvProperties.getProperty("GOOGLE_MAPS_API_KEY")
+            ?: dotEnvProperties.getProperty("MAPS_API_KEY")
     val localKey =
         localProperties.getProperty("GOOGLE_MAPS_API_KEY")
             ?: localProperties.getProperty("MAPS_API_KEY")
     val environmentKey =
         System.getenv("GOOGLE_MAPS_API_KEY")
             ?: System.getenv("MAPS_API_KEY")
-    val googleServicesKey = resolveGoogleServicesApiKey()
 
-    return (localKey ?: environmentKey ?: googleServicesKey).trim()
-}
-
-fun resolveGoogleServicesApiKey(): String {
-    val file = project.file("google-services.json")
-    if (!file.exists()) {
-        return ""
-    }
-
-    val match =
-        Regex("\"current_key\"\\s*:\\s*\"([^\"]+)\"").find(file.readText())
-            ?: return ""
-
-    return match.groupValues[1].trim()
+    return (dotEnvKey ?: localKey ?: environmentKey ?: "").trim()
 }
 
 android {

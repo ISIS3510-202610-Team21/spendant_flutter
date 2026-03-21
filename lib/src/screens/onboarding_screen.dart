@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
 import '../services/auth_memory_store.dart';
+import '../services/fingerprint_login_service.dart';
 import '../widgets/auth_chrome.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   late final Future<AuthGreetingState> _greetingFuture;
+  bool _isAuthenticatingWithFingerprint = false;
 
   @override
   void initState() {
@@ -26,16 +28,42 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _openFingerprint() async {
+    if (_isAuthenticatingWithFingerprint) {
+      return;
+    }
+
     final authState = await _greetingFuture;
     if (!mounted) {
       return;
     }
 
-    Navigator.of(context).pushNamed(
-      authState.canUseFingerprintLogin
-          ? AppRoutes.fingerprintAuth
-          : AppRoutes.login,
+    if (!authState.canUseFingerprintLogin) {
+      Navigator.of(context).pushNamed(AppRoutes.login);
+      return;
+    }
+
+    setState(() {
+      _isAuthenticatingWithFingerprint = true;
+    });
+
+    final result = await FingerprintLoginService.authenticate(
+      Navigator.of(context),
     );
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isAuthenticatingWithFingerprint = false;
+    });
+
+    if (result.didAuthenticate || result.message == null) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(result.message!)));
   }
 
   @override
@@ -79,9 +107,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                         const SizedBox(height: 18),
                         BlackPrimaryButton(
-                          label: 'Login with FingerPrint',
+                          label: _isAuthenticatingWithFingerprint
+                              ? 'Authenticating...'
+                              : 'Login with FingerPrint',
                           width: 208,
-                          onPressed: _openFingerprint,
+                          onPressed: _isAuthenticatingWithFingerprint
+                              ? () {}
+                              : _openFingerprint,
                         ),
                         const SizedBox(height: 16),
                         TextButton(

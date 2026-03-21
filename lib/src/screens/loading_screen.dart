@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
 import '../services/auth_memory_store.dart';
+import '../services/fingerprint_login_service.dart';
 import '../widgets/auth_chrome.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -27,9 +28,19 @@ class _LoadingScreenState extends State<LoadingScreen> {
       return;
     }
 
-    final nextRoute = authState.canUseFingerprintLogin
-        ? AppRoutes.fingerprintAuth
-        : authState.hasSavedSession
+    if (authState.canUseFingerprintLogin) {
+      final result = await FingerprintLoginService.authenticate(
+        Navigator.of(context),
+      );
+      if (!mounted || result.didAuthenticate) {
+        return;
+      }
+
+      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      return;
+    }
+
+    final nextRoute = authState.hasSavedSession
         ? AppRoutes.home
         : AppRoutes.login;
 

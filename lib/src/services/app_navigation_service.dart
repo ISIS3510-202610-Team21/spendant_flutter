@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'auth_memory_store.dart';
+import 'fingerprint_login_service.dart';
 
 class AppRedirect {
   const AppRedirect({required this.routeName, this.routeArgumentInt});
@@ -41,7 +42,6 @@ class PostAuthNavigationArgs {
 
 abstract final class AppNavigationService {
   static const String _loginRouteName = '/login';
-  static const String _fingerprintRouteName = '/fingerprint-auth';
 
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
@@ -86,12 +86,19 @@ abstract final class AppNavigationService {
       return;
     }
 
+    if (authState.canUseFingerprintLogin) {
+      final result = await FingerprintLoginService.authenticate(
+        navigator,
+        redirect: redirect,
+      );
+      if (result.didAuthenticate) {
+        return;
+      }
+    }
+
     final args = PostAuthNavigationArgs(redirect: redirect);
-    final initialRoute = authState.canUseFingerprintLogin
-        ? _fingerprintRouteName
-        : _loginRouteName;
     navigator.pushNamedAndRemoveUntil(
-      initialRoute,
+      _loginRouteName,
       (route) => false,
       arguments: args,
     );

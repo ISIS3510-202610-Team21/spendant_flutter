@@ -13,14 +13,12 @@ import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/auth_memory_store.dart';
 import '../services/daily_budget_service.dart';
-import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_bottom_nav.dart';
-import 'new_expense_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -91,17 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadUnreadNotifications();
   }
 
-  Future<void> _openExpenseDetail(ExpenseModel expense) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => NewExpenseScreen(
-          headerTitle: 'Edit Expense',
-          editingExpense: expense,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final homeDependencies = Listenable.merge(<Listenable>[
@@ -133,11 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final box = LocalStorageService.expenseBox;
                   final expenses =
                       box.values
-                          .where(
-                            (expense) =>
-                                expense.userId == _currentUserId &&
-                                !ExpenseMomentService.isFutureExpense(expense),
-                          )
+                          .where((expense) => expense.userId == _currentUserId)
                           .toList()
                         ..sort(
                           (left, right) => _expenseDateTime(
@@ -254,10 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 10),
                         for (final entry in group.entries) ...[
-                          _ExpenseListTile(
-                            entry: entry,
-                            onTap: () => _openExpenseDetail(entry.expense),
-                          ),
+                          _ExpenseListTile(entry: entry),
                           const SizedBox(height: 12),
                         ],
                       ],
@@ -366,7 +346,8 @@ class _HomeScreenState extends State<HomeScreen> {
       grouped.putIfAbsent(dateOnly, () => <ExpenseModel>[]).add(expense);
     }
 
-    final orderedDates = grouped.keys.toList()..sort(_compareExpenseGroupDates);
+    final orderedDates = grouped.keys.toList()
+      ..sort((left, right) => right.compareTo(left));
 
     var colorIndex = 0;
 
@@ -411,7 +392,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
     return _ExpenseEntry(
-      expense: expense,
       name: expense.name,
       category: detailLabel,
       amount: 'COP ${_currencyFormat.format(expense.amount.round())}',
@@ -431,53 +411,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _titleForDate(DateTime date) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final yesterday = today.subtract(const Duration(days: 1));
-    final tomorrow = today.add(const Duration(days: 1));
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
 
-    if (_isSameDay(date, today)) {
+    if (_isSameDay(date, now)) {
       return 'Today Expenses';
     }
     if (_isSameDay(date, yesterday)) {
       return 'Yesterday Expenses';
     }
-    if (_isSameDay(date, tomorrow)) {
-      return 'Tomorrow Expenses';
-    }
-    if (date.isAfter(today)) {
-      return '${DateFormat('d/M/y').format(date)} Expenses';
-    }
 
-    final daysDifference = today.difference(date).inDays;
+    final daysDifference = now.difference(date).inDays;
     if (daysDifference < 7) {
       return '${DateFormat('EEEE').format(date)} Expenses';
     }
 
     return '${DateFormat('d/M/y').format(date)} Expenses';
-  }
-
-  int _compareExpenseGroupDates(DateTime left, DateTime right) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final leftDate = DateUtils.dateOnly(left);
-    final rightDate = DateUtils.dateOnly(right);
-
-    final leftIsToday = _isSameDay(leftDate, today);
-    final rightIsToday = _isSameDay(rightDate, today);
-    if (leftIsToday != rightIsToday) {
-      return leftIsToday ? -1 : 1;
-    }
-
-    final leftIsFuture = leftDate.isAfter(today);
-    final rightIsFuture = rightDate.isAfter(today);
-    if (leftIsFuture != rightIsFuture) {
-      return leftIsFuture ? 1 : -1;
-    }
-
-    if (leftIsFuture && rightIsFuture) {
-      return leftDate.compareTo(rightDate);
-    }
-
-    return rightDate.compareTo(leftDate);
   }
 
   bool _isSameDay(DateTime left, DateTime right) {
@@ -597,74 +546,63 @@ class _CategoryBarCard extends StatelessWidget {
 }
 
 class _ExpenseListTile extends StatelessWidget {
-  const _ExpenseListTile({required this.entry, required this.onTap});
+  const _ExpenseListTile({required this.entry});
 
   final _ExpenseEntry entry;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: entry.color,
-            borderRadius: BorderRadius.circular(2),
-            border: const Border(
-              bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: entry.color,
+        borderRadius: BorderRadius.circular(2),
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: entry.iconColor,
+            child: SvgPicture.asset(entry.iconAssetPath, width: 24, height: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.name,
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  entry.category,
+                  style: GoogleFonts.nunito(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: entry.iconColor,
-                child: SvgPicture.asset(
-                  entry.iconAssetPath,
-                  width: 24,
-                  height: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.name,
-                      style: GoogleFonts.nunito(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      entry.category,
-                      style: GoogleFonts.nunito(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                entry.amount,
-                style: GoogleFonts.nunito(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black54,
-                ),
-              ),
-            ],
+          const SizedBox(width: 8),
+          Text(
+            entry.amount,
+            style: GoogleFonts.nunito(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Colors.black54,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -716,7 +654,6 @@ class _ExpenseDayGroup {
 
 class _ExpenseEntry {
   const _ExpenseEntry({
-    required this.expense,
     required this.name,
     required this.category,
     required this.amount,
@@ -725,7 +662,6 @@ class _ExpenseEntry {
     required this.iconColor,
   });
 
-  final ExpenseModel expense;
   final String name;
   final String category;
   final String amount;

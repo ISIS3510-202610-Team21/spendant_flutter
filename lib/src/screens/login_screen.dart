@@ -9,9 +9,7 @@ import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
-import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
-import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
 import '../theme/spendant_theme.dart';
 
@@ -169,11 +167,6 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       rememberLogin: savedAccess.rememberLogin,
       fingerprintEnabled: savedAccess.fingerprintEnabled,
     );
-    try {
-      await CloudSyncService().syncAllPendingData();
-    } catch (_) {
-      // Keep the local login flow responsive even if cloud sync fails.
-    }
     await AppNotificationService.initialize();
     await AppNotificationService.refresh();
 
@@ -185,30 +178,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       _isSubmitting = false;
     });
 
-    final authState = await AuthMemoryStore.loadGreetingState();
-    if (!mounted) {
-      return;
-    }
-
-    final shouldShowLocationPermissionPrompt =
-        _isRegisterMode || authState.needsLocationPermissionPrompt;
     final redirect = widget.postAuthRedirect;
-    if (shouldShowLocationPermissionPrompt) {
-      final nextRoute = _isRegisterMode
-          ? AppRoutes.registerIntro
-          : AppRoutes.locationPermissionIntro;
-      final navigationArgs = redirect == null
-          ? null
-          : PostAuthNavigationArgs(redirect: redirect);
-
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        nextRoute,
-        (route) => false,
-        arguments: navigationArgs,
-      );
-      return;
-    }
-
     if (redirect != null) {
       await AppNavigationService.openRedirect(redirect);
       return;

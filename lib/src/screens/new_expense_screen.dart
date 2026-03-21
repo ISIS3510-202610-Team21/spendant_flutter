@@ -15,16 +15,13 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
-import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
-import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
 import '../theme/spendant_theme.dart';
-import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
   const _ExpenseLabelGroup({required this.label, required this.sublabels});
@@ -123,24 +120,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
-  final AutoCategorizationService _autoCategorizationService =
-      AutoCategorizationService.instance;
   final ReceiptScanService _receiptScanService = ReceiptScanService();
-  final CloudinaryReceiptUploadService _cloudinaryReceiptUploadService =
-      CloudinaryReceiptUploadService();
 
   String? _selectedCategory;
   List<String> _selectedDetailLabels = <String>[];
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   ExpenseLocationSelection? _selectedLocation;
-  _ReceiptImportPayload? _selectedReceiptPayload;
-  String? _receiptImagePath;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
-  bool _isDeletingExpense = false;
-  bool _isExpenseRegretted = false;
-  bool _selectedLabelsWereAutoAssigned = false;
   ReceiptScanResult? _lastReceiptScanResult;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
@@ -161,7 +149,32 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _applyInitialDraft() {
     final editingExpense = widget.editingExpense;
     if (editingExpense != null) {
-      _hydrateFromEditingExpense(editingExpense);
+      _expenseNameController.text = editingExpense.name;
+      _expenseValueController.text = NumberFormat(
+        '#,###',
+        'en_US',
+      ).format(editingExpense.amount.round());
+      _selectedCategory = editingExpense.primaryCategory;
+      _applySelectedLabels(<String>[...editingExpense.detailLabels]);
+      _selectedCategory ??= editingExpense.primaryCategory;
+      _selectedDate = editingExpense.date;
+
+      final timeParts = editingExpense.time.split(':');
+      _selectedTime = TimeOfDay(
+        hour: timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0,
+        minute: timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0,
+      );
+
+      if ((editingExpense.locationName ?? '').trim().isNotEmpty) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: editingExpense.locationName!.trim(),
+          position:
+              editingExpense.latitude != null &&
+                  editingExpense.longitude != null
+              ? LatLng(editingExpense.latitude!, editingExpense.longitude!)
+              : null,
+        );
+      }
       return;
     }
 
@@ -170,132 +183,22 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    _hydrateFromDraft(draft);
-  }
-
-  void _hydrateFromEditingExpense(ExpenseModel editingExpense) {
-    try {
-      _expenseNameController.text = editingExpense.name.trim();
-      _expenseValueController.text = _formatAmountForInput(
-        editingExpense.amount,
-      );
-      _selectedCategory = _normalizedOptionalText(
-        editingExpense.primaryCategory,
-      );
-      _applySelectedLabels(_normalizedLabels(editingExpense.detailLabels));
-      _selectedCategory ??= _normalizedOptionalText(
-        editingExpense.primaryCategory,
-      );
-      _selectedDate = DateUtils.dateOnly(editingExpense.date);
-      _selectedTime = _timeOfDayFromStoredValue(editingExpense.time);
-      _selectedLocation = _buildLocationSelection(
-        label: editingExpense.locationName,
-        latitude: editingExpense.latitude,
-        longitude: editingExpense.longitude,
-      );
-      _receiptImagePath = _normalizedOptionalText(
-        editingExpense.receiptImagePath,
-      );
-      _isExpenseRegretted = editingExpense.isRegretted;
-    } catch (error, stackTrace) {
-      debugPrint('Failed to hydrate expense editor: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  void _hydrateFromDraft(ExpenseDraft draft) {
-    _expenseNameController.text = draft.name.trim();
-    _expenseValueController.text = draft.amount.trim();
-    _selectedCategory = _normalizedOptionalText(draft.primaryCategory);
-    _applySelectedLabels(_normalizedLabels(draft.detailLabels));
-    _selectedCategory ??= _normalizedOptionalText(draft.primaryCategory);
-    _selectedDate = DateUtils.dateOnly(draft.date);
+    _expenseNameController.text = draft.name;
+    _expenseValueController.text = draft.amount;
+    _selectedCategory = draft.primaryCategory;
+    _applySelectedLabels(<String>[...draft.detailLabels]);
+    _selectedCategory ??= draft.primaryCategory;
+    _selectedDate = draft.date;
     _selectedTime = draft.time;
-    _selectedLocation = _buildLocationSelection(
-      label: draft.locationLabel,
-      latitude: draft.latitude,
-      longitude: draft.longitude,
-    );
-  }
 
-  String _formatAmountForInput(double amount) {
-    if (!amount.isFinite || amount <= 0) {
-      return '';
+    if (draft.locationLabel != null && draft.locationLabel!.trim().isNotEmpty) {
+      _selectedLocation = ExpenseLocationSelection(
+        label: draft.locationLabel!.trim(),
+        position: draft.latitude != null && draft.longitude != null
+            ? LatLng(draft.latitude!, draft.longitude!)
+            : null,
+      );
     }
-
-    return NumberFormat('#,###', 'en_US').format(amount.round());
-  }
-
-  List<String> _normalizedLabels(Iterable<String> labels) {
-    final normalized = <String>[];
-    for (final label in labels) {
-      final trimmed = label.trim();
-      if (trimmed.isEmpty || normalized.contains(trimmed)) {
-        continue;
-      }
-      normalized.add(trimmed);
-    }
-
-    return normalized;
-  }
-
-  String? _normalizedOptionalText(String? value) {
-    final trimmed = value?.trim();
-    if (trimmed == null || trimmed.isEmpty) {
-      return null;
-    }
-
-    return trimmed;
-  }
-
-  TimeOfDay _timeOfDayFromStoredValue(String rawValue) {
-    final parts = rawValue.trim().split(':');
-    final parsedHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final parsedMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-
-    final hour = parsedHour.clamp(0, 23);
-    final minute = parsedMinute.clamp(0, 59);
-    return TimeOfDay(hour: hour, minute: minute);
-  }
-
-  ExpenseLocationSelection? _buildLocationSelection({
-    required String? label,
-    required double? latitude,
-    required double? longitude,
-  }) {
-    final trimmedLabel = _normalizedOptionalText(label);
-    final position = _safeLatLng(latitude, longitude);
-    if (trimmedLabel == null && position == null) {
-      return null;
-    }
-
-    return ExpenseLocationSelection(
-      label:
-          trimmedLabel ??
-          ExpenseLocationService.formatCoordinates(
-            position!.latitude,
-            position.longitude,
-          ),
-      position: position,
-    );
-  }
-
-  LatLng? _safeLatLng(double? latitude, double? longitude) {
-    if (latitude == null ||
-        longitude == null ||
-        !latitude.isFinite ||
-        !longitude.isFinite) {
-      return null;
-    }
-
-    if (latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180) {
-      return null;
-    }
-
-    return LatLng(latitude, longitude);
   }
 
   String? _derivePrimaryCategory(List<String> labels) {
@@ -313,13 +216,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     return null;
   }
 
-  void _applySelectedLabels(
-    List<String> labels, {
-    bool isAutoAssigned = false,
-  }) {
+  void _applySelectedLabels(List<String> labels) {
     _selectedDetailLabels = labels;
     _selectedCategory = _derivePrimaryCategory(labels);
-    _selectedLabelsWereAutoAssigned = isAutoAssigned && labels.isNotEmpty;
   }
 
   void _removeSelectedLabel(String label) {
@@ -542,8 +441,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     setState(() {
-      _selectedReceiptPayload = payload;
-      _receiptImagePath = payload.path;
       _isScanningReceipt = true;
     });
 
@@ -783,37 +680,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
-  Future<String?> _resolveReceiptImagePath() async {
-    final payload = _selectedReceiptPayload;
-    if (payload == null || _looksLikeRemoteUrl(_receiptImagePath)) {
-      return _receiptImagePath;
-    }
-
-    try {
-      final uploadedUrl = await _cloudinaryReceiptUploadService.uploadReceipt(
-        userId: _currentUserId,
-        fileName: payload.fileName,
-        bytes: payload.bytes,
-      );
-      _receiptImagePath = uploadedUrl;
-      return uploadedUrl;
-    } catch (error) {
-      debugPrint('Cloudinary receipt upload failed: $error');
-      return _receiptImagePath;
-    }
-  }
-
-  bool _looksLikeRemoteUrl(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return false;
-    }
-
-    final uri = Uri.tryParse(value.trim());
-    return uri != null &&
-        uri.hasScheme &&
-        (uri.isScheme('http') || uri.isScheme('https'));
-  }
-
   void _showScanMessage(String message) {
     showDialog<void>(
       context: context,
@@ -831,41 +697,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
   }
 
-  Future<void> _tryAutoCategorizeBeforeSave(String expenseName) async {
-    if (_selectedDetailLabels.isNotEmpty || expenseName.trim().isEmpty) {
-      return;
-    }
-
-    final result = await _autoCategorizationService.categorizeExpense(
-      expenseName,
-    );
-    if (!mounted || !result.assigned) {
-      return;
-    }
-
-    setState(() {
-      _applySelectedLabels(
-        List<String>.from(result.detailLabels),
-        isAutoAssigned: true,
-      );
-    });
-  }
-
-  bool _shouldLearnFromManualCategory(ExpenseModel? editingExpense) {
-    if (_selectedLabelsWereAutoAssigned || _selectedDetailLabels.isEmpty) {
-      return false;
-    }
-
-    if (editingExpense == null) {
-      return true;
-    }
-
-    final hadExistingLabels = editingExpense.detailLabels.any(
-      (label) => label.trim().isNotEmpty,
-    );
-    return editingExpense.isPendingCategory || !hadExistingLabels;
-  }
-
   void _syncPendingDataInBackground() {
     unawaited(_runPendingCloudSync());
   }
@@ -878,85 +709,23 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
-  Future<void> _deleteEditingExpense() async {
-    final editingExpense = widget.editingExpense;
-    if (editingExpense == null || _isDeletingExpense || _isSavingExpense) {
-      return;
-    }
-
-    FocusScope.of(context).unfocus();
-
-    final shouldDelete = await showSpendAntDeleteDialog(
-      context,
-      title: 'Delete expense?',
-      name: editingExpense.name,
-      confirmLabel: 'Delete',
-    );
-    if (!shouldDelete || !mounted) {
-      return;
-    }
-
-    setState(() {
-      _isDeletingExpense = true;
-    });
-
-    try {
-      final deletedFromCloud = await CloudSyncService().deleteExpenseRecord(
-        editingExpense,
-      );
-      if (!mounted) {
-        return;
-      }
-
-      if (!deletedFromCloud) {
-        await _showDeleteOutcomeMessage(
-          'Expense deleted locally. The cloud copy could not be removed right now.',
-        );
-        if (!mounted) {
-          return;
-        }
-      }
-
-      Navigator.of(context).pop(true);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isDeletingExpense = false;
-      });
-      await _showDeleteOutcomeMessage('The expense could not be deleted.');
-    }
-  }
-
-  Future<void> _showDeleteOutcomeMessage(String message) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _handleConfirm() async {
-    if (_isSavingExpense || _isDeletingExpense) {
+    if (_isSavingExpense) {
       return;
     }
 
     FocusScope.of(context).unfocus();
+
+    if (_selectedDetailLabels.isEmpty) {
+      await _showMissingLabelWarning();
+      return;
+    }
+
+    _selectedCategory ??=
+        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
 
     // Validate required fields
-    final expenseName = _expenseNameController.text.trim();
-    if (expenseName.isEmpty) {
+    if (_expenseNameController.text.trim().isEmpty) {
       _showScanMessage('Please enter an expense name');
       return;
     }
@@ -968,50 +737,27 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    if (_selectedDetailLabels.isEmpty) {
-      await _tryAutoCategorizeBeforeSave(expenseName);
-    }
-
-    if (_selectedDetailLabels.isEmpty) {
-      await _showMissingLabelWarning();
-      return;
-    }
-
-    _selectedCategory ??=
-        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
-
     setState(() {
       _isSavingExpense = true;
     });
 
     final editingExpense = widget.editingExpense;
-    final shouldLearnFromManualCategory = _shouldLearnFromManualCategory(
-      editingExpense,
-    );
-    final wasAutoCategorized =
-        _selectedLabelsWereAutoAssigned ||
-        (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
-    final receiptImagePath = await _resolveReceiptImagePath();
-    final normalizedLocationLabel = _normalizedOptionalText(
-      _selectedLocation?.label,
-    );
 
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
-      ..name = expenseName
+      ..name = _expenseNameController.text.trim()
       ..amount = parsedAmount
       ..date = _selectedDate
       ..time =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}'
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
-      ..locationName = normalizedLocationLabel
+      ..locationName = _selectedLocation?.label
       ..source = (editingExpense?.source.trim().isNotEmpty ?? false)
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
-      ..receiptImagePath = receiptImagePath
-      ..isRegretted = _isExpenseRegretted
+      ..receiptImagePath = editingExpense?.receiptImagePath
       ..isPendingCategory = false
       ..isRecurring = editingExpense?.isRecurring ?? false
       ..recurrenceInterval = editingExpense?.recurrenceInterval
@@ -1021,18 +767,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..serverId = editingExpense?.serverId
       ..createdAt = editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
-      ..detailLabels = List<String>.from(_selectedDetailLabels)
-      ..wasAutoCategorized = wasAutoCategorized;
+      ..detailLabels = List<String>.from(_selectedDetailLabels);
 
     try {
       if (editingExpense == null) {
         await LocalStorageService().saveExpense(expense);
-      } else if (editingExpense.isInBox) {
-        await expense.save();
       } else {
-        throw StateError(
-          'The selected expense is no longer attached to local storage.',
-        );
+        await expense.save();
       }
     } catch (_) {
       if (!mounted) {
@@ -1048,16 +789,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     if (!mounted) {
       return;
-    }
-
-    if (shouldLearnFromManualCategory) {
-      final labelToLearn = _selectedDetailLabels.first;
-      unawaited(
-        _autoCategorizationService.learnFromManualCategory(
-          merchantText: expense.name,
-          label: labelToLearn,
-        ),
-      );
     }
 
     final navigator = Navigator.of(context);
@@ -1147,7 +878,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               children: [
                 _ExpenseHeader(
                   title: widget.headerTitle,
-                  isSubmitting: _isSavingExpense || _isDeletingExpense,
+                  isSubmitting: _isSavingExpense,
                   onClose: () => Navigator.of(context).maybePop(),
                   onConfirm: () {
                     _handleConfirm();
@@ -1194,67 +925,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                       _CurrencyThousandsFormatter(),
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: InkWell(
-                                      onTap:
-                                          _isSavingExpense || _isDeletingExpense
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                _isExpenseRegretted =
-                                                    !_isExpenseRegretted;
-                                              });
-                                            },
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 4,
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              'Do you regret this expense?',
-                                              style: GoogleFonts.nunito(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w800,
-                                                color: AppPalette.ink,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: Checkbox(
-                                                value: _isExpenseRegretted,
-                                                onChanged:
-                                                    _isSavingExpense ||
-                                                        _isDeletingExpense
-                                                    ? null
-                                                    : (value) {
-                                                        setState(() {
-                                                          _isExpenseRegretted =
-                                                              value ?? false;
-                                                        });
-                                                      },
-                                                materialTapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                side: const BorderSide(
-                                                  color: AppPalette.ink,
-                                                  width: 1.2,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                   const SizedBox(height: 18),
                                   Wrap(
                                     alignment: WrapAlignment.start,
@@ -1278,76 +948,48 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   Center(
                                     child: SizedBox(
                                       width: 148,
-                                      child: widget.editingExpense == null
-                                          ? ElevatedButton.icon(
-                                              onPressed: _isScanningReceipt
-                                                  ? null
-                                                  : _scanReceipt,
-                                              icon: _isScanningReceipt
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        valueColor:
-                                                            AlwaysStoppedAnimation<
-                                                              Color
-                                                            >(AppPalette.white),
-                                                      ),
-                                                    )
-                                                  : SvgPicture.asset(
-                                                      'web/icons/Camera.svg',
-                                                      width: 18,
-                                                      height: 18,
-                                                      colorFilter:
-                                                          const ColorFilter.mode(
-                                                            AppPalette.white,
-                                                            BlendMode.srcIn,
-                                                          ),
-                                                    ),
-                                              label: Text(
-                                                _isScanningReceipt
-                                                    ? 'Scanning...'
-                                                    : 'Scan Receipt',
-                                              ),
-                                              style: ElevatedButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 12,
-                                                      horizontal: 14,
-                                                    ),
-                                                textStyle: GoogleFonts.nunito(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isScanningReceipt
+                                            ? null
+                                            : _scanReceipt,
+                                        icon: _isScanningReceipt
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(AppPalette.white),
                                                 ),
-                                              ),
-                                            )
-                                          : ElevatedButton(
-                                              onPressed:
-                                                  _isDeletingExpense ||
-                                                      _isSavingExpense
-                                                  ? null
-                                                  : _deleteEditingExpense,
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: AppPalette.ink,
-                                                foregroundColor:
-                                                    AppPalette.white,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 14,
-                                                      horizontal: 14,
+                                              )
+                                            : SvgPicture.asset(
+                                                'web/icons/Camera.svg',
+                                                width: 18,
+                                                height: 18,
+                                                colorFilter:
+                                                    const ColorFilter.mode(
+                                                      AppPalette.white,
+                                                      BlendMode.srcIn,
                                                     ),
-                                                textStyle: GoogleFonts.nunito(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w900,
-                                                ),
                                               ),
-                                              child: Text(
-                                                _isDeletingExpense
-                                                    ? 'Deleting...'
-                                                    : 'Delete Expense',
-                                              ),
-                                            ),
+                                        label: Text(
+                                          _isScanningReceipt
+                                              ? 'Scanning...'
+                                              : 'Scan Receipt',
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                            horizontal: 14,
+                                          ),
+                                          textStyle: GoogleFonts.nunito(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1843,13 +1485,7 @@ class DateSelectionScreen extends StatefulWidget {
 }
 
 class _DateSelectionScreenState extends State<DateSelectionScreen> {
-  DateTime _selectedDate = DateTime.now();
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDate = DateUtils.dateOnly(widget.initialDate);
-  }
+  late DateTime _selectedDate = widget.initialDate;
 
   @override
   Widget build(BuildContext context) {
@@ -1976,7 +1612,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       const ExpenseLocationService();
   late final Future<bool> _hasGoogleMapsApiKeyFuture =
       PlatformConfigurationService.ensureGoogleMapsIsReady();
-  final TextEditingController _searchController = TextEditingController();
+  late final TextEditingController _searchController;
 
   GoogleMapController? _mapController;
   LatLng? _selectedPoint;
@@ -2027,7 +1663,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     _resolvedLabel = initialLabel != null && initialLabel.isNotEmpty
         ? initialLabel
         : null;
-    _searchController.text = _resolvedLabel ?? '';
+    _searchController = TextEditingController(text: _resolvedLabel ?? '');
 
     if (_selectedPoint != null &&
         (_resolvedLabel == null ||
@@ -2734,7 +2370,7 @@ class LabelSelectionScreen extends StatefulWidget {
 }
 
 class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
-  List<String> _selectedLabels = <String>[];
+  late List<String> _selectedLabels;
 
   @override
   void initState() {
@@ -2934,7 +2570,7 @@ class _ExpenseHeader extends StatelessWidget {
             width: 48,
             child: showConfirm
                 ? IconButton(
-                    onPressed: isSubmitting ? null : onConfirm,
+                    onPressed: onConfirm,
                     icon: const Icon(Icons.check, color: AppPalette.ink),
                   )
                 : null,

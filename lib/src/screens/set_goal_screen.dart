@@ -82,9 +82,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     final rawName = currentUser?.displayName?.trim().isNotEmpty == true
         ? currentUser!.displayName!.trim()
         : authState.username?.trim();
-    final avatarBase64 = currentUser?.avatarPath?.trim().isNotEmpty == true
-        ? currentUser!.avatarPath!.trim()
-        : authState.avatarBase64;
     final displayName = rawName == null || rawName.isEmpty
         ? 'John Doe'
         : rawName;
@@ -96,8 +93,8 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     setState(() {
       _profileName = displayName;
       _profileHandle = _buildHandle(displayName);
-      _profileAvatarBase64 = avatarBase64;
-      _profileAvatarBytes = _decodeAvatar(avatarBase64);
+      _profileAvatarBase64 = authState.avatarBase64;
+      _profileAvatarBytes = _decodeAvatar(authState.avatarBase64);
     });
   }
 
@@ -148,7 +145,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         ..username = trimmedName
         ..displayName = trimmedName
         ..handle = _buildHandle(trimmedName)
-        ..avatarPath = updatedProfile.avatarBase64
         ..isSynced = false;
       await currentUser.save();
     }

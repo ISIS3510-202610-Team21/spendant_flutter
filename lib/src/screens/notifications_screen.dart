@@ -11,6 +11,7 @@ import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
 import '../services/app_notification_service.dart';
+import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/google_pay_expense_import_service.dart';
 import '../services/local_storage_service.dart';
@@ -66,6 +67,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _refreshNotifications() async {
+    await AutoCategorizationService.instance.backfillPendingExpenseCategories(
+      expenses: LocalStorageService.expenseBox.values.where(
+        (expense) => expense.userId == _currentUserId,
+      ),
+    );
+
     final notifications = NotificationFeedService.buildFeed(
       expenses: LocalStorageService.expenseBox.values,
       goals: LocalStorageService.goalBox.values,

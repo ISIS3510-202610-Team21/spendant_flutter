@@ -276,7 +276,7 @@ abstract final class GooglePayExpenseImportService {
     final notification = AppNotificationModel()
       ..id =
           'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}'
-      ..type = 'expense_category_needed'
+      ..type = AppNotificationTypes.expenseCategoryNeeded
       ..createdAt = DateTime.now()
       ..userId = expense.userId
       ..title = 'Categorize ${expense.name}'

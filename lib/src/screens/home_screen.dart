@@ -13,6 +13,7 @@ import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/auth_memory_store.dart';
 import '../services/daily_budget_service.dart';
+import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
@@ -132,7 +133,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   final box = LocalStorageService.expenseBox;
                   final expenses =
                       box.values
-                          .where((expense) => expense.userId == _currentUserId)
+                          .where(
+                            (expense) =>
+                                expense.userId == _currentUserId &&
+                                !ExpenseMomentService.isFutureExpense(expense),
+                          )
                           .toList()
                         ..sort(
                           (left, right) => _expenseDateTime(
@@ -361,8 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
       grouped.putIfAbsent(dateOnly, () => <ExpenseModel>[]).add(expense);
     }
 
-    final orderedDates = grouped.keys.toList()
-      ..sort((left, right) => right.compareTo(left));
+    final orderedDates = grouped.keys.toList()..sort(_compareExpenseGroupDates);
 
     var colorIndex = 0;
 
@@ -427,22 +431,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _titleForDate(DateTime date) {
-    final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(days: 1));
+    final today = DateUtils.dateOnly(DateTime.now());
+    final yesterday = today.subtract(const Duration(days: 1));
+    final tomorrow = today.add(const Duration(days: 1));
 
-    if (_isSameDay(date, now)) {
+    if (_isSameDay(date, today)) {
       return 'Today Expenses';
     }
     if (_isSameDay(date, yesterday)) {
       return 'Yesterday Expenses';
     }
+    if (_isSameDay(date, tomorrow)) {
+      return 'Tomorrow Expenses';
+    }
+    if (date.isAfter(today)) {
+      return '${DateFormat('d/M/y').format(date)} Expenses';
+    }
 
-    final daysDifference = now.difference(date).inDays;
+    final daysDifference = today.difference(date).inDays;
     if (daysDifference < 7) {
       return '${DateFormat('EEEE').format(date)} Expenses';
     }
 
     return '${DateFormat('d/M/y').format(date)} Expenses';
+  }
+
+  int _compareExpenseGroupDates(DateTime left, DateTime right) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final leftDate = DateUtils.dateOnly(left);
+    final rightDate = DateUtils.dateOnly(right);
+
+    final leftIsToday = _isSameDay(leftDate, today);
+    final rightIsToday = _isSameDay(rightDate, today);
+    if (leftIsToday != rightIsToday) {
+      return leftIsToday ? -1 : 1;
+    }
+
+    final leftIsFuture = leftDate.isAfter(today);
+    final rightIsFuture = rightDate.isAfter(today);
+    if (leftIsFuture != rightIsFuture) {
+      return leftIsFuture ? 1 : -1;
+    }
+
+    if (leftIsFuture && rightIsFuture) {
+      return leftDate.compareTo(rightDate);
+    }
+
+    return rightDate.compareTo(leftDate);
   }
 
   bool _isSameDay(DateTime left, DateTime right) {

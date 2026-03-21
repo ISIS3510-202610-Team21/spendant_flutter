@@ -161,35 +161,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _applyInitialDraft() {
     final editingExpense = widget.editingExpense;
     if (editingExpense != null) {
-      _expenseNameController.text = editingExpense.name;
-      _expenseValueController.text = NumberFormat(
-        '#,###',
-        'en_US',
-      ).format(editingExpense.amount.round());
-      _selectedCategory = editingExpense.primaryCategory;
-      _applySelectedLabels(<String>[...editingExpense.detailLabels]);
-      _selectedCategory ??= editingExpense.primaryCategory;
-      _selectedDate = editingExpense.date;
-
-      final timeParts = editingExpense.time.split(':');
-      _selectedTime = TimeOfDay(
-        hour: timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0,
-        minute: timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0,
-      );
-
-      if ((editingExpense.locationName ?? '').trim().isNotEmpty) {
-        _selectedLocation = ExpenseLocationSelection(
-          label: editingExpense.locationName!.trim(),
-          position:
-              editingExpense.latitude != null &&
-                  editingExpense.longitude != null
-              ? LatLng(editingExpense.latitude!, editingExpense.longitude!)
-              : null,
-        );
-      }
-
-      _receiptImagePath = editingExpense.receiptImagePath;
-      _isExpenseRegretted = editingExpense.isRegretted;
+      _hydrateFromEditingExpense(editingExpense);
       return;
     }
 
@@ -198,22 +170,132 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
-    _expenseNameController.text = draft.name;
-    _expenseValueController.text = draft.amount;
-    _selectedCategory = draft.primaryCategory;
-    _applySelectedLabels(<String>[...draft.detailLabels]);
-    _selectedCategory ??= draft.primaryCategory;
-    _selectedDate = draft.date;
-    _selectedTime = draft.time;
+    _hydrateFromDraft(draft);
+  }
 
-    if (draft.locationLabel != null && draft.locationLabel!.trim().isNotEmpty) {
-      _selectedLocation = ExpenseLocationSelection(
-        label: draft.locationLabel!.trim(),
-        position: draft.latitude != null && draft.longitude != null
-            ? LatLng(draft.latitude!, draft.longitude!)
-            : null,
+  void _hydrateFromEditingExpense(ExpenseModel editingExpense) {
+    try {
+      _expenseNameController.text = editingExpense.name.trim();
+      _expenseValueController.text = _formatAmountForInput(
+        editingExpense.amount,
       );
+      _selectedCategory = _normalizedOptionalText(
+        editingExpense.primaryCategory,
+      );
+      _applySelectedLabels(_normalizedLabels(editingExpense.detailLabels));
+      _selectedCategory ??= _normalizedOptionalText(
+        editingExpense.primaryCategory,
+      );
+      _selectedDate = DateUtils.dateOnly(editingExpense.date);
+      _selectedTime = _timeOfDayFromStoredValue(editingExpense.time);
+      _selectedLocation = _buildLocationSelection(
+        label: editingExpense.locationName,
+        latitude: editingExpense.latitude,
+        longitude: editingExpense.longitude,
+      );
+      _receiptImagePath = _normalizedOptionalText(
+        editingExpense.receiptImagePath,
+      );
+      _isExpenseRegretted = editingExpense.isRegretted;
+    } catch (error, stackTrace) {
+      debugPrint('Failed to hydrate expense editor: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  void _hydrateFromDraft(ExpenseDraft draft) {
+    _expenseNameController.text = draft.name.trim();
+    _expenseValueController.text = draft.amount.trim();
+    _selectedCategory = _normalizedOptionalText(draft.primaryCategory);
+    _applySelectedLabels(_normalizedLabels(draft.detailLabels));
+    _selectedCategory ??= _normalizedOptionalText(draft.primaryCategory);
+    _selectedDate = DateUtils.dateOnly(draft.date);
+    _selectedTime = draft.time;
+    _selectedLocation = _buildLocationSelection(
+      label: draft.locationLabel,
+      latitude: draft.latitude,
+      longitude: draft.longitude,
+    );
+  }
+
+  String _formatAmountForInput(double amount) {
+    if (!amount.isFinite || amount <= 0) {
+      return '';
+    }
+
+    return NumberFormat('#,###', 'en_US').format(amount.round());
+  }
+
+  List<String> _normalizedLabels(Iterable<String> labels) {
+    final normalized = <String>[];
+    for (final label in labels) {
+      final trimmed = label.trim();
+      if (trimmed.isEmpty || normalized.contains(trimmed)) {
+        continue;
+      }
+      normalized.add(trimmed);
+    }
+
+    return normalized;
+  }
+
+  String? _normalizedOptionalText(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+
+    return trimmed;
+  }
+
+  TimeOfDay _timeOfDayFromStoredValue(String rawValue) {
+    final parts = rawValue.trim().split(':');
+    final parsedHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+    final parsedMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+    final hour = parsedHour.clamp(0, 23);
+    final minute = parsedMinute.clamp(0, 59);
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  ExpenseLocationSelection? _buildLocationSelection({
+    required String? label,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    final trimmedLabel = _normalizedOptionalText(label);
+    final position = _safeLatLng(latitude, longitude);
+    if (trimmedLabel == null && position == null) {
+      return null;
+    }
+
+    return ExpenseLocationSelection(
+      label:
+          trimmedLabel ??
+          ExpenseLocationService.formatCoordinates(
+            position!.latitude,
+            position.longitude,
+          ),
+      position: position,
+    );
+  }
+
+  LatLng? _safeLatLng(double? latitude, double? longitude) {
+    if (latitude == null ||
+        longitude == null ||
+        !latitude.isFinite ||
+        !longitude.isFinite) {
+      return null;
+    }
+
+    if (latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180) {
+      return null;
+    }
+
+    return LatLng(latitude, longitude);
   }
 
   String? _derivePrimaryCategory(List<String> labels) {
@@ -911,6 +993,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
     final receiptImagePath = await _resolveReceiptImagePath();
+    final normalizedLocationLabel = _normalizedOptionalText(
+      _selectedLocation?.label,
+    );
 
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
@@ -921,7 +1006,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}'
       ..latitude = _selectedLocation?.position?.latitude
       ..longitude = _selectedLocation?.position?.longitude
-      ..locationName = _selectedLocation?.label
+      ..locationName = normalizedLocationLabel
       ..source = (editingExpense?.source.trim().isNotEmpty ?? false)
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
@@ -942,8 +1027,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     try {
       if (editingExpense == null) {
         await LocalStorageService().saveExpense(expense);
-      } else {
+      } else if (editingExpense.isInBox) {
         await expense.save();
+      } else {
+        throw StateError(
+          'The selected expense is no longer attached to local storage.',
+        );
       }
     } catch (_) {
       if (!mounted) {
@@ -1754,7 +1843,13 @@ class DateSelectionScreen extends StatefulWidget {
 }
 
 class _DateSelectionScreenState extends State<DateSelectionScreen> {
-  late DateTime _selectedDate = widget.initialDate;
+  DateTime _selectedDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = DateUtils.dateOnly(widget.initialDate);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1881,7 +1976,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       const ExpenseLocationService();
   late final Future<bool> _hasGoogleMapsApiKeyFuture =
       PlatformConfigurationService.ensureGoogleMapsIsReady();
-  late final TextEditingController _searchController;
+  final TextEditingController _searchController = TextEditingController();
 
   GoogleMapController? _mapController;
   LatLng? _selectedPoint;
@@ -1932,7 +2027,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     _resolvedLabel = initialLabel != null && initialLabel.isNotEmpty
         ? initialLabel
         : null;
-    _searchController = TextEditingController(text: _resolvedLabel ?? '');
+    _searchController.text = _resolvedLabel ?? '';
 
     if (_selectedPoint != null &&
         (_resolvedLabel == null ||
@@ -2639,7 +2734,7 @@ class LabelSelectionScreen extends StatefulWidget {
 }
 
 class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
-  late List<String> _selectedLabels;
+  List<String> _selectedLabels = <String>[];
 
   @override
   void initState() {

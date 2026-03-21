@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:spendant/src/models/expense_model.dart';
 import 'package:spendant/src/services/auto_categorization_service.dart';
 import 'package:spendant/src/services/connectivity_service.dart';
 import 'package:spendant/src/services/embedding_service.dart';
@@ -39,51 +40,61 @@ void main() {
       expect(result.detailLabels, <String>['Learning Materials']);
     });
 
-    test('falls back to manual categorization when there is no internet', () async {
-      final service = AutoCategorizationService(
-        configuration: configuration,
-        connectivityService: _FakeConnectivityService(hasInternet: false),
-        embeddingService: const _FakeEmbeddingService(),
-        repository: _FakePineconeRepository(
-          match: const PineconeQueryMatch(
-            id: 'label-food',
-            score: 0.92,
-            metadata: <String, dynamic>{'label': 'Food'},
+    test(
+      'falls back to manual categorization when there is no internet',
+      () async {
+        final service = AutoCategorizationService(
+          configuration: configuration,
+          connectivityService: _FakeConnectivityService(hasInternet: false),
+          embeddingService: const _FakeEmbeddingService(),
+          repository: _FakePineconeRepository(
+            match: const PineconeQueryMatch(
+              id: 'label-food',
+              score: 0.92,
+              metadata: <String, dynamic>{'label': 'Food'},
+            ),
           ),
-        ),
-      );
+        );
 
-      final result = await service.categorizeExpense('Restaurante Dona Blanca');
+        final result = await service.categorizeExpense(
+          'Restaurante Dona Blanca',
+        );
 
-      expect(result.assigned, isFalse);
-      expect(
-        result.fallbackReason,
-        AutoCategorizationFallbackReason.noInternet,
-      );
-    });
+        expect(result.assigned, isFalse);
+        expect(
+          result.fallbackReason,
+          AutoCategorizationFallbackReason.noInternet,
+        );
+      },
+    );
 
-    test('falls back to manual categorization on low confidence matches', () async {
-      final service = AutoCategorizationService(
-        configuration: configuration,
-        connectivityService: _FakeConnectivityService(hasInternet: true),
-        embeddingService: const _FakeEmbeddingService(),
-        repository: _FakePineconeRepository(
-          match: const PineconeQueryMatch(
-            id: 'label-food',
-            score: 0.14,
-            metadata: <String, dynamic>{'label': 'Food'},
+    test(
+      'falls back to manual categorization on low confidence matches',
+      () async {
+        final service = AutoCategorizationService(
+          configuration: configuration,
+          connectivityService: _FakeConnectivityService(hasInternet: true),
+          embeddingService: const _FakeEmbeddingService(),
+          repository: _FakePineconeRepository(
+            match: const PineconeQueryMatch(
+              id: 'label-food',
+              score: 0.14,
+              metadata: <String, dynamic>{'label': 'Food'},
+            ),
           ),
-        ),
-      );
+        );
 
-      final result = await service.categorizeExpense('Restaurante Dona Blanca');
+        final result = await service.categorizeExpense(
+          'Restaurante Dona Blanca',
+        );
 
-      expect(result.assigned, isFalse);
-      expect(
-        result.fallbackReason,
-        AutoCategorizationFallbackReason.lowConfidence,
-      );
-    });
+        expect(result.assigned, isFalse);
+        expect(
+          result.fallbackReason,
+          AutoCategorizationFallbackReason.lowConfidence,
+        );
+      },
+    );
 
     test('upserts manual feedback with normalized metadata', () async {
       final repository = _FakePineconeRepository();
@@ -103,14 +114,8 @@ void main() {
       expect(repository.upsertedId, startsWith('expense_'));
       expect(repository.upsertedValues, hasLength(3));
       expect(repository.upsertedMetadata, isNotNull);
-      expect(
-        repository.upsertedMetadata!['merchant'],
-        'Papeleria el Mono',
-      );
-      expect(
-        repository.upsertedMetadata!['label'],
-        'Learning Materials',
-      );
+      expect(repository.upsertedMetadata!['merchant'], 'Papeleria el Mono');
+      expect(repository.upsertedMetadata!['label'], 'Learning Materials');
       expect(repository.upsertedMetadata!['category'], 'Services');
     });
 
@@ -130,6 +135,63 @@ void main() {
 
       expect(learned, isFalse);
       expect(repository.upsertedId, isNull);
+    });
+
+    test('backfills uncategorized expenses from the vector database', () async {
+      final expense = ExpenseModel()
+        ..name = 'Rappi'
+        ..isPendingCategory = true;
+      final service = AutoCategorizationService(
+        configuration: configuration,
+        connectivityService: _FakeConnectivityService(hasInternet: true),
+        embeddingService: const _FakeEmbeddingService(),
+        repository: _FakePineconeRepository(
+          match: const PineconeQueryMatch(
+            id: 'label-food-delivery',
+            score: 0.93,
+            metadata: <String, dynamic>{'label': 'Food Delivery'},
+          ),
+        ),
+      );
+
+      final updatedCount = await service.backfillPendingExpenseCategories(
+        expenses: <ExpenseModel>[expense],
+      );
+
+      expect(updatedCount, 1);
+      expect(expense.isPendingCategory, isFalse);
+      expect(expense.primaryCategory, 'Food');
+      expect(expense.detailLabels, <String>['Food Delivery']);
+      expect(expense.wasAutoCategorized, isTrue);
+      expect(expense.isSynced, isFalse);
+    });
+
+    test('leaves uncategorized expenses untouched while offline', () async {
+      final expense = ExpenseModel()
+        ..name = 'Rappi'
+        ..isPendingCategory = true;
+      final service = AutoCategorizationService(
+        configuration: configuration,
+        connectivityService: _FakeConnectivityService(hasInternet: false),
+        embeddingService: const _FakeEmbeddingService(),
+        repository: _FakePineconeRepository(
+          match: const PineconeQueryMatch(
+            id: 'label-food-delivery',
+            score: 0.93,
+            metadata: <String, dynamic>{'label': 'Food Delivery'},
+          ),
+        ),
+      );
+
+      final updatedCount = await service.backfillPendingExpenseCategories(
+        expenses: <ExpenseModel>[expense],
+      );
+
+      expect(updatedCount, 0);
+      expect(expense.isPendingCategory, isTrue);
+      expect(expense.primaryCategory, isNull);
+      expect(expense.detailLabels, isEmpty);
+      expect(expense.wasAutoCategorized, isFalse);
     });
   });
 }

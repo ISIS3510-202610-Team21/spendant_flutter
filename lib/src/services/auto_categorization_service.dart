@@ -2,8 +2,11 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/app_notification_model.dart';
+import '../models/expense_model.dart';
 import 'connectivity_service.dart';
 import 'embedding_service.dart';
+import 'local_storage_service.dart';
 import 'pinecone_configuration.dart';
 import 'pinecone_repository.dart';
 
@@ -59,8 +62,7 @@ class AutoCategorizationService {
       embeddingService:
           embeddingService ??
           PineconeEmbeddingService(configuration: resolvedConfiguration),
-      connectivityService:
-          connectivityService ?? DefaultConnectivityService(),
+      connectivityService: connectivityService ?? DefaultConnectivityService(),
     );
   }
 
@@ -138,13 +140,16 @@ class AutoCategorizationService {
   final PineconeRepository _repository;
   final EmbeddingService _embeddingService;
   final ConnectivityService _connectivityService;
+  Future<int>? _activeBackfill;
 
   bool get isConfigured =>
       _configuration != null &&
       _repository.isConfigured &&
       _embeddingService.isConfigured;
 
-  Future<AutoCategorizationResult> categorizeExpense(String merchantText) async {
+  Future<AutoCategorizationResult> categorizeExpense(
+    String merchantText,
+  ) async {
     final normalizedMerchant = merchantText.trim();
     if (normalizedMerchant.isEmpty) {
       return const AutoCategorizationResult.manualRequired(
@@ -158,6 +163,47 @@ class AutoCategorizationService {
       );
     }
 
+    return _categorizeNormalizedMerchant(normalizedMerchant);
+  }
+
+  Future<int> backfillPendingExpenseCategories({
+    Iterable<ExpenseModel>? expenses,
+  }) async {
+    if (!isConfigured) {
+      return 0;
+    }
+
+    final candidates =
+        (expenses ?? LocalStorageService.expenseBox.values)
+            .where(_expenseNeedsCategory)
+            .toList()
+          ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+    if (candidates.isEmpty) {
+      return 0;
+    }
+
+    final runningBackfill = _activeBackfill;
+    if (runningBackfill != null) {
+      return runningBackfill;
+    }
+
+    final backfillFuture = _backfillPendingExpenseCategoriesInternal(
+      candidates,
+    );
+    _activeBackfill = backfillFuture;
+
+    try {
+      return await backfillFuture;
+    } finally {
+      if (identical(_activeBackfill, backfillFuture)) {
+        _activeBackfill = null;
+      }
+    }
+  }
+
+  Future<AutoCategorizationResult> _categorizeNormalizedMerchant(
+    String normalizedMerchant,
+  ) async {
     final hasInternet = await _connectivityService.hasInternetConnection();
     if (!hasInternet) {
       return const AutoCategorizationResult.manualRequired(
@@ -204,13 +250,118 @@ class AutoCategorizationService {
     }
   }
 
+  Future<int> _backfillPendingExpenseCategoriesInternal(
+    List<ExpenseModel> expenses,
+  ) async {
+    final hasInternet = await _connectivityService.hasInternetConnection();
+    if (!hasInternet) {
+      return 0;
+    }
+
+    var updatedCount = 0;
+    for (final expense in expenses) {
+      if (!_expenseNeedsCategory(expense)) {
+        continue;
+      }
+
+      final merchantText = expense.name.trim();
+      if (merchantText.isEmpty) {
+        continue;
+      }
+
+      final categorization = await _categorizeNormalizedMerchant(merchantText);
+      final didApply = await _applyCategorizationToExpense(
+        expense,
+        categorization,
+      );
+      if (didApply) {
+        updatedCount++;
+      }
+    }
+
+    return updatedCount;
+  }
+
+  Future<bool> _applyCategorizationToExpense(
+    ExpenseModel expense,
+    AutoCategorizationResult categorization,
+  ) async {
+    if (!categorization.assigned) {
+      return false;
+    }
+
+    final primaryCategory = categorization.primaryCategory?.trim();
+    final detailLabels = categorization.detailLabels
+        .map((label) => (_normalizeLabel(label) ?? label).trim())
+        .where((label) => label.isNotEmpty)
+        .toList(growable: false);
+    if (primaryCategory == null ||
+        primaryCategory.isEmpty ||
+        detailLabels.isEmpty) {
+      return false;
+    }
+
+    final didChange =
+        expense.isPendingCategory ||
+        expense.primaryCategory?.trim() != primaryCategory ||
+        !_listContentsEqual(expense.detailLabels, detailLabels) ||
+        !expense.wasAutoCategorized;
+    if (!didChange) {
+      return false;
+    }
+
+    expense
+      ..primaryCategory = primaryCategory
+      ..detailLabels = detailLabels
+      ..isPendingCategory = false
+      ..wasAutoCategorized = true
+      ..isSynced = false;
+
+    if (expense.isInBox) {
+      await expense.save();
+    }
+    await _clearPendingCategoryNotifications(expense);
+    return true;
+  }
+
+  Future<void> _clearPendingCategoryNotifications(ExpenseModel expense) async {
+    final notificationIds = <String>{
+      'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
+      'expense-category-${expense.createdAt.microsecondsSinceEpoch}',
+    };
+
+    try {
+      for (final notification
+          in LocalStorageService.notificationBox.values.toList()) {
+        if (notification.userId != expense.userId ||
+            notification.type != AppNotificationTypes.expenseCategoryNeeded ||
+            !notificationIds.contains(notification.id) ||
+            !notification.isInBox) {
+          continue;
+        }
+
+        await notification.delete();
+      }
+    } catch (_) {
+      // Notification cleanup should not block category repair.
+    }
+  }
+
+  bool _expenseNeedsCategory(ExpenseModel expense) {
+    return expense.isPendingCategory ||
+        (expense.detailLabels.isEmpty &&
+            (expense.primaryCategory?.trim().isEmpty ?? true));
+  }
+
   Future<bool> learnFromManualCategory({
     required String merchantText,
     required String label,
   }) async {
     final normalizedMerchant = merchantText.trim();
     final normalizedLabel = (_normalizeLabel(label) ?? label).trim();
-    if (normalizedMerchant.isEmpty || normalizedLabel.isEmpty || !isConfigured) {
+    if (normalizedMerchant.isEmpty ||
+        normalizedLabel.isEmpty ||
+        !isConfigured) {
       return false;
     }
 
@@ -220,7 +371,9 @@ class AutoCategorizationService {
     }
 
     try {
-      final embedding = await _embeddingService.embedPassage(normalizedMerchant);
+      final embedding = await _embeddingService.embedPassage(
+        normalizedMerchant,
+      );
       await _repository.upsertVector(
         id: _buildVectorId(
           merchantText: normalizedMerchant,
@@ -300,10 +453,7 @@ class AutoCategorizationService {
     return trimmed;
   }
 
-  String _buildVectorId({
-    required String merchantText,
-    required String label,
-  }) {
+  String _buildVectorId({required String merchantText, required String label}) {
     final digest = sha1.convert(
       utf8.encode('${merchantText.toLowerCase()}::$label'),
     );
@@ -316,5 +466,19 @@ class AutoCategorizationService {
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .trim()
         .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  bool _listContentsEqual(List<String> left, List<String> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

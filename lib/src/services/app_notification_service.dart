@@ -9,6 +9,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
+import 'expense_moment_service.dart';
 import 'habit_fixer_monitor_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
@@ -81,7 +82,11 @@ abstract final class AppNotificationService {
 
     final now = DateTime.now();
     final expenses = LocalStorageService.expenseBox.values
-        .where((expense) => expense.userId == _currentUserId)
+        .where(
+          (expense) =>
+              expense.userId == _currentUserId &&
+              !ExpenseMomentService.isFutureExpense(expense, now: now),
+        )
         .toList();
     final goals = LocalStorageService.goalBox.values
         .where((goal) => goal.userId == _currentUserId)
@@ -213,7 +218,9 @@ abstract final class AppNotificationService {
     final trackedSignals = <String>{};
 
     final expenses = LocalStorageService.expenseBox.values.where(
-      (expense) => expense.userId == _currentUserId,
+      (expense) =>
+          expense.userId == _currentUserId &&
+          !ExpenseMomentService.isFutureExpense(expense, now: now),
     );
     final goals = LocalStorageService.goalBox.values.where(
       (goal) => goal.userId == _currentUserId,

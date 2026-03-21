@@ -21,6 +21,7 @@ import 'src/screens/register_screen.dart';
 import 'src/screens/set_goal_screen.dart';
 import 'src/services/app_navigation_service.dart';
 import 'src/services/app_notification_service.dart';
+import 'src/services/auto_categorization_service.dart';
 import 'src/services/cloud_sync_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
@@ -69,11 +70,13 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _expensesListenable = LocalStorageService.expensesListenable;
     _goalsListenable = LocalStorageService.goalsListenable;
     _incomesListenable = LocalStorageService.incomesListenable;
+    _expensesListenable.addListener(_schedulePendingCategoryBackfill);
     _expensesListenable.addListener(_scheduleAppNotificationRefresh);
     _goalsListenable.addListener(_scheduleAppNotificationRefresh);
     _incomesListenable.addListener(_scheduleAppNotificationRefresh);
     _startPendingSyncLoop();
     _startContextAwareNotificationLoop();
+    _schedulePendingCategoryBackfill();
     _scheduleAppNotificationRefresh();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
@@ -86,6 +89,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _contextAwareNotificationTimer?.cancel();
     _notificationRefreshTimer?.cancel();
     _appLifecycleListener?.dispose();
+    _expensesListenable.removeListener(_schedulePendingCategoryBackfill);
     _expensesListenable.removeListener(_scheduleAppNotificationRefresh);
     _goalsListenable.removeListener(_scheduleAppNotificationRefresh);
     _incomesListenable.removeListener(_scheduleAppNotificationRefresh);
@@ -101,6 +105,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
       onResume: () {
         unawaited(GooglePayExpenseImportService.refresh());
         _syncPendingDataInBackground();
+        _schedulePendingCategoryBackfill();
         _scheduleAppNotificationRefresh();
       },
     );
@@ -113,6 +118,10 @@ class _SpendAntAppState extends State<SpendAntApp> {
 
   void _syncPendingDataInBackground() {
     unawaited(_runPendingCloudSync());
+  }
+
+  void _schedulePendingCategoryBackfill() {
+    unawaited(_runPendingCategoryBackfill());
   }
 
   void _startContextAwareNotificationLoop() {
@@ -128,6 +137,15 @@ class _SpendAntAppState extends State<SpendAntApp> {
       await CloudSyncService().syncAllPendingData();
     } catch (_) {
       // Keep local data pending until a later retry succeeds.
+    }
+  }
+
+  Future<void> _runPendingCategoryBackfill() async {
+    try {
+      await AutoCategorizationService.instance
+          .backfillPendingExpenseCategories();
+    } catch (_) {
+      // Missing categories are best-effort background repair only.
     }
   }
 

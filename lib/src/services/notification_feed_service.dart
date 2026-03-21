@@ -4,6 +4,7 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import 'auth_memory_store.dart';
+import 'expense_moment_service.dart';
 import '../theme/expense_visuals.dart';
 
 enum NotificationFeedType {
@@ -60,7 +61,13 @@ abstract final class NotificationFeedService {
   }) {
     final resolvedUserId = userId ?? AuthMemoryStore.currentUserIdOrGuest;
     final userExpenses =
-        expenses.where((expense) => expense.userId == resolvedUserId).toList()
+        expenses
+            .where(
+              (expense) =>
+                  expense.userId == resolvedUserId &&
+                  !ExpenseMomentService.isFutureExpense(expense),
+            )
+            .toList()
           ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
     final userGoals =
         goals.where((goal) => goal.userId == resolvedUserId).toList()
@@ -210,6 +217,7 @@ abstract final class NotificationFeedService {
         return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
+      case AppNotificationTypes.expenseCategoryNeeded:
       case AppNotificationTypes.spendingSpike:
       case AppNotificationTypes.spendingPace:
       case AppNotificationTypes.spendingPattern:

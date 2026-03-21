@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/expense_model.dart';
+import '../services/expense_moment_service.dart';
 
 class ExpenseAccentVisual {
   const ExpenseAccentVisual({
@@ -96,7 +97,8 @@ abstract final class ExpenseVisuals {
 
     for (final expense in expenses) {
       if (expense.date.year != reference.year ||
-          expense.date.month != reference.month) {
+          expense.date.month != reference.month ||
+          ExpenseMomentService.isFutureExpense(expense, now: reference)) {
         continue;
       }
 

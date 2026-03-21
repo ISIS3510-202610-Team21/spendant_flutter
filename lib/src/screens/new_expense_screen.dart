@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
@@ -122,6 +123,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
+  final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
   final ReceiptScanService _receiptScanService = ReceiptScanService();
   final CloudinaryReceiptUploadService _cloudinaryReceiptUploadService =
       CloudinaryReceiptUploadService();
@@ -137,6 +140,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   bool _isSavingExpense = false;
   bool _isDeletingExpense = false;
   bool _isExpenseRegretted = false;
+  bool _selectedLabelsWereAutoAssigned = false;
   ReceiptScanResult? _lastReceiptScanResult;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
@@ -227,9 +231,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     return null;
   }
 
-  void _applySelectedLabels(List<String> labels) {
+  void _applySelectedLabels(
+    List<String> labels, {
+    bool isAutoAssigned = false,
+  }) {
     _selectedDetailLabels = labels;
     _selectedCategory = _derivePrimaryCategory(labels);
+    _selectedLabelsWereAutoAssigned = isAutoAssigned && labels.isNotEmpty;
   }
 
   void _removeSelectedLabel(String label) {
@@ -741,6 +749,41 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
   }
 
+  Future<void> _tryAutoCategorizeBeforeSave(String expenseName) async {
+    if (_selectedDetailLabels.isNotEmpty || expenseName.trim().isEmpty) {
+      return;
+    }
+
+    final result = await _autoCategorizationService.categorizeExpense(
+      expenseName,
+    );
+    if (!mounted || !result.assigned) {
+      return;
+    }
+
+    setState(() {
+      _applySelectedLabels(
+        List<String>.from(result.detailLabels),
+        isAutoAssigned: true,
+      );
+    });
+  }
+
+  bool _shouldLearnFromManualCategory(ExpenseModel? editingExpense) {
+    if (_selectedLabelsWereAutoAssigned || _selectedDetailLabels.isEmpty) {
+      return false;
+    }
+
+    if (editingExpense == null) {
+      return true;
+    }
+
+    final hadExistingLabels = editingExpense.detailLabels.any(
+      (label) => label.trim().isNotEmpty,
+    );
+    return editingExpense.isPendingCategory || !hadExistingLabels;
+  }
+
   void _syncPendingDataInBackground() {
     unawaited(_runPendingCloudSync());
   }
@@ -829,16 +872,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     FocusScope.of(context).unfocus();
 
-    if (_selectedDetailLabels.isEmpty) {
-      await _showMissingLabelWarning();
-      return;
-    }
-
-    _selectedCategory ??=
-        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
-
     // Validate required fields
-    if (_expenseNameController.text.trim().isEmpty) {
+    final expenseName = _expenseNameController.text.trim();
+    if (expenseName.isEmpty) {
       _showScanMessage('Please enter an expense name');
       return;
     }
@@ -850,17 +886,32 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
+    if (_selectedDetailLabels.isEmpty) {
+      await _tryAutoCategorizeBeforeSave(expenseName);
+    }
+
+    if (_selectedDetailLabels.isEmpty) {
+      await _showMissingLabelWarning();
+      return;
+    }
+
+    _selectedCategory ??=
+        _derivePrimaryCategory(_selectedDetailLabels) ?? 'Other';
+
     setState(() {
       _isSavingExpense = true;
     });
 
     final editingExpense = widget.editingExpense;
+    final shouldLearnFromManualCategory = _shouldLearnFromManualCategory(
+      editingExpense,
+    );
     final expense = editingExpense ?? ExpenseModel();
     final receiptImagePath = await _resolveReceiptImagePath();
 
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
-      ..name = _expenseNameController.text.trim()
+      ..name = expenseName
       ..amount = parsedAmount
       ..date = _selectedDate
       ..time =
@@ -904,6 +955,16 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
     if (!mounted) {
       return;
+    }
+
+    if (shouldLearnFromManualCategory) {
+      final labelToLearn = _selectedDetailLabels.first;
+      unawaited(
+        _autoCategorizationService.learnFromManualCategory(
+          merchantText: expense.name,
+          label: labelToLearn,
+        ),
+      );
     }
 
     final navigator = Navigator.of(context);

@@ -89,22 +89,32 @@ abstract final class NotificationFeedService {
     required List<String> prioritizedLabels,
   }) {
     return expenses.take(8).map((expense) {
-      final category = ExpenseVisuals.resolveDisplayLabel(
-        expense,
-        prioritizedLabels: prioritizedLabels,
-      );
+      final isPendingCategory =
+          expense.isPendingCategory ||
+          (expense.detailLabels.isEmpty &&
+              (expense.primaryCategory?.trim().isEmpty ?? true));
+      final category = isPendingCategory
+          ? null
+          : ExpenseVisuals.resolveDisplayLabel(
+              expense,
+              prioritizedLabels: prioritizedLabels,
+            );
+      final subtitle = isPendingCategory ? 'Needs category' : category;
+      final detailMessage = isPendingCategory
+          ? 'Expense saved without a category. Open it to choose a label.'
+          : 'Expense saved in $category and ready to edit.';
 
       return NotificationFeedItem(
         id: 'expense-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
         type: NotificationFeedType.expense,
         createdAt: expense.createdAt,
         title: expense.name,
-        subtitle: category,
+        subtitle: subtitle,
         amount: expense.amount,
         category: category,
         expense: expense,
         detailTitle: expense.name,
-        detailMessage: 'Expense saved in $category and ready to edit.',
+        detailMessage: detailMessage,
       );
     }).toList();
   }

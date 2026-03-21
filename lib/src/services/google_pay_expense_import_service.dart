@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
+import 'auto_categorization_service.dart';
 import 'auth_memory_store.dart';
 import 'google_pay_notification_parser.dart';
 import 'local_storage_service.dart';
+import 'local_notification_service.dart';
 import 'notification_reader_service.dart';
 
 enum GooglePayImportStatus { imported, duplicate, ignored, unavailable }
@@ -30,6 +33,8 @@ abstract final class GooglePayExpenseImportService {
     'es_CO',
   );
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+  static final AutoCategorizationService _autoCategorizationService =
+      AutoCategorizationService.instance;
 
   static StreamSubscription<NotificationReaderEvent>? _subscription;
   static Future<void>? _activeRefresh;
@@ -170,6 +175,12 @@ abstract final class GooglePayExpenseImportService {
       parsedExpense.dateTime.month,
       parsedExpense.dateTime.day,
     );
+    final categorization = await _autoCategorizationService.categorizeExpense(
+      parsedExpense.name,
+    );
+    final detailLabels = categorization.assigned
+        ? List<String>.from(categorization.detailLabels)
+        : <String>[];
 
     final expense = ExpenseModel()
       ..userId = _currentUserId
@@ -179,12 +190,15 @@ abstract final class GooglePayExpenseImportService {
       ..time =
           '${parsedExpense.dateTime.hour.toString().padLeft(2, '0')}:${parsedExpense.dateTime.minute.toString().padLeft(2, '0')}'
       ..source = 'GOOGLE_PAY'
-      ..isPendingCategory = parsedExpense.detailLabels.isEmpty
+      ..isPendingCategory = !categorization.assigned
       ..createdAt = parsedExpense.dateTime
-      ..primaryCategory = parsedExpense.primaryCategory
-      ..detailLabels = List<String>.from(parsedExpense.detailLabels);
+      ..primaryCategory = categorization.primaryCategory
+      ..detailLabels = detailLabels;
 
     await LocalStorageService().saveExpense(expense);
+    if (expense.isPendingCategory) {
+      await _showManualCategorizationNotification(expense);
+    }
     await _markEventAsProcessed(prefs, processedIds, dedupeKey);
     return GooglePayImportResult(
       status: GooglePayImportStatus.imported,
@@ -253,6 +267,24 @@ abstract final class GooglePayExpenseImportService {
     }
 
     await prefs.setStringList(_processedEventIdsKey, updatedIds);
+  }
+
+  static Future<void> _showManualCategorizationNotification(
+    ExpenseModel expense,
+  ) async {
+    final notification = AppNotificationModel()
+      ..id = 'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}'
+      ..type = 'expense_category_needed'
+      ..createdAt = DateTime.now()
+      ..userId = expense.userId
+      ..title = 'Categorize ${expense.name}'
+      ..subtitle = 'Manual category needed'
+      ..amount = expense.amount
+      ..detailTitle = 'Expense needs a category'
+      ..detailMessage =
+          'SpendAnt could not categorize ${expense.name} automatically. Open Notifications and add a label.'
+      ..routeName = '/notifications';
+    await LocalNotificationService.showTrackedNotification(notification);
   }
 }
 

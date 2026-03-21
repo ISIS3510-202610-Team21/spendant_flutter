@@ -7,7 +7,6 @@ class AuthGreetingState {
     required this.userId,
     required this.isFingerprintEnabled,
     required this.avatarBase64,
-    required this.hasCompletedLocationPermissionPrompt,
   });
 
   final bool hasSavedSession;
@@ -15,13 +14,10 @@ class AuthGreetingState {
   final int? userId;
   final bool isFingerprintEnabled;
   final String? avatarBase64;
-  final bool hasCompletedLocationPermissionPrompt;
 
   bool get hasActiveSession => userId != null;
   bool get canUseFingerprintLogin =>
       hasSavedSession && isFingerprintEnabled && userId != null;
-  bool get needsLocationPermissionPrompt =>
-      !hasCompletedLocationPermissionPrompt;
 }
 
 abstract final class AuthMemoryStore {
@@ -30,8 +26,6 @@ abstract final class AuthMemoryStore {
   static const _userIdKey = 'authenticated_user_id';
   static const _fingerprintEnabledKey = 'fingerprint_enabled_for_saved_login';
   static const _avatarBase64Key = 'profile_avatar_base64';
-  static const _hasCompletedLocationPermissionPromptKey =
-      'has_completed_location_permission_prompt';
 
   static const AuthGreetingState _emptyState = AuthGreetingState(
     hasSavedSession: false,
@@ -39,7 +33,6 @@ abstract final class AuthMemoryStore {
     userId: null,
     isFingerprintEnabled: false,
     avatarBase64: null,
-    hasCompletedLocationPermissionPrompt: false,
   );
 
   static AuthGreetingState _currentState = _emptyState;
@@ -92,8 +85,6 @@ abstract final class AuthMemoryStore {
       userId: userId,
       isFingerprintEnabled: shouldPersistSession && fingerprintEnabled,
       avatarBase64: _currentState.avatarBase64,
-      hasCompletedLocationPermissionPrompt:
-          _currentState.hasCompletedLocationPermissionPrompt,
     );
     _didInitialize = true;
   }
@@ -112,8 +103,6 @@ abstract final class AuthMemoryStore {
       userId: _currentState.userId,
       isFingerprintEnabled: _currentState.isFingerprintEnabled,
       avatarBase64: _currentState.avatarBase64,
-      hasCompletedLocationPermissionPrompt:
-          _currentState.hasCompletedLocationPermissionPrompt,
     );
     _didInitialize = true;
   }
@@ -144,45 +133,18 @@ abstract final class AuthMemoryStore {
       avatarBase64: normalizedAvatar == null || normalizedAvatar.isEmpty
           ? null
           : normalizedAvatar,
-      hasCompletedLocationPermissionPrompt:
-          _currentState.hasCompletedLocationPermissionPrompt,
-    );
-    _didInitialize = true;
-  }
-
-  static Future<void> markLocationPermissionPromptCompleted() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hasCompletedLocationPermissionPromptKey, true);
-
-    _currentState = AuthGreetingState(
-      hasSavedSession: _currentState.hasSavedSession,
-      username: _currentState.username,
-      userId: _currentState.userId,
-      isFingerprintEnabled: _currentState.isFingerprintEnabled,
-      avatarBase64: _currentState.avatarBase64,
-      hasCompletedLocationPermissionPrompt: true,
     );
     _didInitialize = true;
   }
 
   static Future<void> clearSession() async {
-    final hasCompletedLocationPermissionPrompt =
-        _currentState.hasCompletedLocationPermissionPrompt;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_hasSavedSessionKey);
     await prefs.remove(_usernameKey);
     await prefs.remove(_userIdKey);
     await prefs.remove(_fingerprintEnabledKey);
     await prefs.remove(_avatarBase64Key);
-    _currentState = AuthGreetingState(
-      hasSavedSession: false,
-      username: null,
-      userId: null,
-      isFingerprintEnabled: false,
-      avatarBase64: null,
-      hasCompletedLocationPermissionPrompt:
-          hasCompletedLocationPermissionPrompt,
-    );
+    _currentState = _emptyState;
     _didInitialize = true;
   }
 
@@ -198,8 +160,6 @@ abstract final class AuthMemoryStore {
       isFingerprintEnabled:
           hasSavedSession && (prefs.getBool(_fingerprintEnabledKey) ?? false),
       avatarBase64: prefs.getString(_avatarBase64Key),
-      hasCompletedLocationPermissionPrompt:
-          prefs.getBool(_hasCompletedLocationPermissionPromptKey) ?? false,
     );
   }
 }

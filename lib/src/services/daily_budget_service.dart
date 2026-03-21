@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
-import 'expense_moment_service.dart';
 import 'local_storage_service.dart';
 
 class DailyBudgetSummary {
@@ -78,11 +77,7 @@ abstract final class DailyBudgetService {
         .where(
           (expense) =>
               expense.userId == userId &&
-              DateUtils.isSameDay(DateUtils.dateOnly(expense.date), today) &&
-              !ExpenseMomentService.isFutureExpense(
-                expense,
-                now: currentMoment,
-              ),
+              DateUtils.isSameDay(DateUtils.dateOnly(expense.date), today),
         )
         .toList();
 

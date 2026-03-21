@@ -178,7 +178,30 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       _isSubmitting = false;
     });
 
+    final authState = await AuthMemoryStore.loadGreetingState();
+    if (!mounted) {
+      return;
+    }
+
+    final shouldShowLocationPermissionPrompt =
+        _isRegisterMode || authState.needsLocationPermissionPrompt;
     final redirect = widget.postAuthRedirect;
+    if (shouldShowLocationPermissionPrompt) {
+      final nextRoute = _isRegisterMode
+          ? AppRoutes.registerIntro
+          : AppRoutes.locationPermissionIntro;
+      final navigationArgs = redirect == null
+          ? null
+          : PostAuthNavigationArgs(redirect: redirect);
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        nextRoute,
+        (route) => false,
+        arguments: navigationArgs,
+      );
+      return;
+    }
+
     if (redirect != null) {
       await AppNavigationService.openRedirect(redirect);
       return;

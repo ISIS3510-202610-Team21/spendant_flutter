@@ -135,6 +135,23 @@ class _FingerprintAuthScreenState extends State<FingerprintAuthScreen> {
       }
 
       final redirect = _postAuthNavigationArgs?.redirect;
+      final authState = await AuthMemoryStore.loadGreetingState();
+      if (!mounted) {
+        return;
+      }
+
+      if (authState.needsLocationPermissionPrompt) {
+        final navigationArgs = redirect == null
+            ? null
+            : PostAuthNavigationArgs(redirect: redirect);
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.locationPermissionIntro,
+          (route) => false,
+          arguments: navigationArgs,
+        );
+        return;
+      }
+
       if (redirect != null) {
         await AppNavigationService.openRedirect(redirect);
         return;

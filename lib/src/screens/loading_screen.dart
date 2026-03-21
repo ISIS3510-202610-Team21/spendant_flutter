@@ -30,7 +30,9 @@ class _LoadingScreenState extends State<LoadingScreen> {
     final nextRoute = authState.canUseFingerprintLogin
         ? AppRoutes.fingerprintAuth
         : authState.hasSavedSession
-        ? AppRoutes.home
+        ? authState.needsLocationPermissionPrompt
+              ? AppRoutes.locationPermissionIntro
+              : AppRoutes.home
         : AppRoutes.login;
 
     Navigator.of(context).pushReplacementNamed(nextRoute);

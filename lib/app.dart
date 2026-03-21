@@ -12,6 +12,7 @@ import 'src/screens/fingerprint_auth_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
+import 'src/screens/location_permission_intro_screen.dart';
 import 'src/screens/new_expense_screen.dart';
 import 'src/screens/notifications_screen.dart';
 import 'src/screens/onboarding_screen.dart';
@@ -32,6 +33,7 @@ abstract final class AppRoutes {
   static const login = '/login';
   static const register = '/register';
   static const registerIntro = '/register-intro';
+  static const locationPermissionIntro = '/location-permission-intro';
   static const fingerprintAuth = '/fingerprint-auth';
   static const home = '/home';
   static const notifications = '/notifications';
@@ -145,6 +147,8 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.login: (_) => const LoginScreen(),
         AppRoutes.register: (_) => const RegisterScreen(),
         AppRoutes.registerIntro: (_) => const PostRegisterIntroScreen(),
+        AppRoutes.locationPermissionIntro: (_) =>
+            const LocationPermissionIntroScreen(),
         AppRoutes.fingerprintAuth: (_) => const FingerprintAuthScreen(),
         AppRoutes.home: (_) => const HomeScreen(),
         AppRoutes.notifications: (_) => const NotificationsScreen(),

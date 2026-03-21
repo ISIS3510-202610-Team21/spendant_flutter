@@ -42,6 +42,8 @@ class PostAuthNavigationArgs {
 abstract final class AppNavigationService {
   static const String _loginRouteName = '/login';
   static const String _fingerprintRouteName = '/fingerprint-auth';
+  static const String _locationPermissionIntroRouteName =
+      '/location-permission-intro';
 
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
@@ -78,6 +80,16 @@ abstract final class AppNavigationService {
 
     final authState = await AuthMemoryStore.loadGreetingState();
     if (authState.hasSavedSession && !authState.canUseFingerprintLogin) {
+      if (authState.needsLocationPermissionPrompt) {
+        final args = PostAuthNavigationArgs(redirect: redirect);
+        navigator.pushNamedAndRemoveUntil(
+          _locationPermissionIntroRouteName,
+          (route) => false,
+          arguments: args,
+        );
+        return;
+      }
+
       navigator.pushNamedAndRemoveUntil(
         redirect.routeName,
         (route) => false,

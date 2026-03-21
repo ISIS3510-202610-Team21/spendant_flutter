@@ -62,14 +62,16 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     super.dispose();
   }
 
-  Future<void> _goHome() async {
+  Future<void> _openLocationPermissionIntro() async {
     if (!mounted) {
       return;
     }
 
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
+    final routeArguments = ModalRoute.of(context)?.settings.arguments;
+    await Navigator.of(context).pushReplacementNamed(
+      AppRoutes.locationPermissionIntro,
+      arguments: routeArguments,
+    );
   }
 
   Future<void> _handleAppResume() async {
@@ -87,7 +89,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     await _showInfoDialog(
       'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
     );
-    await _goHome();
+    await _openLocationPermissionIntro();
   }
 
   Future<void> _requestPostingPermission() async {
@@ -145,7 +147,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (kIsWeb) {
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -153,7 +155,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       await _showInfoDialog(
         'Automatic Google Pay import is only available on Android.',
       );
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -163,7 +165,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     if (hasReaderAccess) {
-      await _goHome();
+      await _openLocationPermissionIntro();
       return;
     }
 
@@ -186,7 +188,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       await _showInfoDialog(
         'The notification reader settings could not be opened on this device.',
       );
-      await _goHome();
+      await _openLocationPermissionIntro();
     }
   }
 
@@ -215,7 +217,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    await _goHome();
+    await _openLocationPermissionIntro();
   }
 
   @override

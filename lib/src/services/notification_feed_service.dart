@@ -4,7 +4,6 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import 'auth_memory_store.dart';
-import 'expense_moment_service.dart';
 import '../theme/expense_visuals.dart';
 
 enum NotificationFeedType {
@@ -61,13 +60,7 @@ abstract final class NotificationFeedService {
   }) {
     final resolvedUserId = userId ?? AuthMemoryStore.currentUserIdOrGuest;
     final userExpenses =
-        expenses
-            .where(
-              (expense) =>
-                  expense.userId == resolvedUserId &&
-                  !ExpenseMomentService.isFutureExpense(expense),
-            )
-            .toList()
+        expenses.where((expense) => expense.userId == resolvedUserId).toList()
           ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
     final userGoals =
         goals.where((goal) => goal.userId == resolvedUserId).toList()
@@ -78,6 +71,10 @@ abstract final class NotificationFeedService {
 
     final feed = <NotificationFeedItem>[
       ..._buildExpenseNotifications(
+        userExpenses,
+        prioritizedLabels: prioritizedLabels,
+      ),
+      ..._buildWarningNotifications(
         userExpenses,
         prioritizedLabels: prioritizedLabels,
       ),
@@ -96,34 +93,58 @@ abstract final class NotificationFeedService {
     required List<String> prioritizedLabels,
   }) {
     return expenses.take(8).map((expense) {
-      final isPendingCategory =
-          expense.isPendingCategory ||
-          (expense.detailLabels.isEmpty &&
-              (expense.primaryCategory?.trim().isEmpty ?? true));
-      final category = isPendingCategory
-          ? null
-          : ExpenseVisuals.resolveDisplayLabel(
-              expense,
-              prioritizedLabels: prioritizedLabels,
-            );
-      final subtitle = isPendingCategory ? 'Needs category' : category;
-      final detailMessage = isPendingCategory
-          ? 'Expense saved without a category. Open it to choose a label.'
-          : 'Expense saved in $category and ready to edit.';
+      final category = ExpenseVisuals.resolveDisplayLabel(
+        expense,
+        prioritizedLabels: prioritizedLabels,
+      );
 
       return NotificationFeedItem(
         id: 'expense-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
         type: NotificationFeedType.expense,
         createdAt: expense.createdAt,
         title: expense.name,
-        subtitle: subtitle,
+        subtitle: category,
         amount: expense.amount,
         category: category,
         expense: expense,
         detailTitle: expense.name,
-        detailMessage: detailMessage,
+        detailMessage: 'Expense saved in $category and ready to edit.',
       );
     }).toList();
+  }
+
+  static List<NotificationFeedItem> _buildWarningNotifications(
+    List<ExpenseModel> expenses, {
+    required List<String> prioritizedLabels,
+  }) {
+    final warnings = <NotificationFeedItem>[];
+
+    for (final expense in expenses) {
+      if (!_isUnusualExpense(expense, expenses)) {
+        continue;
+      }
+
+      final category = ExpenseVisuals.resolveDisplayLabel(
+        expense,
+        prioritizedLabels: prioritizedLabels,
+      );
+      warnings.add(
+        NotificationFeedItem(
+          id: 'warning-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}',
+          type: NotificationFeedType.warning,
+          createdAt: expense.createdAt,
+          title: 'New Warning!',
+          amount: expense.amount,
+          category: category,
+          expense: expense,
+          detailTitle: '"Hey! Everything alright\nover there?"',
+          detailMessage:
+              'We noticed some unusual activity in $category. Before your future self gets the wrong idea, was this purchase planned or is it a stress treat? Think about it for two minutes.',
+        ),
+      );
+    }
+
+    return warnings.take(4).toList();
   }
 
   static List<NotificationFeedItem> _buildAppNotifications(
@@ -159,6 +180,45 @@ abstract final class NotificationFeedService {
           );
         })
         .toList();
+  }
+
+  static bool _isUnusualExpense(
+    ExpenseModel expense,
+    List<ExpenseModel> allExpenses,
+  ) {
+    final category = normalizeCategory(expense.primaryCategory);
+    final comparableExpenses = allExpenses.where((candidate) {
+      return candidate != expense &&
+          normalizeCategory(candidate.primaryCategory) == category;
+    }).toList();
+
+    if (category == 'Transport' && expense.amount >= 50000) {
+      return true;
+    }
+
+    if (expense.amount < 35000 || comparableExpenses.length < 2) {
+      return false;
+    }
+
+    final average =
+        comparableExpenses.fold<double>(0, (sum, item) => sum + item.amount) /
+        comparableExpenses.length;
+
+    return expense.amount >= average * 1.8 &&
+        (expense.amount - average) >= 15000;
+  }
+
+  static String normalizeCategory(String? category) {
+    switch (category?.trim()) {
+      case 'Food':
+        return 'Food';
+      case 'Transport':
+        return 'Transport';
+      case 'Services':
+        return 'Services';
+      default:
+        return 'Other';
+    }
   }
 
   static String formatAmount(double amount) {
@@ -217,13 +277,6 @@ abstract final class NotificationFeedService {
         return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
-      case AppNotificationTypes.expenseCategoryNeeded:
-      case AppNotificationTypes.spendingSpike:
-      case AppNotificationTypes.spendingPace:
-      case AppNotificationTypes.spendingPattern:
-      case AppNotificationTypes.habitFixerWarning:
-      case AppNotificationTypes.weeklyInsight:
-        return NotificationFeedType.warning;
       default:
         return NotificationFeedType.warning;
     }

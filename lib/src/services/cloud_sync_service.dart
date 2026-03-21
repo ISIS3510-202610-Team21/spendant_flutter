@@ -7,6 +7,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import '../models/label_model.dart';
 import '../models/user_model.dart';
+import 'auth_memory_store.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
 
@@ -187,6 +188,11 @@ class CloudSyncService {
     }
 
     await FirebaseUidService.ensureFirebaseUid();
+    try {
+      await _mergeRemoteStateForCurrentUser();
+    } catch (error) {
+      debugPrint('Cloud sync remote merge failed: $error');
+    }
 
     var uploadedExpenses = 0;
     var uploadedIncomes = 0;
@@ -204,14 +210,9 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(expense, index);
-        final expectedDocumentId = _entityDocumentId(
-          firebaseUid: _firebaseUidForEntity(),
-          localId: localId,
-        );
         if (!_shouldSyncRecord(
           isSynced: expense.isSynced,
           serverId: expense.serverId,
-          expectedDocumentId: expectedDocumentId,
         )) {
           continue;
         }
@@ -219,10 +220,7 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'expenses',
           serverId: expense.serverId,
-          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
-          preferFallbackDocumentId: true,
-          deleteLegacyDocumentWhenMigrating: true,
           data: _expenseToMap(expense, localId),
         );
         await _localStorage.markExpenseAsSynced(index, documentId);
@@ -241,14 +239,9 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(income, index);
-        final expectedDocumentId = _entityDocumentId(
-          firebaseUid: _firebaseUidForEntity(),
-          localId: localId,
-        );
         if (!_shouldSyncRecord(
           isSynced: income.isSynced,
           serverId: income.serverId,
-          expectedDocumentId: expectedDocumentId,
         )) {
           continue;
         }
@@ -256,10 +249,7 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'incomes',
           serverId: income.serverId,
-          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
-          preferFallbackDocumentId: true,
-          deleteLegacyDocumentWhenMigrating: true,
           data: _incomeToMap(income, localId),
         );
         await _localStorage.markIncomeAsSynced(index, documentId);
@@ -278,14 +268,9 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(goal, index);
-        final expectedDocumentId = _entityDocumentId(
-          firebaseUid: _firebaseUidForEntity(),
-          localId: localId,
-        );
         if (!_shouldSyncRecord(
           isSynced: goal.isSynced,
           serverId: goal.serverId,
-          expectedDocumentId: expectedDocumentId,
         )) {
           continue;
         }
@@ -293,10 +278,7 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'goals',
           serverId: goal.serverId,
-          fallbackDocumentId: expectedDocumentId,
           includeSyncMetadata: false,
-          preferFallbackDocumentId: true,
-          deleteLegacyDocumentWhenMigrating: true,
           data: _goalToMap(goal, localId),
         );
         await _localStorage.markGoalAsSynced(index, documentId);
@@ -309,7 +291,11 @@ class CloudSyncService {
     final labelBox = LocalStorageService.labelBox;
     for (var index = 0; index < labelBox.length; index++) {
       final label = labelBox.getAt(index);
-      if (label == null || label.isSynced) {
+      if (label == null ||
+          !_shouldSyncRecord(
+            isSynced: label.isSynced,
+            serverId: label.serverId,
+          )) {
         continue;
       }
 
@@ -339,7 +325,6 @@ class CloudSyncService {
         if (!_shouldSyncRecord(
           isSynced: user.isSynced,
           serverId: user.serverId,
-          expectedDocumentId: uid,
         )) {
           continue;
         }
@@ -368,6 +353,306 @@ class CloudSyncService {
       uploadedUsers: uploadedUsers,
       failures: failures,
     );
+  }
+
+  Future<void> _mergeRemoteStateForCurrentUser() async {
+    final activeUserId = AuthMemoryStore.currentUserId;
+    if (activeUserId == null) {
+      return;
+    }
+
+    final activeUser = _localStorage.getUserById(activeUserId);
+    if (activeUser == null) {
+      return;
+    }
+
+    final firebaseUid = _firebaseUidForUser(activeUser, activeUserId).trim();
+    if (firebaseUid.isEmpty || firebaseUid.startsWith('user_')) {
+      return;
+    }
+
+    final userSnapshot = await _firestore
+        .collection('users')
+        .doc(firebaseUid)
+        .get(const GetOptions(source: Source.server));
+    if (userSnapshot.exists) {
+      await _mergeRemoteUser(userSnapshot, localUser: activeUser);
+    }
+
+    final remoteExpenses = await _firestore
+        .collection('expenses')
+        .where('firebaseUid', isEqualTo: firebaseUid)
+        .get(const GetOptions(source: Source.server));
+    await _mergeRemoteExpenses(remoteExpenses, localUserId: activeUserId);
+
+    final remoteIncomes = await _firestore
+        .collection('incomes')
+        .where('firebaseUid', isEqualTo: firebaseUid)
+        .get(const GetOptions(source: Source.server));
+    await _mergeRemoteIncomes(remoteIncomes, localUserId: activeUserId);
+
+    final remoteGoals = await _firestore
+        .collection('goals')
+        .where('firebaseUid', isEqualTo: firebaseUid)
+        .get(const GetOptions(source: Source.server));
+    await _mergeRemoteGoals(remoteGoals, localUserId: activeUserId);
+
+    final remoteLabels = await _firestore
+        .collection('labels')
+        .where('firebaseUid', isEqualTo: firebaseUid)
+        .get(const GetOptions(source: Source.server));
+    await _mergeRemoteLabels(remoteLabels, localUserId: activeUserId);
+  }
+
+  Future<void> _mergeRemoteUser(
+    DocumentSnapshot<Map<String, dynamic>> snapshot, {
+    required UserModel localUser,
+  }) async {
+    final data = snapshot.data();
+    if (data == null) {
+      return;
+    }
+
+    final username = _stringValue(
+      data['username'],
+      fallback: _normalizedUsername(localUser),
+    );
+    localUser
+      ..firebaseUid = _stringValue(data['uid'], fallback: snapshot.id)
+      ..username = username
+      ..email = _stringValue(data['email'], fallback: localUser.email)
+      ..displayName =
+          _stringOrNull(data['displayName'], fallback: localUser.displayName) ??
+          username
+      ..handle =
+          _stringOrNull(data['handle'], fallback: localUser.handle) ??
+          _normalizedHandle(localUser, username)
+      ..createdAt = _dateTimeValue(data['createdAt']) ?? localUser.createdAt
+      ..isSynced = true
+      ..serverId = snapshot.id;
+    await localUser.save();
+
+    final currentUsername = AuthMemoryStore.currentState.username?.trim() ?? '';
+    if (currentUsername != username) {
+      await AuthMemoryStore.updateCurrentUsername(username);
+    }
+  }
+
+  Future<void> _mergeRemoteExpenses(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required int localUserId,
+  }) async {
+    for (final document in snapshot.docs) {
+      final existingExpense = _findByServerId(
+        LocalStorageService.expenseBox.values,
+        document.id,
+        readServerId: (expense) => expense.serverId,
+      );
+      if (existingExpense != null && !existingExpense.isSynced) {
+        continue;
+      }
+
+      final data = document.data();
+      final expense = existingExpense ?? ExpenseModel();
+      expense
+        ..userId = localUserId
+        ..name = _stringValue(data['name'], fallback: expense.name)
+        ..amount = _doubleValue(data['amount'], fallback: expense.amount)
+        ..date = _dateTimeValue(data['date']) ?? expense.date
+        ..time = _stringValue(
+          data['time'],
+          fallback: expense.time.isNotEmpty ? expense.time : '00:00',
+        )
+        ..latitude = _doubleOrNull(data['latitude'], fallback: expense.latitude)
+        ..longitude = _doubleOrNull(
+          data['longitude'],
+          fallback: expense.longitude,
+        )
+        ..locationName = _stringOrNull(
+          data['locationName'],
+          fallback: expense.locationName,
+        )
+        ..source = _stringValue(
+          data['source'],
+          fallback: expense.source.isNotEmpty ? expense.source : 'MANUAL',
+        )
+        ..receiptImagePath = _stringOrNull(
+          data['receiptImagePath'],
+          fallback: expense.receiptImagePath,
+        )
+        ..isPendingCategory = _boolValue(
+          data['isPendingCategory'],
+          fallback: expense.isPendingCategory,
+        )
+        ..isRecurring = _boolValue(
+          data['isRecurring'],
+          fallback: expense.isRecurring,
+        )
+        ..recurrenceInterval = _intOrNull(
+          data['recurrenceInterval'],
+          fallback: expense.recurrenceInterval,
+        )
+        ..recurrenceUnit = _stringOrNull(
+          data['recurrenceUnit'],
+          fallback: expense.recurrenceUnit,
+        )
+        ..nextOccurrenceDate =
+            _dateTimeValue(data['nextOccurrenceDate']) ??
+            expense.nextOccurrenceDate
+        ..createdAt = _dateTimeValue(data['createdAt']) ?? expense.createdAt
+        ..primaryCategory = _stringOrNull(
+          data['primaryCategory'],
+          fallback: expense.primaryCategory,
+        )
+        ..detailLabels = _stringListValue(
+          data['detailLabels'],
+          fallback: expense.detailLabels,
+        )
+        ..isRegretted = _boolValue(
+          data['isRegretted'],
+          fallback: expense.isRegretted,
+        )
+        ..wasAutoCategorized = _boolValue(
+          data['wasAutoCategorized'],
+          fallback: expense.wasAutoCategorized,
+        )
+        ..isSynced = true
+        ..serverId = document.id;
+
+      if (existingExpense == null) {
+        await _localStorage.saveExpense(expense);
+      } else {
+        await expense.save();
+      }
+    }
+  }
+
+  Future<void> _mergeRemoteIncomes(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required int localUserId,
+  }) async {
+    for (final document in snapshot.docs) {
+      final existingIncome = _findByServerId(
+        LocalStorageService.incomeBox.values,
+        document.id,
+        readServerId: (income) => income.serverId,
+      );
+      if (existingIncome != null && !existingIncome.isSynced) {
+        continue;
+      }
+
+      final data = document.data();
+      final income = existingIncome ?? IncomeModel();
+      income
+        ..userId = localUserId
+        ..name = _stringValue(data['name'], fallback: income.name)
+        ..amount = _doubleValue(data['amount'], fallback: income.amount)
+        ..type = _stringValue(
+          data['type'],
+          fallback: income.type.isNotEmpty ? income.type : 'JUST_ONCE',
+        )
+        ..recurrenceInterval = _intOrNull(
+          data['recurrenceInterval'],
+          fallback: income.recurrenceInterval,
+        )
+        ..recurrenceUnit = _stringOrNull(
+          data['recurrenceUnit'],
+          fallback: income.recurrenceUnit,
+        )
+        ..nextOccurrenceDate =
+            _dateTimeValue(data['nextOccurrenceDate']) ??
+            income.nextOccurrenceDate
+        ..startDate = _dateTimeValue(data['startDate']) ?? income.startDate
+        ..createdAt = _dateTimeValue(data['createdAt']) ?? income.createdAt
+        ..isSynced = true
+        ..serverId = document.id;
+
+      if (existingIncome == null) {
+        await _localStorage.saveIncome(income);
+      } else {
+        await income.save();
+      }
+    }
+  }
+
+  Future<void> _mergeRemoteGoals(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required int localUserId,
+  }) async {
+    for (final document in snapshot.docs) {
+      final existingGoal = _findByServerId(
+        LocalStorageService.goalBox.values,
+        document.id,
+        readServerId: (goal) => goal.serverId,
+      );
+      if (existingGoal != null && !existingGoal.isSynced) {
+        continue;
+      }
+
+      final data = document.data();
+      final goal = existingGoal ?? GoalModel();
+      goal
+        ..userId = localUserId
+        ..name = _stringValue(data['name'], fallback: goal.name)
+        ..targetAmount = _doubleValue(
+          data['targetAmount'],
+          fallback: goal.targetAmount,
+        )
+        ..currentAmount = _doubleValue(
+          data['currentAmount'],
+          fallback: goal.currentAmount,
+        )
+        ..deadline = _dateTimeValue(data['deadline']) ?? goal.deadline
+        ..isCompleted = _boolValue(
+          data['isCompleted'],
+          fallback: goal.isCompleted,
+        )
+        ..createdAt = _dateTimeValue(data['createdAt']) ?? goal.createdAt
+        ..isSynced = true
+        ..serverId = document.id;
+
+      if (existingGoal == null) {
+        await _localStorage.saveGoal(goal);
+      } else {
+        await goal.save();
+      }
+    }
+  }
+
+  Future<void> _mergeRemoteLabels(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required int localUserId,
+  }) async {
+    for (final document in snapshot.docs) {
+      final existingLabel = _findByServerId(
+        LocalStorageService.labelBox.values,
+        document.id,
+        readServerId: (label) => label.serverId,
+      );
+      if (existingLabel != null && !existingLabel.isSynced) {
+        continue;
+      }
+
+      final data = document.data();
+      final label = existingLabel ?? LabelModel();
+      label
+        ..userId = localUserId
+        ..name = _stringValue(data['name'], fallback: label.name)
+        ..iconEmoji = _stringOrNull(
+          data['iconEmoji'],
+          fallback: label.iconEmoji,
+        )
+        ..colorHex = _stringOrNull(data['colorHex'], fallback: label.colorHex)
+        ..createdAt = _dateTimeValue(data['createdAt']) ?? label.createdAt
+        ..isSynced = true
+        ..serverId = document.id;
+
+      if (existingLabel == null) {
+        await _localStorage.saveLabel(label);
+      } else {
+        await label.save();
+      }
+    }
   }
 
   Future<CloudVerificationSummary> verifyCloudState() async {
@@ -562,21 +847,13 @@ class CloudSyncService {
     return missing;
   }
 
-  bool _shouldSyncRecord({
-    required bool isSynced,
-    required String? serverId,
-    required String expectedDocumentId,
-  }) {
+  bool _shouldSyncRecord({required bool isSynced, required String? serverId}) {
     if (!isSynced) {
       return true;
     }
 
     final normalizedServerId = serverId?.trim();
-    if (normalizedServerId == null || normalizedServerId.isEmpty) {
-      return true;
-    }
-
-    return normalizedServerId != expectedDocumentId;
+    return normalizedServerId == null || normalizedServerId.isEmpty;
   }
 
   Future<String> _upsertDocument({
@@ -686,6 +963,8 @@ class CloudSyncService {
       'createdAt': _toEpochMillis(expense.createdAt),
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
+      'isRegretted': expense.isRegretted,
+      'wasAutoCategorized': expense.wasAutoCategorized,
     };
   }
 
@@ -723,6 +1002,7 @@ class CloudSyncService {
     return <String, Object?>{
       'localIndex': localIndex,
       'userId': label.userId,
+      'firebaseUid': _firebaseUidForEntity(),
       'name': label.name,
       'iconEmoji': label.iconEmoji,
       'colorHex': label.colorHex,
@@ -800,6 +1080,128 @@ class CloudSyncService {
 
   int? _toEpochMillis(DateTime? value) {
     return value?.millisecondsSinceEpoch;
+  }
+
+  T? _findByServerId<T>(
+    Iterable<T> values,
+    String serverId, {
+    required String? Function(T value) readServerId,
+  }) {
+    final normalizedServerId = serverId.trim();
+    if (normalizedServerId.isEmpty) {
+      return null;
+    }
+
+    for (final value in values) {
+      final candidateServerId = readServerId(value)?.trim();
+      if (candidateServerId == normalizedServerId) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  String _stringValue(Object? value, {String fallback = ''}) {
+    return _stringOrNull(value, fallback: fallback) ?? fallback;
+  }
+
+  String? _stringOrNull(Object? value, {String? fallback}) {
+    final normalized = value?.toString().trim() ?? '';
+    if (normalized.isEmpty) {
+      final normalizedFallback = fallback?.trim();
+      if (normalizedFallback == null || normalizedFallback.isEmpty) {
+        return null;
+      }
+      return normalizedFallback;
+    }
+    return normalized;
+  }
+
+  double _doubleValue(Object? value, {double fallback = 0}) {
+    return _doubleOrNull(value, fallback: fallback) ?? fallback;
+  }
+
+  double? _doubleOrNull(Object? value, {double? fallback}) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    final parsed = double.tryParse(value?.toString().trim() ?? '');
+    return parsed ?? fallback;
+  }
+
+  int? _intOrNull(Object? value, {int? fallback}) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+
+    final parsed = int.tryParse(value?.toString().trim() ?? '');
+    return parsed ?? fallback;
+  }
+
+  bool _boolValue(Object? value, {required bool fallback}) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+
+    final normalized = value?.toString().trim().toLowerCase();
+    switch (normalized) {
+      case 'true':
+      case '1':
+        return true;
+      case 'false':
+      case '0':
+        return false;
+      default:
+        return fallback;
+    }
+  }
+
+  List<String> _stringListValue(Object? value, {List<String>? fallback}) {
+    if (value is Iterable) {
+      return value
+          .map((entry) => entry.toString().trim())
+          .where((entry) => entry.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    return fallback == null
+        ? const <String>[]
+        : List<String>.from(fallback, growable: false);
+  }
+
+  DateTime? _dateTimeValue(Object? value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+
+    final normalized = value?.toString().trim() ?? '';
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    final millis = int.tryParse(normalized);
+    if (millis != null) {
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+
+    return DateTime.tryParse(normalized);
   }
 
   String _firebaseUidForEntity() {

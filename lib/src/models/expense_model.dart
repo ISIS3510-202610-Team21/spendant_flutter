@@ -63,4 +63,10 @@ class ExpenseModel extends HiveObject {
 
   @HiveField(19)
   List<String> detailLabels = <String>[];
+
+  @HiveField(20)
+  bool isRegretted = false;
+
+  @HiveField(21)
+  bool wasAutoCategorized = false;
 }

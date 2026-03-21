@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
@@ -30,6 +31,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
 
   Future<Object?> _initializeCriticalServices() async {
     try {
+      await _loadLocalConfiguration();
       await LocalStorageService.init();
       await AuthMemoryStore.initialize();
       debugPrint('LocalStorageService initialized');
@@ -38,6 +40,15 @@ class _BootstrapAppState extends State<_BootstrapApp> {
     } catch (error) {
       debugPrint('Error initializing LocalStorageService: $error');
       return error;
+    }
+  }
+
+  Future<void> _loadLocalConfiguration() async {
+    try {
+      await dotenv.load(fileName: '.env');
+      debugPrint('Local .env configuration loaded');
+    } catch (error) {
+      debugPrint('Local .env configuration was not loaded: $error');
     }
   }
 

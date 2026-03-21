@@ -13,6 +13,7 @@ import 'habit_fixer_monitor_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
 import 'spending_advice_service.dart';
+import 'weekly_smart_insight_service.dart';
 
 abstract final class AppNotificationService {
   static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v2';
@@ -161,6 +162,21 @@ abstract final class AppNotificationService {
       shouldPersistTrackedSignals = true;
       await _upsertNotification(
         _buildSpendingAdviceNotification(habitFixerAdvice, now: now),
+        notifySystem: true,
+      );
+    }
+
+    final weeklyInsight = WeeklySmartInsightService.buildInsight(
+      expenses: expenses,
+      userId: _currentUserId,
+      now: now,
+    );
+    if (weeklyInsight != null &&
+        !trackedSignals.contains(weeklyInsight.signalId)) {
+      trackedSignals.add(weeklyInsight.signalId);
+      shouldPersistTrackedSignals = true;
+      await _upsertNotification(
+        _buildWeeklyInsightNotification(weeklyInsight, now: now),
         notifySystem: true,
       );
     }
@@ -449,6 +465,23 @@ abstract final class AppNotificationService {
       ..category = advice.category
       ..detailTitle = advice.detailTitle
       ..detailMessage = advice.detailMessage
+      ..routeName = _notificationsRouteName;
+  }
+
+  static AppNotificationModel _buildWeeklyInsightNotification(
+    WeeklySmartInsight insight, {
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = insight.notificationId
+      ..type = AppNotificationTypes.weeklyInsight
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = insight.title
+      ..subtitle = insight.subtitle
+      ..amount = insight.amount
+      ..detailTitle = insight.detailTitle
+      ..detailMessage = insight.detailMessage
       ..routeName = _notificationsRouteName;
   }
 

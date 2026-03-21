@@ -193,7 +193,8 @@ abstract final class GooglePayExpenseImportService {
       ..isPendingCategory = !categorization.assigned
       ..createdAt = parsedExpense.dateTime
       ..primaryCategory = categorization.primaryCategory
-      ..detailLabels = detailLabels;
+      ..detailLabels = detailLabels
+      ..wasAutoCategorized = categorization.assigned;
 
     await LocalStorageService().saveExpense(expense);
     if (expense.isPendingCategory) {
@@ -273,7 +274,8 @@ abstract final class GooglePayExpenseImportService {
     ExpenseModel expense,
   ) async {
     final notification = AppNotificationModel()
-      ..id = 'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}'
+      ..id =
+          'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}'
       ..type = 'expense_category_needed'
       ..createdAt = DateTime.now()
       ..userId = expense.userId

@@ -66,4 +66,7 @@ class ExpenseModel extends HiveObject {
 
   @HiveField(20)
   bool isRegretted = false;
+
+  @HiveField(21)
+  bool wasAutoCategorized = false;
 }

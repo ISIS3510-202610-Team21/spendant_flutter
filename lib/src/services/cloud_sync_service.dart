@@ -512,6 +512,10 @@ class CloudSyncService {
           data['isRegretted'],
           fallback: expense.isRegretted,
         )
+        ..wasAutoCategorized = _boolValue(
+          data['wasAutoCategorized'],
+          fallback: expense.wasAutoCategorized,
+        )
         ..isSynced = true
         ..serverId = document.id;
 
@@ -960,6 +964,7 @@ class CloudSyncService {
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
       'isRegretted': expense.isRegretted,
+      'wasAutoCategorized': expense.wasAutoCategorized,
     };
   }
 

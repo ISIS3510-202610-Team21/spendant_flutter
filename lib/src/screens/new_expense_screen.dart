@@ -906,6 +906,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final shouldLearnFromManualCategory = _shouldLearnFromManualCategory(
       editingExpense,
     );
+    final wasAutoCategorized =
+        _selectedLabelsWereAutoAssigned ||
+        (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
     final receiptImagePath = await _resolveReceiptImagePath();
 
@@ -933,7 +936,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       ..serverId = editingExpense?.serverId
       ..createdAt = editingExpense?.createdAt ?? DateTime.now()
       ..primaryCategory = _selectedCategory
-      ..detailLabels = List<String>.from(_selectedDetailLabels);
+      ..detailLabels = List<String>.from(_selectedDetailLabels)
+      ..wasAutoCategorized = wasAutoCategorized;
 
     try {
       if (editingExpense == null) {

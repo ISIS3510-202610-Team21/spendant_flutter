@@ -11,6 +11,7 @@ abstract final class AppNotificationTypes {
   static const spendingPace = 'spending_pace';
   static const spendingPattern = 'spending_pattern';
   static const habitFixerWarning = 'habit_fixer_warning';
+  static const weeklyInsight = 'weekly_insight';
 }
 
 class AppNotificationModel extends HiveObject {

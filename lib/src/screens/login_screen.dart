@@ -416,14 +416,11 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                         ],
                         const SizedBox(height: 20),
                         BlackPrimaryButton(
-                          label: _isSubmitting
-                              ? (_isRegisterMode
-                                    ? 'Creating...'
-                                    : 'Checking...')
-                              : widget.primaryLabel,
+                          label: widget.primaryLabel,
                           width: widget.showEmail ? 128 : 103,
                           height: 46,
-                          onPressed: _isSubmitting ? () {} : _submit,
+                          isLoading: _isSubmitting,
+                          onPressed: _submit,
                         ),
                         const SizedBox(height: 18),
                         Wrap(

@@ -86,19 +86,33 @@ class BlackPrimaryButton extends StatelessWidget {
     required this.onPressed,
     this.width = 206,
     this.height = 46,
+    this.isLoading = false,
   });
 
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final double width;
   final double height;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
       height: height,
-      child: ElevatedButton(onPressed: onPressed, child: Text(label)),
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        child: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppPalette.white),
+                ),
+              )
+            : Text(label),
+      ),
     );
   }
 }

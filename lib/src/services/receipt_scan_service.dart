@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:exif/exif.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +49,33 @@ class ReceiptScanService {
   ReceiptScanService()
     : _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
+  static const List<String> _totalKeywords = <String>[
+    'total a pagar',
+    'total pagar',
+    'valor total',
+    'grand total',
+    'amount due',
+    'amount',
+    'total:',
+    'total',
+  ];
+
+  static const List<String> _identifierKeywords = <String>[
+    'nit',
+    'factura',
+    'invoice',
+    'ref',
+    'referencia',
+    'autorizacion',
+    'aprobacion',
+    'transaccion',
+    'pedido',
+    'orden',
+    'documento',
+    'terminal',
+    'lote',
+  ];
+
   final TextRecognizer _textRecognizer;
 
   Future<ReceiptScanResult> scanReceipt({
@@ -67,11 +95,7 @@ class ReceiptScanService {
         ? _extractPdfText(bytes)
         : await _recognizeImageText(path);
 
-    return _buildResult(
-      text: text,
-      fileName: fileName,
-      metadata: metadata,
-    );
+    return _buildResult(text: text, fileName: fileName, metadata: metadata);
   }
 
   void dispose() {
@@ -169,7 +193,8 @@ class ReceiptScanService {
 
       final placemark = placemarks.first;
       final segments = <String>[
-        if ((placemark.street ?? '').trim().isNotEmpty) placemark.street!.trim(),
+        if ((placemark.street ?? '').trim().isNotEmpty)
+          placemark.street!.trim(),
         if ((placemark.locality ?? '').trim().isNotEmpty)
           placemark.locality!.trim(),
         if ((placemark.administrativeArea ?? '').trim().isNotEmpty)
@@ -219,7 +244,7 @@ class ReceiptScanService {
 
     return ReceiptScanResult(
       name: _extractName(lines, fileName),
-      formattedAmount: _extractAmount(lines),
+      formattedAmount: extractFormattedAmount(lines),
       date: _extractDate(lines) ?? metadata.dateTime,
       time: _extractTime(lines) ?? metadata.dateTime,
       location: metadata.location ?? _extractLocationFromText(lines),
@@ -265,81 +290,181 @@ class ReceiptScanService {
     return fallbackName.isEmpty ? null : fallbackName;
   }
 
-  String? _extractAmount(List<String> lines) {
-    final totalKeywords = <String>[
-      'total a pagar',
-      'total pagar',
-      'valor total',
-      'grand total',
-      'amount due',
-      'amount',
-      'total:',
-      'total',
-    ];
-
-    double? matchedAmount;
-
-    for (var index = 0; index < lines.length; index++) {
-      final lowerLine = lines[index].toLowerCase();
-      if (!totalKeywords.any(lowerLine.contains)) {
-        continue;
-      }
-
-      matchedAmount ??= _extractLargestAmount(lines[index]);
-      if (matchedAmount != null) {
-        break;
-      }
-
-      if (index + 1 < lines.length) {
-        matchedAmount = _extractLargestAmount(lines[index + 1]);
-        if (matchedAmount != null) {
-          break;
-        }
-      }
-    }
-
-    matchedAmount ??= lines
-        .map(_extractLargestAmount)
-        .whereType<double>()
-        .fold<double?>(null, (largest, value) {
-          if (largest == null || value > largest) {
-            return value;
-          }
-          return largest;
-        });
-
+  @visibleForTesting
+  static String? extractFormattedAmount(List<String> lines) {
+    final matchedAmount = _selectAmountCandidate(lines)?.value;
     if (matchedAmount == null) {
       return null;
     }
 
     final hasDecimals = matchedAmount % 1 != 0;
-    final formatter = NumberFormat(
-      hasDecimals ? '#,##0.00' : '#,##0',
-      'en_US',
-    );
+    final formatter = NumberFormat(hasDecimals ? '#,##0.00' : '#,##0', 'en_US');
     return formatter.format(matchedAmount);
   }
 
-  double? _extractLargestAmount(String line) {
+  static _ReceiptAmountCandidate? _selectAmountCandidate(List<String> lines) {
+    final candidates = <_ReceiptAmountCandidate>[];
+
+    for (var index = 0; index < lines.length; index++) {
+      final line = lines[index];
+      final lowerLine = line.toLowerCase();
+      final totalKeywordScore = _totalKeywordScore(lowerLine);
+      final previousKeywordScore = index > 0
+          ? _totalKeywordScore(lines[index - 1].toLowerCase())
+          : 0;
+
+      candidates.addAll(
+        _extractAmountCandidates(
+          line,
+          lineIndex: index,
+          onTotalLine: totalKeywordScore > 0,
+          afterTotalLine: totalKeywordScore == 0 && previousKeywordScore > 0,
+          totalKeywordScore: totalKeywordScore > 0
+              ? totalKeywordScore
+              : previousKeywordScore,
+        ),
+      );
+    }
+
+    if (candidates.isEmpty) {
+      return null;
+    }
+
+    return _pickPreferredCandidate(candidates);
+  }
+
+  static _ReceiptAmountCandidate? _pickPreferredCandidate(
+    List<_ReceiptAmountCandidate> candidates,
+  ) {
+    var preferred = List<_ReceiptAmountCandidate>.from(candidates);
+
+    final onTotalLine = preferred.where((candidate) => candidate.onTotalLine);
+    if (onTotalLine.isNotEmpty) {
+      preferred = onTotalLine.toList();
+    } else {
+      final afterTotalLine = preferred.where(
+        (candidate) => candidate.afterTotalLine,
+      );
+      if (afterTotalLine.isNotEmpty) {
+        preferred = afterTotalLine.toList();
+      }
+    }
+
+    final highestKeywordScore = preferred
+        .map((candidate) => candidate.totalKeywordScore)
+        .fold<int>(0, (highest, score) => score > highest ? score : highest);
+    if (highestKeywordScore > 0) {
+      preferred = preferred
+          .where(
+            (candidate) => candidate.totalKeywordScore == highestKeywordScore,
+          )
+          .toList();
+    }
+
+    final dollarAmounts = preferred.where(
+      (candidate) => candidate.hasDollarSign,
+    );
+    if (dollarAmounts.isNotEmpty) {
+      preferred = dollarAmounts.toList();
+    } else {
+      final currencyTagged = preferred.where(
+        (candidate) => candidate.hasCurrencyMarker,
+      );
+      if (currencyTagged.isNotEmpty) {
+        preferred = currencyTagged.toList();
+      }
+    }
+
+    final nonIdentifierAmounts = preferred.where(
+      (candidate) => !candidate.looksLikeIdentifier,
+    );
+    if (nonIdentifierAmounts.isNotEmpty) {
+      preferred = nonIdentifierAmounts.toList();
+    }
+
+    preferred.sort((left, right) {
+      final valueComparison = right.value.compareTo(left.value);
+      if (valueComparison != 0) {
+        return valueComparison;
+      }
+      return left.lineIndex.compareTo(right.lineIndex);
+    });
+
+    return preferred.first;
+  }
+
+  static List<_ReceiptAmountCandidate> _extractAmountCandidates(
+    String line, {
+    required int lineIndex,
+    required bool onTotalLine,
+    required bool afterTotalLine,
+    required int totalKeywordScore,
+  }) {
     final matches = RegExp(
-      r'(?:(?:cop|usd|eur)\s*)?[$]?\s*\d[\d.,]*',
+      r'(?:(?:cop|col\$|usd|eur)\s*)?[$]?\s*\d[\d.,]*(?:\s*(?:cop|col\$|usd|eur))?',
       caseSensitive: false,
     ).allMatches(line);
 
-    double? largest;
+    final candidates = <_ReceiptAmountCandidate>[];
     for (final match in matches) {
-      final value = _parseAmount(match.group(0));
+      final rawCandidate = match.group(0);
+      final value = _parseAmount(rawCandidate);
       if (value == null) {
         continue;
       }
-      if (largest == null || value > largest) {
-        largest = value;
-      }
+
+      final normalizedRaw = rawCandidate?.toLowerCase() ?? '';
+      candidates.add(
+        _ReceiptAmountCandidate(
+          value: value,
+          lineIndex: lineIndex,
+          hasDollarSign: normalizedRaw.contains(r'$'),
+          hasCurrencyMarker: RegExp(
+            r'(?:cop|col\$|usd|eur|\$)',
+            caseSensitive: false,
+          ).hasMatch(normalizedRaw),
+          looksLikeIdentifier: _looksLikeIdentifierCandidate(
+            rawCandidate ?? '',
+            line,
+          ),
+          onTotalLine: onTotalLine,
+          afterTotalLine: afterTotalLine,
+          totalKeywordScore: totalKeywordScore,
+        ),
+      );
     }
-    return largest;
+
+    return candidates;
   }
 
-  double? _parseAmount(String? rawAmount) {
+  static int _totalKeywordScore(String lowerLine) {
+    for (var index = 0; index < _totalKeywords.length; index++) {
+      if (lowerLine.contains(_totalKeywords[index])) {
+        return _totalKeywords.length - index;
+      }
+    }
+    return 0;
+  }
+
+  static bool _looksLikeIdentifierCandidate(String rawCandidate, String line) {
+    final normalizedLine = line.toLowerCase();
+    if (_identifierKeywords.any(normalizedLine.contains)) {
+      return true;
+    }
+
+    if (RegExp(
+      r'(?:cop|col\$|usd|eur|\$)',
+      caseSensitive: false,
+    ).hasMatch(rawCandidate)) {
+      return false;
+    }
+
+    final digitsOnly = rawCandidate.replaceAll(RegExp(r'\D'), '');
+    final hasSeparator = rawCandidate.contains(RegExp(r'[.,]'));
+    return !hasSeparator && digitsOnly.length >= 8;
+  }
+
+  static double? _parseAmount(String? rawAmount) {
     if (rawAmount == null || rawAmount.isEmpty) {
       return null;
     }
@@ -417,9 +542,7 @@ class ReceiptScanService {
   }
 
   DateTime? _extractTime(List<String> lines) {
-    final timeRegex = RegExp(
-      r'(\d{1,2}:\d{2}(?::\d{2})?\s?(?:am|pm|AM|PM)?)',
-    );
+    final timeRegex = RegExp(r'(\d{1,2}:\d{2}(?::\d{2})?\s?(?:am|pm|AM|PM)?)');
 
     for (final line in lines) {
       final match = timeRegex.firstMatch(line);
@@ -497,7 +620,7 @@ class ReceiptScanService {
     }.contains(extension);
   }
 
-  int _max(int first, int second) => first > second ? first : second;
+  static int _max(int first, int second) => first > second ? first : second;
 }
 
 class _ReceiptMetadata {
@@ -505,4 +628,26 @@ class _ReceiptMetadata {
 
   final DateTime? dateTime;
   final ReceiptScanLocation? location;
+}
+
+class _ReceiptAmountCandidate {
+  const _ReceiptAmountCandidate({
+    required this.value,
+    required this.lineIndex,
+    required this.hasDollarSign,
+    required this.hasCurrencyMarker,
+    required this.looksLikeIdentifier,
+    required this.onTotalLine,
+    required this.afterTotalLine,
+    required this.totalKeywordScore,
+  });
+
+  final double value;
+  final int lineIndex;
+  final bool hasDollarSign;
+  final bool hasCurrencyMarker;
+  final bool looksLikeIdentifier;
+  final bool onTotalLine;
+  final bool afterTotalLine;
+  final int totalKeywordScore;
 }

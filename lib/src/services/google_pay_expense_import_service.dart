@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import 'app_notification_service.dart';
+import 'app_time_format_service.dart';
 import 'auto_categorization_service.dart';
 import 'auth_memory_store.dart';
 import 'google_pay_notification_parser.dart';
@@ -240,16 +241,14 @@ abstract final class GooglePayExpenseImportService {
   }
 
   static DateTime _expenseDateTime(ExpenseModel expense) {
-    final parts = expense.time.split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final parsedTime = AppTimeFormatService.parseHourMinute(expense.time);
 
     return DateTime(
       expense.date.year,
       expense.date.month,
       expense.date.day,
-      hour,
-      minute,
+      parsedTime.hour,
+      parsedTime.minute,
     );
   }
 

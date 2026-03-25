@@ -7,6 +7,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import '../models/label_model.dart';
 import '../models/user_model.dart';
+import 'app_time_format_service.dart';
 import 'auth_memory_store.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
@@ -98,6 +99,27 @@ class CloudSyncService {
 
   final FirebaseFirestore _firestore;
   final LocalStorageService _localStorage = LocalStorageService();
+  static const Map<String, String> _detailLabelPrimaryCategories =
+      <String, String>{
+        'Food': 'Food',
+        'Food Delivery': 'Food',
+        'Groceries': 'Food',
+        'Commute': 'Transport',
+        'Transport': 'Transport',
+        'Learning Materials': 'Services',
+        'University Fees': 'Services',
+        'Personal Care': 'Services',
+        'Rent': 'Services',
+        'Services': 'Services',
+        'Utilities': 'Services',
+        'Entertainment': 'Other',
+        'Gifts': 'Other',
+        'Group Hangouts': 'Other',
+        'Subscriptions': 'Other',
+        'Emergency': 'Other',
+        'Impulse': 'Other',
+        'Owed': 'Other',
+      };
 
   static bool get isSupportedPlatform {
     if (kIsWeb) {
@@ -454,13 +476,21 @@ class CloudSyncService {
 
       final data = document.data();
       final expense = existingExpense ?? ExpenseModel();
+      final detailLabels = _expenseDetailLabelsValue(
+        detailLabels: data['detailLabels'],
+        labelNames: data['labelNames'],
+        fallback: expense.detailLabels,
+      );
       expense
         ..userId = localUserId
         ..name = _stringValue(data['name'], fallback: expense.name)
         ..amount = _doubleValue(data['amount'], fallback: expense.amount)
         ..date = _dateTimeValue(data['date']) ?? expense.date
-        ..time = _stringValue(
-          data['time'],
+        ..time = AppTimeFormatService.to24HourString(
+          _stringValue(
+            data['time'],
+            fallback: expense.time.isNotEmpty ? expense.time : '00:00',
+          ),
           fallback: expense.time.isNotEmpty ? expense.time : '00:00',
         )
         ..latitude = _doubleOrNull(data['latitude'], fallback: expense.latitude)
@@ -500,14 +530,16 @@ class CloudSyncService {
             _dateTimeValue(data['nextOccurrenceDate']) ??
             expense.nextOccurrenceDate
         ..createdAt = _dateTimeValue(data['createdAt']) ?? expense.createdAt
-        ..primaryCategory = _stringOrNull(
-          data['primaryCategory'],
-          fallback: expense.primaryCategory,
-        )
-        ..detailLabels = _stringListValue(
-          data['detailLabels'],
-          fallback: expense.detailLabels,
-        )
+        ..primaryCategory =
+            _normalizePrimaryCategory(
+              _stringOrNull(
+                data['primaryCategory'],
+                fallback: expense.primaryCategory,
+              ),
+            ) ??
+            _derivePrimaryCategoryFromLabels(detailLabels) ??
+            expense.primaryCategory
+        ..detailLabels = detailLabels
         ..isRegretted = _boolValue(
           data['isRegretted'],
           fallback: expense.isRegretted,
@@ -949,7 +981,10 @@ class CloudSyncService {
       'name': expense.name,
       'amount': expense.amount,
       'date': _toEpochMillis(expense.date),
-      'time': expense.time,
+      'time': AppTimeFormatService.to24HourString(
+        expense.time,
+        fallback: expense.time.isNotEmpty ? expense.time : '00:00',
+      ),
       'latitude': expense.latitude,
       'longitude': expense.longitude,
       'locationName': expense.locationName,
@@ -963,6 +998,7 @@ class CloudSyncService {
       'createdAt': _toEpochMillis(expense.createdAt),
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
+      'labelNames': expense.detailLabels,
       'isRegretted': expense.isRegretted,
       'wasAutoCategorized': expense.wasAutoCategorized,
     };
@@ -1004,9 +1040,10 @@ class CloudSyncService {
       'userId': label.userId,
       'firebaseUid': _firebaseUidForEntity(),
       'name': label.name,
+      'category': _derivePrimaryCategoryFromLabels(<String>[label.name]),
       'iconEmoji': label.iconEmoji,
       'colorHex': label.colorHex,
-      'createdAt': label.createdAt,
+      'createdAt': _toEpochMillis(label.createdAt),
       'entityType': 'label',
     };
   }
@@ -1177,6 +1214,26 @@ class CloudSyncService {
         : List<String>.from(fallback, growable: false);
   }
 
+  List<String> _expenseDetailLabelsValue({
+    required Object? detailLabels,
+    required Object? labelNames,
+    List<String>? fallback,
+  }) {
+    final primaryValues = _stringListValue(detailLabels);
+    if (primaryValues.isNotEmpty) {
+      return primaryValues;
+    }
+
+    final legacyValues = _stringListValue(labelNames);
+    if (legacyValues.isNotEmpty) {
+      return legacyValues;
+    }
+
+    return fallback == null
+        ? const <String>[]
+        : List<String>.from(fallback, growable: false);
+  }
+
   DateTime? _dateTimeValue(Object? value) {
     if (value is Timestamp) {
       return value.toDate();
@@ -1202,6 +1259,40 @@ class CloudSyncService {
     }
 
     return DateTime.tryParse(normalized);
+  }
+
+  String? _derivePrimaryCategoryFromLabels(Iterable<String> labels) {
+    for (final label in labels) {
+      final normalizedLabel = label.trim();
+      if (normalizedLabel.isEmpty) {
+        continue;
+      }
+
+      final category = _detailLabelPrimaryCategories[normalizedLabel];
+      if (category != null) {
+        return category;
+      }
+    }
+
+    return labels.any((label) => label.trim().isNotEmpty) ? 'Other' : null;
+  }
+
+  String? _normalizePrimaryCategory(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+
+    switch (trimmed) {
+      case 'Food':
+        return 'Food';
+      case 'Transport':
+        return 'Transport';
+      case 'Services':
+        return 'Services';
+      default:
+        return 'Other';
+    }
   }
 
   String _firebaseUidForEntity() {

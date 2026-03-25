@@ -15,6 +15,7 @@ import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_analytics_service.dart';
+import '../services/app_time_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/daily_budget_service.dart';
 import '../services/expense_moment_service.dart';
@@ -572,16 +573,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   DateTime _expenseDateTime(ExpenseModel expense) {
-    final parts = expense.time.split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final parsedTime = AppTimeFormatService.parseHourMinute(expense.time);
 
     return DateTime(
       expense.date.year,
       expense.date.month,
       expense.date.day,
-      hour,
-      minute,
+      parsedTime.hour,
+      parsedTime.minute,
     );
   }
 }

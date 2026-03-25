@@ -16,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/app_date_format_service.dart';
+import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloudinary_receipt_upload_service.dart';
@@ -250,13 +251,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   TimeOfDay _timeOfDayFromStoredValue(String rawValue) {
-    final parts = rawValue.trim().split(':');
-    final parsedHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final parsedMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-
-    final hour = parsedHour.clamp(0, 23);
-    final minute = parsedMinute.clamp(0, 59);
-    return TimeOfDay(hour: hour, minute: minute);
+    final parsedTime = AppTimeFormatService.parseHourMinute(rawValue);
+    return TimeOfDay(
+      hour: parsedTime.hour.clamp(0, 23),
+      minute: parsedTime.minute.clamp(0, 59),
+    );
   }
 
   ExpenseLocationSelection? _buildLocationSelection({

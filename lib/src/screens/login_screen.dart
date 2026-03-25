@@ -346,16 +346,34 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       resizeToAvoidBottomInset: false,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final mediaQuery = MediaQuery.of(context);
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+          final antHeight = isLandscape
+              ? (constraints.maxHeight * 0.62).clamp(220.0, widget.antHeight)
+              : widget.antHeight;
+          final antLeft = isLandscape ? 8.0 : widget.antLeft;
+          final antBottom = isLandscape ? -18.0 : widget.antBottom;
+          final horizontalPadding = isLandscape ? 28.0 : 38.0;
+          final bottomSpacerFactor = isLandscape
+              ? (widget.showEmail ? 0.12 : 0.16)
+              : (widget.showEmail ? 0.29 : 0.34);
+
           return Stack(
             children: [
               Positioned(
-                left: widget.antLeft,
-                bottom: widget.antBottom,
-                child: AntAsset(widget.antAssetPath, height: widget.antHeight),
+                left: antLeft,
+                bottom: antBottom,
+                child: AntAsset(widget.antAssetPath, height: antHeight),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 38),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    0,
+                    horizontalPadding +
+                        (isLandscape ? mediaQuery.viewPadding.right : 0),
+                    0,
+                  ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: constraints.maxHeight,
@@ -456,9 +474,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                           ],
                         ),
                         SizedBox(
-                          height:
-                              constraints.maxHeight *
-                              (widget.showEmail ? 0.29 : 0.34),
+                          height: constraints.maxHeight * bottomSpacerFactor,
                         ),
                       ],
                     ),

@@ -170,6 +170,19 @@ class _SpendAntAppState extends State<SpendAntApp> {
       title: 'SpendAnt',
       theme: SpendAntTheme.light(),
       navigatorKey: AppNavigationService.navigatorKey,
+      builder: (context, child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+
+        return SafeArea(
+          left: true,
+          right: true,
+          top: false,
+          bottom: false,
+          child: child,
+        );
+      },
       initialRoute: AppRoutes.onboarding,
       routes: {
         AppRoutes.onboarding: (_) => const OnboardingScreen(),

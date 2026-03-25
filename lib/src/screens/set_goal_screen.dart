@@ -537,100 +537,119 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   Widget _buildProfileView() {
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
-          decoration: const BoxDecoration(
-            color: AppPalette.green,
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(30),
-              bottomRight: Radius.circular(30),
-            ),
-          ),
-          child: Column(
-            children: [
-              Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompactHeight = constraints.maxHeight < 760;
+        final antHeight = isCompactHeight ? 170.0 : 250.0;
+        final topPadding = isCompactHeight ? 20.0 : 30.0;
+
+        final content = Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
+              decoration: const BoxDecoration(
+                color: AppPalette.green,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
+              ),
+              child: Column(
                 children: [
-                  const SizedBox(width: 32, height: 32),
-                  Expanded(
-                    child: Text(
-                      'Profile',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
+                  Row(
+                    children: [
+                      const SizedBox(width: 32, height: 32),
+                      Expanded(
+                        child: Text(
+                          'Profile',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.nunito(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: AppPalette.ink,
+                          ),
+                        ),
                       ),
+                      IconButton(
+                        onPressed: _openProfileEditor,
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundColor: const Color(0xFFFFCCBB),
+                    backgroundImage: _profileAvatarBytes != null
+                        ? MemoryImage(_profileAvatarBytes!)
+                        : null,
+                    child: _profileAvatarBytes == null
+                        ? const Icon(
+                            Icons.person,
+                            color: Color(0xFFFF9999),
+                            size: 45,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _profileName,
+                    style: GoogleFonts.nunito(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  IconButton(
-                    onPressed: _openProfileEditor,
-                    icon: const Icon(
-                      Icons.edit_outlined,
-                      color: AppPalette.ink,
+                  Text(
+                    _profileHandle,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      color: Colors.black54,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: const Color(0xFFFFCCBB),
-                backgroundImage: _profileAvatarBytes != null
-                    ? MemoryImage(_profileAvatarBytes!)
-                    : null,
-                child: _profileAvatarBytes == null
-                    ? const Icon(
-                        Icons.person,
-                        color: Color(0xFFFF9999),
-                        size: 45,
-                      )
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _profileName,
-                style: GoogleFonts.nunito(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
+            ),
+            SizedBox(height: topPadding),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _profileActionButton(
+                  'Income',
+                  assetPath: 'web/icons/IncomeWhite.svg',
+                  isIncomeBtn: true,
                 ),
-              ),
-              Text(
-                _profileHandle,
-                style: GoogleFonts.nunito(fontSize: 14, color: Colors.black54),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 30),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _profileActionButton(
-              'Income',
-              assetPath: 'web/icons/IncomeWhite.svg',
-              isIncomeBtn: true,
+                const SizedBox(width: 16),
+                _profileActionButton(
+                  'Goals',
+                  icon: Icons.flag_outlined,
+                  isGoalBtn: true,
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            _profileActionButton(
-              'Goals',
-              icon: Icons.flag_outlined,
-              isGoalBtn: true,
+            SizedBox(height: isCompactHeight ? 24 : 36),
+            Center(
+              child: SizedBox(
+                width: isCompactHeight ? 150 : 200,
+                height: antHeight,
+                child: const AntAsset('web/ant/ant_idle.svg'),
+              ),
             ),
+            const SizedBox(height: 20),
           ],
-        ),
-        const Spacer(),
-        const Center(
-          child: SizedBox(
-            width: 200,
-            height: 250,
-            child: AntAsset('web/ant/ant_idle.svg'),
+        );
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: content,
           ),
-        ),
-        const SizedBox(height: 20),
-      ],
+        );
+      },
     );
   }
 

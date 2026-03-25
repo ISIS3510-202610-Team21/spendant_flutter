@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
@@ -32,8 +33,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static const Duration _exitConfirmWindow = Duration(seconds: 2);
 
   bool _hasUnreadNotifications = true;
+  DateTime? _lastBackPressAt;
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<GoalModel>> _goalsListenable;
   late final ValueListenable<Box<AppNotificationModel>>
@@ -103,6 +106,67 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Log out?'),
+          content: const Text(
+            'You will return to the onboarding screen and this session will be closed on this device.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Log out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout != true || !mounted) {
+      return;
+    }
+
+    await AuthMemoryStore.clearSession();
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+  }
+
+  Future<void> _handleBackPressed() async {
+    final now = DateTime.now();
+    final previousBackPress = _lastBackPressAt;
+    if (previousBackPress != null &&
+        now.difference(previousBackPress) <= _exitConfirmWindow) {
+      await SystemNavigator.pop();
+      return;
+    }
+
+    _lastBackPressAt = now;
+    if (!mounted) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Press back again to exit SpendAnt.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final homeDependencies = Listenable.merge(<Listenable>[
@@ -113,14 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
+      onPopInvokedWithResult: (didPop, _) async {
         if (didPop) {
           return;
         }
 
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+        await _handleBackPressed();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -311,6 +373,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                   ],
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: InkWell(
+              onTap: _handleLogout,
+              borderRadius: BorderRadius.circular(999),
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(
+                  Icons.logout_rounded,
+                  color: AppPalette.ink,
+                  size: 26,
                 ),
               ),
             ),

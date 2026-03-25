@@ -476,6 +476,10 @@ class CloudSyncService {
 
       final data = document.data();
       final expense = existingExpense ?? ExpenseModel();
+      final remoteIsRecurring = _boolValue(
+        data['isRecurring'],
+        fallback: expense.isRecurring,
+      );
       final detailLabels = _expenseDetailLabelsValue(
         detailLabels: data['detailLabels'],
         labelNames: data['labelNames'],
@@ -514,10 +518,7 @@ class CloudSyncService {
           data['isPendingCategory'],
           fallback: expense.isPendingCategory,
         )
-        ..isRecurring = _boolValue(
-          data['isRecurring'],
-          fallback: expense.isRecurring,
-        )
+        ..isRecurring = remoteIsRecurring
         ..recurrenceInterval = _intOrNull(
           data['recurrenceInterval'],
           fallback: expense.recurrenceInterval,
@@ -540,10 +541,9 @@ class CloudSyncService {
             _derivePrimaryCategoryFromLabels(detailLabels) ??
             expense.primaryCategory
         ..detailLabels = detailLabels
-        ..isRegretted = _boolValue(
-          data['isRegretted'],
-          fallback: expense.isRegretted,
-        )
+        ..isRegretted = data.containsKey('isRegretted')
+            ? _boolValue(data['isRegretted'], fallback: expense.isRegretted)
+            : remoteIsRecurring
         ..wasAutoCategorized = _boolValue(
           data['wasAutoCategorized'],
           fallback: expense.wasAutoCategorized,
@@ -991,7 +991,7 @@ class CloudSyncService {
       'source': expense.source,
       'receiptImagePath': expense.receiptImagePath,
       'isPendingCategory': expense.isPendingCategory,
-      'isRecurring': expense.isRecurring,
+      'isRecurring': expense.isRecurring || expense.isRegretted,
       'recurrenceInterval': expense.recurrenceInterval,
       'recurrenceUnit': expense.recurrenceUnit,
       'nextOccurrenceDate': _toEpochMillis(expense.nextOccurrenceDate),

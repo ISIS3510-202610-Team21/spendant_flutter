@@ -1,7 +1,5 @@
 abstract final class AppTimeFormatService {
-  static final RegExp _timePattern = RegExp(
-    r'^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?$',
-  );
+  static final RegExp _timePattern = RegExp(r'^(\d{1,2}):(\d{2})(.*)$');
 
   static ({int hour, int minute})? tryParseHourMinute(String rawValue) {
     final normalized = rawValue.trim();
@@ -16,19 +14,24 @@ abstract final class AppTimeFormatService {
 
     final parsedHour = int.tryParse(match.group(1)!);
     final parsedMinute = int.tryParse(match.group(2)!);
-    final meridiem = match.group(3)?.toUpperCase();
+    final meridiem = match
+        .group(3)
+        ?.replaceAll(RegExp(r'[^A-Za-z]'), '')
+        .toLowerCase();
     if (parsedHour == null || parsedMinute == null || parsedMinute > 59) {
       return null;
     }
 
-    if (meridiem != null) {
+    if (meridiem != null && meridiem.isNotEmpty) {
       if (parsedHour < 1 || parsedHour > 12) {
         return null;
       }
 
       var normalizedHour = parsedHour % 12;
-      if (meridiem == 'PM') {
+      if (meridiem.startsWith('p')) {
         normalizedHour += 12;
+      } else if (!meridiem.startsWith('a')) {
+        return null;
       }
       return (hour: normalizedHour, minute: parsedMinute);
     }

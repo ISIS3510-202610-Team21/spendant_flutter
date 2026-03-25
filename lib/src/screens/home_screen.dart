@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -12,8 +13,9 @@ import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
-import '../services/auth_memory_store.dart';
 import '../services/app_date_format_service.dart';
+import '../services/app_analytics_service.dart';
+import '../services/auth_memory_store.dart';
 import '../services/daily_budget_service.dart';
 import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
@@ -57,6 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _goalsListenable.addListener(_handleNotificationSourcesChanged);
     _notificationsListenable.addListener(_handleNotificationSourcesChanged);
     _loadUnreadNotifications();
+    unawaited(
+      AppAnalyticsService.instance.logAllBusinessQuestions(
+        userId: _currentUserId,
+      ),
+    );
   }
 
   @override

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_notification_model.dart';
 import 'app_navigation_service.dart';
@@ -24,6 +25,7 @@ abstract final class LocalNotificationService {
   static AppRedirect? _launchRedirect;
   static bool _isInitialized = false;
   static Future<void>? _initializing;
+  static Future<bool>? _permissionRequest;
 
   static Future<void> initialize() async {
     final runningInitialization = _initializing;
@@ -60,7 +62,6 @@ abstract final class LocalNotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidImplementation?.createNotificationChannel(_androidChannel);
-    await androidImplementation?.requestNotificationsPermission();
 
     final launchDetails = await _plugin.getNotificationAppLaunchDetails();
     if (launchDetails?.didNotificationLaunchApp ?? false) {
@@ -78,6 +79,30 @@ abstract final class LocalNotificationService {
     return redirect;
   }
 
+  static Future<bool> ensurePermission({bool promptIfNeeded = false}) async {
+    if (kIsWeb) {
+      return false;
+    }
+
+    final currentRequest = _permissionRequest;
+    if (currentRequest != null) {
+      return currentRequest;
+    }
+
+    final requestFuture = _ensurePermissionInternal(
+      promptIfNeeded: promptIfNeeded,
+    );
+    _permissionRequest = requestFuture;
+
+    try {
+      return await requestFuture;
+    } finally {
+      if (identical(_permissionRequest, requestFuture)) {
+        _permissionRequest = null;
+      }
+    }
+  }
+
   static Future<void> showTrackedNotification(
     AppNotificationModel notification,
   ) async {
@@ -91,6 +116,14 @@ abstract final class LocalNotificationService {
         debugPrintStack(stackTrace: stackTrace);
         return;
       }
+    }
+
+    final hasPermission = await ensurePermission(promptIfNeeded: true);
+    if (!hasPermission) {
+      debugPrint(
+        'LocalNotificationService.showTrackedNotification skipped: notification permission not granted.',
+      );
+      return;
     }
 
     final routeName = notification.routeName;
@@ -161,5 +194,26 @@ abstract final class LocalNotificationService {
     } catch (_) {
       return null;
     }
+  }
+
+  static Future<bool> _ensurePermissionInternal({
+    required bool promptIfNeeded,
+  }) async {
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return true;
+    }
+
+    var status = await Permission.notification.status;
+    if (status.isGranted || status.isLimited || status.isProvisional) {
+      return true;
+    }
+
+    if (!promptIfNeeded || status.isPermanentlyDenied || status.isRestricted) {
+      return false;
+    }
+
+    status = await Permission.notification.request();
+    return status.isGranted || status.isLimited || status.isProvisional;
   }
 }

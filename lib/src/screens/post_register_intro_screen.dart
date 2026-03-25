@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
 import '../services/calendar_availability_service.dart';
+import '../services/local_notification_service.dart';
 import '../services/notification_reader_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -101,19 +102,23 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    final status = await Permission.notification.request();
+    final alreadyGranted = await LocalNotificationService.ensurePermission();
+    final grantedNow = alreadyGranted
+        ? true
+        : await LocalNotificationService.ensurePermission(promptIfNeeded: true);
     if (!mounted) {
       return;
     }
 
-    if (status.isPermanentlyDenied || status.isRestricted) {
+    final status = await Permission.notification.status;
+    if (!grantedNow && (status.isPermanentlyDenied || status.isRestricted)) {
       await _showInfoDialog(
         'SpendAnt alerts are blocked right now. You can enable them later from system settings.',
       );
       return;
     }
 
-    if (!status.isGranted && !status.isLimited) {
+    if (!grantedNow) {
       await _showInfoDialog(
         'SpendAnt alert notifications were not enabled on this device.',
       );

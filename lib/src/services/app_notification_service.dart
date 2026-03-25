@@ -94,26 +94,32 @@ abstract final class AppNotificationService {
     final incomes = LocalStorageService.incomeBox.values
         .where((income) => income.userId == _currentUserId)
         .toList();
+    final goalStates = DailyBudgetService.buildGoalStates(
+      goals: goals,
+      incomes: incomes,
+      expenses: expenses,
+      now: now,
+    );
 
-    for (final goal in goals) {
-      final halfwaySignalId = _goalSignalId(goal, '50');
-      if (_goalProgress(goal) >= 0.5 &&
+    for (final goalState in goalStates) {
+      final halfwaySignalId = _goalSignalId(goalState.goal, '50');
+      if (_goalProgress(goalState) >= 0.5 &&
           !trackedSignals.contains(halfwaySignalId)) {
         trackedSignals.add(halfwaySignalId);
         shouldPersistTrackedSignals = true;
         await _upsertNotification(
-          _buildGoalHalfwayNotification(goal, now: now),
+          _buildGoalHalfwayNotification(goalState, now: now),
           notifySystem: true,
         );
       }
 
-      final completedSignalId = _goalSignalId(goal, '100');
-      if (_goalProgress(goal) >= 1 &&
+      final completedSignalId = _goalSignalId(goalState.goal, '100');
+      if (_goalProgress(goalState) >= 1 &&
           !trackedSignals.contains(completedSignalId)) {
         trackedSignals.add(completedSignalId);
         shouldPersistTrackedSignals = true;
         await _upsertNotification(
-          _buildGoalAchievedNotification(goal, now: now),
+          _buildGoalAchievedNotification(goalState, now: now),
           notifySystem: true,
         );
       }
@@ -228,13 +234,19 @@ abstract final class AppNotificationService {
     final incomes = LocalStorageService.incomeBox.values.where(
       (income) => income.userId == _currentUserId,
     );
-    for (final goal in goals) {
-      final progress = _goalProgress(goal);
+    final goalStates = DailyBudgetService.buildGoalStates(
+      goals: goals,
+      incomes: incomes,
+      expenses: expenses,
+      now: now,
+    );
+    for (final goalState in goalStates) {
+      final progress = _goalProgress(goalState);
       if (progress >= 0.5) {
-        trackedSignals.add(_goalSignalId(goal, '50'));
+        trackedSignals.add(_goalSignalId(goalState.goal, '50'));
       }
       if (progress >= 1) {
-        trackedSignals.add(_goalSignalId(goal, '100'));
+        trackedSignals.add(_goalSignalId(goalState.goal, '100'));
       }
     }
     for (final income in incomes) {
@@ -261,12 +273,8 @@ abstract final class AppNotificationService {
     return trackedSignals;
   }
 
-  static double _goalProgress(GoalModel goal) {
-    if (goal.targetAmount <= 0) {
-      return 0;
-    }
-
-    return (goal.currentAmount / goal.targetAmount).clamp(0.0, 1.0);
+  static double _goalProgress(GoalComputedState goalState) {
+    return goalState.progress;
   }
 
   static String _goalSignalId(GoalModel goal, String milestone) {
@@ -349,9 +357,10 @@ abstract final class AppNotificationService {
   }
 
   static AppNotificationModel _buildGoalHalfwayNotification(
-    GoalModel goal, {
+    GoalComputedState goalState, {
     required DateTime now,
   }) {
+    final goal = goalState.goal;
     return AppNotificationModel()
       ..id = _goalNotificationId(goal, '50')
       ..type = AppNotificationTypes.goalHalfway
@@ -359,18 +368,19 @@ abstract final class AppNotificationService {
       ..userId = _currentUserId
       ..title = 'Goal at 50%'
       ..subtitle = goal.name
-      ..amount = goal.currentAmount
+      ..amount = goalState.currentAmount
       ..detailTitle = 'Halfway there'
       ..detailMessage =
-          'Your goal ${goal.name} already reached 50%. You have saved COP ${_currencyFormat.format(goal.currentAmount.round())} out of COP ${_currencyFormat.format(goal.targetAmount.round())}.'
+          'Your goal ${goal.name} already reached 50%. You have saved COP ${_currencyFormat.format(goalState.currentAmount.round())} out of COP ${_currencyFormat.format(goal.targetAmount.round())}.'
       ..routeName = _goalRouteName
       ..routeArgumentInt = 1;
   }
 
   static AppNotificationModel _buildGoalAchievedNotification(
-    GoalModel goal, {
+    GoalComputedState goalState, {
     required DateTime now,
   }) {
+    final goal = goalState.goal;
     return AppNotificationModel()
       ..id = _goalNotificationId(goal, '100')
       ..type = AppNotificationTypes.goalAchieved
@@ -614,6 +624,17 @@ abstract final class AppNotificationService {
       _buildIncomeCreatedNotification(income, now: DateTime.now()),
       notifySystem: true,
     );
+  }
+
+  static Future<void> deliverNotification(
+    AppNotificationModel notification, {
+    bool notifySystem = true,
+  }) async {
+    if (_currentUserId < 0 || notification.userId != _currentUserId) {
+      return;
+    }
+
+    await _upsertNotification(notification, notifySystem: notifySystem);
   }
 
   static Future<void> _upsertNotification(

@@ -5,11 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
+import 'app_notification_service.dart';
 import 'auto_categorization_service.dart';
 import 'auth_memory_store.dart';
 import 'google_pay_notification_parser.dart';
 import 'local_storage_service.dart';
-import 'local_notification_service.dart';
 import 'notification_reader_service.dart';
 
 enum GooglePayImportStatus { imported, duplicate, ignored, unavailable }
@@ -286,7 +286,7 @@ abstract final class GooglePayExpenseImportService {
       ..detailMessage =
           'SpendAnt could not categorize ${expense.name} automatically. Open Notifications and add a label.'
       ..routeName = '/notifications';
-    await LocalNotificationService.showTrackedNotification(notification);
+    await AppNotificationService.deliverNotification(notification);
   }
 }
 

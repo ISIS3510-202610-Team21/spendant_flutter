@@ -224,6 +224,11 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   DailyBudgetSummary _budgetSummary() {
     return DailyBudgetService.buildSummaryForUser(_currentUserId);
   }
+  double _goalCurrentAmount(GoalModel goal, {DailyBudgetSummary? summary}) {
+    final resolvedSummary = summary ?? _budgetSummary();
+    final goalState = resolvedSummary.stateFor(goal);
+    return goalState?.currentAmount ?? goal.currentAmount;
+  }
 
   GoalBudgetValidationResult? _goalValidation() {
     final amount = _parsedGoalAmount();
@@ -242,15 +247,16 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     }
 
     final summary = _budgetSummary();
-    final currentGoalDailyCommitment = DailyBudgetService.dailyGoalContribution(
-      editingGoal,
-    );
+    final currentGoalAmount = _goalCurrentAmount(editingGoal, summary: summary);
+    final currentGoalDailyCommitment =
+        summary.stateFor(editingGoal)?.dailyContribution ??
+        DailyBudgetService.dailyGoalContribution(editingGoal);
     final editedDailyGoalAmount =
         DailyBudgetService.projectedGoalDailyContribution(
           targetAmount: amount,
-          currentAmount: editingGoal.currentAmount,
+          currentAmount: currentGoalAmount,
           deadline: _goalDeadline,
-          isCompleted: editingGoal.currentAmount >= amount,
+          isCompleted: currentGoalAmount >= amount,
         );
     final remainingGoalsCommitment =
         summary.totalGoalDailyCommitment - currentGoalDailyCommitment;
@@ -400,12 +406,18 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         await LocalStorageService().saveGoal(goal);
         createdGoal = goal;
       } else {
+        final currentGoalAmount = _goalCurrentAmount(editingGoal);
+        final updatedCurrentAmount = currentGoalAmount > amount
+            ? amount
+            : currentGoalAmount;
         editingGoal
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..targetAmount = amount
+          ..currentAmount = updatedCurrentAmount
           ..deadline = _goalDeadline
-          ..isCompleted = editingGoal.currentAmount >= amount
+          ..isCompleted = updatedCurrentAmount >= amount
+          ..createdAt = DateTime.now()
           ..isSynced = false;
         await editingGoal.save();
       }
@@ -689,16 +701,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           child: AnimatedBuilder(
             animation: budgetDependencies,
             builder: (context, _) {
-              final box = LocalStorageService.goalBox;
-              final goals =
-                  box.values
-                      .where((goal) => goal.userId == _currentUserId)
-                      .toList()
-                    ..sort(
-                      (left, right) =>
-                          right.createdAt.compareTo(left.createdAt),
-                    );
               final summary = _budgetSummary();
+              final goalStates = summary.goalStates.toList()
+                ..sort(
+                  (left, right) =>
+                      right.goal.createdAt.compareTo(left.goal.createdAt),
+                );
               final canCreateGoal = summary.hasIncome;
 
               return ListView(
@@ -718,12 +726,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                     ),
                     const SizedBox(height: 14),
                   ],
-                  if (goals.isEmpty) const _EmptyGoalsCard(),
-                  for (final goal in goals)
+                  if (goalStates.isEmpty) const _EmptyGoalsCard(),
+                  for (final goalState in goalStates)
                     _GoalTile(
-                      goal: goal,
-                      onDelete: () => _confirmDeleteGoal(goal),
-                      onEdit: () => _startGoalSetup(goal: goal),
+                      goalState: goalState,
+                      onDelete: () => _confirmDeleteGoal(goalState.goal),
+                      onEdit: () => _startGoalSetup(goal: goalState.goal),
                     ),
                   const SizedBox(height: 30),
                   ElevatedButton(
@@ -1029,20 +1037,21 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
-    required this.goal,
+    required this.goalState,
     required this.onDelete,
     required this.onEdit,
   });
 
-  final GoalModel goal;
+  final GoalComputedState goalState;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final progress = goal.getProgressPercent() / 100;
+    final goal = goalState.goal;
+    final progress = goalState.progress;
     final widthFactor = progress.clamp(0.0, 1.0).toDouble();
-    final dailyReserve = DailyBudgetService.dailyGoalContribution(goal);
+    final dailyReserve = goalState.dailyContribution;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -1091,7 +1100,7 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goal.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
+                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goalState.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1127,7 +1136,7 @@ class _GoalTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${goal.getProgressPercent()}%',
+                '${goalState.progressPercent}%',
                 style: GoogleFonts.nunito(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,

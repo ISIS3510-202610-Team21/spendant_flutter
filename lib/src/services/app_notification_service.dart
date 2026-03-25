@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
+import 'app_date_format_service.dart';
 import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
 import 'expense_moment_service.dart';
@@ -429,7 +430,7 @@ abstract final class AppNotificationService {
       ..amount = income.amount
       ..detailTitle = 'Income arrived'
       ..detailMessage =
-          'Your recurring income ${income.name} reached its next cycle on ${DateFormat('d/M/y').format(dueOccurrence)}. Review Budget and Income to plan around it.'
+          'Your recurring income ${income.name} reached its next cycle on ${AppDateFormatService.longDate(dueOccurrence)}. Review Budget and Income to plan around it.'
       ..routeName = _budgetRouteName;
   }
 

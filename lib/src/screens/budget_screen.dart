@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
+import '../services/app_date_format_service.dart';
 import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
@@ -275,7 +276,7 @@ class _IncomeCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Starts ${DateFormat('d/M/y').format(income.startDate)}',
+                  'Starts ${AppDateFormatService.longDate(income.startDate)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -901,7 +902,7 @@ class _DateRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Text(
-              DateFormat('d/MM/yyyy').format(date),
+              AppDateFormatService.longDate(date),
               style: GoogleFonts.nunito(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,

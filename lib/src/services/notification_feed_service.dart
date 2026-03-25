@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
+import 'app_date_format_service.dart';
 import 'auth_memory_store.dart';
 import 'expense_moment_service.dart';
 import '../theme/expense_visuals.dart';
@@ -185,7 +186,7 @@ abstract final class NotificationFeedService {
       return 'Yesterday, ${DateFormat('HH:mm').format(timestamp)}';
     }
 
-    return DateFormat('d/M/y, HH:mm').format(timestamp);
+    return AppDateFormatService.longDateWithTime(timestamp);
   }
 
   static bool isToday(DateTime value, {DateTime? now}) {

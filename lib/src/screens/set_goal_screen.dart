@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../../app.dart';
 import '../models/goal_model.dart';
 import '../services/app_notification_service.dart';
+import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
@@ -224,6 +225,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   DailyBudgetSummary _budgetSummary() {
     return DailyBudgetService.buildSummaryForUser(_currentUserId);
   }
+
   double _goalCurrentAmount(GoalModel goal, {DailyBudgetSummary? summary}) {
     final resolvedSummary = summary ?? _budgetSummary();
     final goalState = resolvedSummary.stateFor(goal);
@@ -866,7 +868,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${DateFormat('d/M/y').format(_goalDeadline)}.',
+              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 16,
@@ -1022,7 +1024,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(
-          DateFormat('d/M/y').format(_goalDeadline),
+          AppDateFormatService.longDate(_goalDeadline),
           style: GoogleFonts.nunito(
             fontSize: 18,
             fontWeight: FontWeight.w800,
@@ -1091,7 +1093,7 @@ class _GoalTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Deadline: ${DateFormat('d/M/y').format(goal.deadline)}',
+                  'Deadline: ${AppDateFormatService.longDate(goal.deadline)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,

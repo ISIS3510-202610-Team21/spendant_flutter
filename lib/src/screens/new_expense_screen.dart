@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/app_date_format_service.dart';
 import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloudinary_receipt_upload_service.dart';
@@ -1382,7 +1383,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     Expanded(
                       child: _MetaChip(
                         icon: Icons.calendar_today_outlined,
-                        label: DateFormat('d/M/y').format(_selectedDate),
+                        label: AppDateFormatService.longDate(_selectedDate),
                         onTap: _pickDate,
                       ),
                     ),

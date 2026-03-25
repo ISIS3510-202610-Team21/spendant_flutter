@@ -12,6 +12,7 @@ import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../services/auth_memory_store.dart';
+import '../services/app_date_format_service.dart';
 import '../services/daily_budget_service.dart';
 import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
@@ -445,7 +446,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Tomorrow Expenses';
     }
     if (date.isAfter(today)) {
-      return '${DateFormat('d/M/y').format(date)} Expenses';
+      return '${AppDateFormatService.longDate(date)} Expenses';
     }
 
     final daysDifference = today.difference(date).inDays;
@@ -453,7 +454,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return '${DateFormat('EEEE').format(date)} Expenses';
     }
 
-    return '${DateFormat('d/M/y').format(date)} Expenses';
+    return '${AppDateFormatService.longDate(date)} Expenses';
   }
 
   int _compareExpenseGroupDates(DateTime left, DateTime right) {

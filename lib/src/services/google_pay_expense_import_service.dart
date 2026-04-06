@@ -9,8 +9,8 @@ import 'app_notification_service.dart';
 import 'app_time_format_service.dart';
 import 'auto_categorization_service.dart';
 import 'auth_memory_store.dart';
-import 'google_pay_notification_parser.dart';
 import 'local_storage_service.dart';
+import 'notification_expense_parser.dart';
 import 'notification_reader_service.dart';
 
 enum GooglePayImportStatus { imported, duplicate, ignored, unavailable }
@@ -19,14 +19,14 @@ class GooglePayImportResult {
   const GooglePayImportResult({required this.status, this.expense});
 
   final GooglePayImportStatus status;
-  final ParsedGooglePayExpense? expense;
+  final ParsedNotificationExpense? expense;
 
   bool get imported => status == GooglePayImportStatus.imported;
 }
 
 abstract final class GooglePayExpenseImportService {
   static const String _processedEventIdsKey =
-      'processed_google_pay_notification_event_ids_v1';
+      'processed_notification_expense_event_ids_v2';
   static const int _maxProcessedEventIds = 240;
   static final NumberFormat _titleAmountFormat = NumberFormat('#,###', 'es_CO');
   static final NumberFormat _bodyAmountFormat = NumberFormat(
@@ -147,7 +147,7 @@ abstract final class GooglePayExpenseImportService {
       );
     }
 
-    final parsedExpense = GooglePayNotificationParser.parse(event);
+    final parsedExpense = NotificationExpenseParser.parse(event);
     if (parsedExpense == null) {
       return const GooglePayImportResult(status: GooglePayImportStatus.ignored);
     }
@@ -190,7 +190,8 @@ abstract final class GooglePayExpenseImportService {
       ..date = expenseDate
       ..time =
           '${parsedExpense.dateTime.hour.toString().padLeft(2, '0')}:${parsedExpense.dateTime.minute.toString().padLeft(2, '0')}'
-      ..source = 'GOOGLE_PAY'
+      ..source = parsedExpense.source
+      ..locationName = parsedExpense.locationName
       ..isPendingCategory = !categorization.assigned
       ..createdAt = parsedExpense.dateTime
       ..primaryCategory = categorization.primaryCategory
@@ -214,13 +215,12 @@ abstract final class GooglePayExpenseImportService {
     await _importEvent(event);
   }
 
-  static bool _hasMatchingImportedExpense(ParsedGooglePayExpense candidate) {
+  static bool _hasMatchingImportedExpense(ParsedNotificationExpense candidate) {
     for (final expense in LocalStorageService.expenseBox.values) {
-      if (expense.source != 'GOOGLE_PAY') {
+      if (expense.userId != _currentUserId) {
         continue;
       }
-      if (expense.name.trim().toLowerCase() !=
-          candidate.name.trim().toLowerCase()) {
+      if (!_merchantNamesLikelyMatch(expense.name, candidate.name)) {
         continue;
       }
       if ((expense.amount - candidate.amount).abs() > 0.01) {
@@ -232,12 +232,37 @@ abstract final class GooglePayExpenseImportService {
           .difference(candidate.dateTime)
           .inMinutes
           .abs();
-      if (minuteDifference <= 2) {
+      if (minuteDifference <= 5) {
         return true;
       }
     }
 
     return false;
+  }
+
+  static bool _merchantNamesLikelyMatch(String left, String right) {
+    final normalizedLeft = _normalizeMerchantName(left);
+    final normalizedRight = _normalizeMerchantName(right);
+    if (normalizedLeft.isEmpty || normalizedRight.isEmpty) {
+      return false;
+    }
+
+    return normalizedLeft == normalizedRight ||
+        normalizedLeft.contains(normalizedRight) ||
+        normalizedRight.contains(normalizedLeft);
+  }
+
+  static String _normalizeMerchantName(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(
+          RegExp(
+            r'\b(?:compra|pagaste|pago|transaccion|transacción|aprobada|aprobado|bold|nequi|gmail|google|pay|wallet)\b',
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
   }
 
   static DateTime _expenseDateTime(ExpenseModel expense) {

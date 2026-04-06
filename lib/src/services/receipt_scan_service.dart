@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:exif/exif.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
@@ -55,9 +53,33 @@ class ReceiptScanService {
     'valor total',
     'grand total',
     'amount due',
+    'tctal',
+    'tctal:',
     'amount',
     'total:',
     'total',
+  ];
+
+  static const List<String> _paymentKeywords = <String>[
+    'pago',
+    'pagado',
+    'paga con',
+    'efectivo',
+    'cash',
+    'recibido',
+    'recibe',
+    'cambio',
+    'vuelto',
+    'change',
+  ];
+
+  static const List<String> _addressLabels = <String>[
+    'direccion',
+    'dirección',
+    'dir',
+    'direc',
+    'ubicacion',
+    'ubicación',
   ];
 
   static const List<String> _identifierKeywords = <String>[
@@ -297,9 +319,9 @@ class ReceiptScanService {
       return null;
     }
 
-    final hasDecimals = matchedAmount % 1 != 0;
-    final formatter = NumberFormat(hasDecimals ? '#,##0.00' : '#,##0', 'en_US');
-    return formatter.format(matchedAmount);
+    final roundedAmount = matchedAmount.ceil();
+    final formatter = NumberFormat('#,##0', 'en_US');
+    return formatter.format(roundedAmount);
   }
 
   static _ReceiptAmountCandidate? _selectAmountCandidate(List<String> lines) {
@@ -382,7 +404,35 @@ class ReceiptScanService {
       preferred = nonIdentifierAmounts.toList();
     }
 
+    final nonPaymentAmounts = preferred.where(
+      (candidate) => !candidate.nearPaymentKeyword,
+    );
+    if (nonPaymentAmounts.isNotEmpty) {
+      preferred = nonPaymentAmounts.toList();
+    }
+
+    final candidatesNearTotalKeyword = preferred
+        .where((candidate) => candidate.distanceToTotalKeyword != null)
+        .toList();
+    if (candidatesNearTotalKeyword.isNotEmpty) {
+      final shortestDistance = candidatesNearTotalKeyword
+          .map((candidate) => candidate.distanceToTotalKeyword!)
+          .reduce((left, right) => left < right ? left : right);
+      preferred = candidatesNearTotalKeyword
+          .where(
+            (candidate) => candidate.distanceToTotalKeyword == shortestDistance,
+          )
+          .toList();
+    }
+
     preferred.sort((left, right) {
+      final leftDistance = left.distanceToTotalKeyword ?? 1 << 30;
+      final rightDistance = right.distanceToTotalKeyword ?? 1 << 30;
+      final distanceComparison = leftDistance.compareTo(rightDistance);
+      if (distanceComparison != 0) {
+        return distanceComparison;
+      }
+
       final valueComparison = right.value.compareTo(left.value);
       if (valueComparison != 0) {
         return valueComparison;
@@ -423,6 +473,11 @@ class ReceiptScanService {
             r'(?:cop|col\$|usd|eur|\$)',
             caseSensitive: false,
           ).hasMatch(normalizedRaw),
+          nearPaymentKeyword: _hasNearbyPaymentKeyword(
+            line: line,
+            matchStart: match.start,
+            matchEnd: match.end,
+          ),
           looksLikeIdentifier: _looksLikeIdentifierCandidate(
             rawCandidate ?? '',
             line,
@@ -430,6 +485,11 @@ class ReceiptScanService {
           onTotalLine: onTotalLine,
           afterTotalLine: afterTotalLine,
           totalKeywordScore: totalKeywordScore,
+          distanceToTotalKeyword: _distanceToTotalKeyword(
+            lowerLine: line.toLowerCase(),
+            matchStart: match.start,
+            matchEnd: match.end,
+          ),
         ),
       );
     }
@@ -439,11 +499,20 @@ class ReceiptScanService {
 
   static int _totalKeywordScore(String lowerLine) {
     for (var index = 0; index < _totalKeywords.length; index++) {
-      if (lowerLine.contains(_totalKeywords[index])) {
+      if (_lineContainsKeyword(lowerLine, _totalKeywords[index])) {
         return _totalKeywords.length - index;
       }
     }
     return 0;
+  }
+
+  static bool _lineContainsKeyword(String lowerLine, String keyword) {
+    final escapedKeyword = RegExp.escape(keyword);
+    final pattern = RegExp(
+      '(?<![a-z0-9])$escapedKeyword(?![a-z0-9])',
+      caseSensitive: false,
+    );
+    return pattern.hasMatch(lowerLine);
   }
 
   static bool _looksLikeIdentifierCandidate(String rawCandidate, String line) {
@@ -464,6 +533,50 @@ class ReceiptScanService {
     return !hasSeparator && digitsOnly.length >= 8;
   }
 
+  static bool _hasNearbyPaymentKeyword({
+    required String line,
+    required int matchStart,
+    required int matchEnd,
+  }) {
+    final start = matchStart - 20 < 0 ? 0 : matchStart - 20;
+    final end = matchEnd + 20 > line.length ? line.length : matchEnd + 20;
+    final context = line.substring(start, end).toLowerCase();
+    return _paymentKeywords.any(context.contains);
+  }
+
+  static int? _distanceToTotalKeyword({
+    required String lowerLine,
+    required int matchStart,
+    required int matchEnd,
+  }) {
+    int? bestDistance;
+
+    for (final keyword in _totalKeywords) {
+      var searchStart = 0;
+      while (searchStart < lowerLine.length) {
+        final keywordIndex = lowerLine.indexOf(keyword, searchStart);
+        if (keywordIndex == -1) {
+          break;
+        }
+
+        final keywordEnd = keywordIndex + keyword.length;
+        final distance = keywordEnd <= matchStart
+            ? matchStart - keywordEnd
+            : keywordIndex >= matchEnd
+            ? keywordIndex - matchEnd
+            : 0;
+
+        if (bestDistance == null || distance < bestDistance) {
+          bestDistance = distance;
+        }
+
+        searchStart = keywordIndex + keyword.length;
+      }
+    }
+
+    return bestDistance;
+  }
+
   static double? _parseAmount(String? rawAmount) {
     if (rawAmount == null || rawAmount.isEmpty) {
       return null;
@@ -476,6 +589,26 @@ class ReceiptScanService {
 
     final lastDot = cleaned.lastIndexOf('.');
     final lastComma = cleaned.lastIndexOf(',');
+    final hasDot = lastDot != -1;
+    final hasComma = lastComma != -1;
+
+    if (hasDot && hasComma) {
+      final decimalSeparator = lastDot > lastComma ? '.' : ',';
+      final thousandsSeparator = decimalSeparator == '.' ? ',' : '.';
+      final decimalIndex = decimalSeparator == '.' ? lastDot : lastComma;
+      final decimalDigits = cleaned.length - decimalIndex - 1;
+
+      cleaned = cleaned.replaceAll(thousandsSeparator, '');
+      if (decimalDigits == 1 || decimalDigits == 2) {
+        cleaned = cleaned.replaceFirst(decimalSeparator, '.');
+      } else {
+        cleaned = cleaned.replaceAll(decimalSeparator, '');
+      }
+
+      final parsed = double.tryParse(cleaned);
+      return parsed?.ceilToDouble();
+    }
+
     final lastSeparatorIndex = _max(lastDot, lastComma);
 
     if (lastSeparatorIndex != -1) {
@@ -486,12 +619,15 @@ class ReceiptScanService {
         cleaned = cleaned
             .replaceAll(decimalSeparator == '.' ? ',' : '.', '')
             .replaceFirst(decimalSeparator, '.');
+      } else if (decimalDigits == 3) {
+        cleaned = cleaned.replaceAll(RegExp(r'[,.]'), '');
       } else {
         cleaned = cleaned.replaceAll(RegExp(r'[,.]'), '');
       }
     }
 
-    return double.tryParse(cleaned);
+    final parsed = double.tryParse(cleaned);
+    return parsed?.ceilToDouble();
   }
 
   DateTime? _extractDate(List<String> lines) {
@@ -582,29 +718,83 @@ class ReceiptScanService {
   }
 
   ReceiptScanLocation? _extractLocationFromText(List<String> lines) {
-    final locationKeywords = <String>[
-      'calle',
-      'carrera',
-      'cra',
-      'cl',
-      'av',
-      'avenida',
-      'transversal',
-      'diagonal',
-      'direccion',
-      '#',
-    ];
-
-    for (final line in lines) {
-      final lowerLine = line.toLowerCase();
-      if (!locationKeywords.any(lowerLine.contains)) {
-        continue;
+    for (var index = 0; index < lines.length; index++) {
+      final labeledAddress = _extractLabeledAddress(lines, index);
+      if (labeledAddress != null) {
+        return ReceiptScanLocation(label: labeledAddress);
       }
+    }
 
-      return ReceiptScanLocation(label: line);
+    for (var index = 0; index < lines.length; index++) {
+      if (_looksLikeColombianAddressLine(lines[index])) {
+        final combinedAddress = _combineAddressLines(lines, index);
+        return ReceiptScanLocation(label: combinedAddress);
+      }
     }
 
     return null;
+  }
+
+  String? _extractLabeledAddress(List<String> lines, int index) {
+    final line = lines[index];
+    final lowerLine = line.toLowerCase();
+
+    for (final label in _addressLabels) {
+      final match = RegExp(
+        '^\\s*$label\\s*[:.-]?\\s*(.*)\$',
+        caseSensitive: false,
+      ).firstMatch(lowerLine);
+      if (match == null) {
+        continue;
+      }
+
+      final extracted = line
+          .substring(match.start)
+          .replaceFirst(
+            RegExp('^\\s*$label\\s*[:.-]?\\s*', caseSensitive: false),
+            '',
+          )
+          .trim();
+
+      if (extracted.isNotEmpty && _looksLikeColombianAddressLine(extracted)) {
+        return extracted;
+      }
+
+      if (index + 1 < lines.length &&
+          _looksLikeColombianAddressLine(lines[index + 1])) {
+        return _combineAddressLines(lines, index + 1);
+      }
+    }
+
+    return null;
+  }
+
+  bool _looksLikeColombianAddressLine(String line) {
+    final normalized = line.toLowerCase();
+    return RegExp(
+          r'\b(?:carrera|cra|cr|calle|cl|avenida|av|diagonal|diag|transversal|tv)\b',
+          caseSensitive: false,
+        ).hasMatch(normalized) &&
+        RegExp(r'\d').hasMatch(normalized);
+  }
+
+  String _combineAddressLines(List<String> lines, int startIndex) {
+    final segments = <String>[lines[startIndex]];
+
+    if (startIndex + 1 < lines.length) {
+      final nextLine = lines[startIndex + 1];
+      final lowerNextLine = nextLine.toLowerCase();
+      if (RegExp(
+            r'\b(bogota|bogotá|medellin|medellín|cali|colombia)\b',
+          ).hasMatch(lowerNextLine) ||
+          (!_looksLikeColombianAddressLine(nextLine) &&
+              RegExp(r'[A-Za-z]').hasMatch(nextLine) &&
+              nextLine.length <= 40)) {
+        segments.add(nextLine);
+      }
+    }
+
+    return segments.join(', ');
   }
 
   bool _isPdf(String extension) => extension == '.pdf';
@@ -636,18 +826,22 @@ class _ReceiptAmountCandidate {
     required this.lineIndex,
     required this.hasDollarSign,
     required this.hasCurrencyMarker,
+    required this.nearPaymentKeyword,
     required this.looksLikeIdentifier,
     required this.onTotalLine,
     required this.afterTotalLine,
     required this.totalKeywordScore,
+    required this.distanceToTotalKeyword,
   });
 
   final double value;
   final int lineIndex;
   final bool hasDollarSign;
   final bool hasCurrencyMarker;
+  final bool nearPaymentKeyword;
   final bool looksLikeIdentifier;
   final bool onTotalLine;
   final bool afterTotalLine;
   final int totalKeywordScore;
+  final int? distanceToTotalKeyword;
 }

@@ -17,6 +17,7 @@ import '../services/app_date_format_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auth_memory_store.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
 import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
@@ -112,6 +113,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _refreshHomeFeed() async {
+    if (!CloudSyncService.isSupportedPlatform) {
+      return;
+    }
+
+    await CloudSyncService().syncAllPendingData();
+    await _loadUnreadNotifications();
   }
 
   Future<void> _handleLogout() async {
@@ -239,100 +249,106 @@ class _HomeScreenState extends State<HomeScreen> {
                         current > stat.amount ? current : stat.amount,
                   );
 
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                    children: [
-                      Text(
-                        'Your Budget for today',
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _AmountHeadline(
-                        amount: summary.spendableDailyBudget,
-                        amountColor: AppPalette.green,
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'This month you have spent',
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _AmountHeadline(
-                        amount: monthTotal,
-                        amountColor: AppPalette.expenseRed,
-                        fontSize: 40,
-                      ),
-                      if (categoryStats.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        SizedBox(
-                          height: 260,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final itemCount = categoryStats.length;
-                              const gap = 18.0;
-                              final totalGap = gap * (itemCount - 1);
-                              final availableWidth =
-                                  constraints.maxWidth - totalGap;
-                              final itemWidth = math.min(
-                                110.0,
-                                availableWidth / itemCount,
-                              );
-
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  for (
-                                    var index = 0;
-                                    index < itemCount;
-                                    index++
-                                  ) ...[
-                                    SizedBox(
-                                      width: itemWidth,
-                                      child: _CategoryBarCard(
-                                        stat: categoryStats[index],
-                                        maxAmount: maxCategoryAmount,
-                                      ),
-                                    ),
-                                    if (index < itemCount - 1)
-                                      const SizedBox(width: gap),
-                                  ],
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                      ] else
-                        const SizedBox(height: 22),
-                      if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
-                      for (final group in expenseGroups) ...[
+                  return RefreshIndicator(
+                    onRefresh: _refreshHomeFeed,
+                    color: AppPalette.green,
+                    backgroundColor: Colors.white,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                      children: [
                         Text(
-                          group.title,
+                          'Your Budget for today',
                           style: GoogleFonts.nunito(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                             color: AppPalette.ink,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        for (final entry in group.entries) ...[
-                          _ExpenseListTile(
-                            entry: entry,
-                            onTap: () => _openExpenseDetail(entry.expense),
+                        const SizedBox(height: 6),
+                        _AmountHeadline(
+                          amount: summary.spendableDailyBudget,
+                          amountColor: AppPalette.green,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'This month you have spent',
+                          style: GoogleFonts.nunito(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppPalette.ink,
                           ),
-                          const SizedBox(height: 12),
+                        ),
+                        const SizedBox(height: 6),
+                        _AmountHeadline(
+                          amount: monthTotal,
+                          amountColor: AppPalette.expenseRed,
+                          fontSize: 40,
+                        ),
+                        if (categoryStats.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            height: 260,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final itemCount = categoryStats.length;
+                                const gap = 18.0;
+                                final totalGap = gap * (itemCount - 1);
+                                final availableWidth =
+                                    constraints.maxWidth - totalGap;
+                                final itemWidth = math.min(
+                                  110.0,
+                                  availableWidth / itemCount,
+                                );
+
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < itemCount;
+                                      index++
+                                    ) ...[
+                                      SizedBox(
+                                        width: itemWidth,
+                                        child: _CategoryBarCard(
+                                          stat: categoryStats[index],
+                                          maxAmount: maxCategoryAmount,
+                                        ),
+                                      ),
+                                      if (index < itemCount - 1)
+                                        const SizedBox(width: gap),
+                                    ],
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                        ] else
+                          const SizedBox(height: 22),
+                        if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
+                        for (final group in expenseGroups) ...[
+                          Text(
+                            group.title,
+                            style: GoogleFonts.nunito(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              color: AppPalette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          for (final entry in group.entries) ...[
+                            _ExpenseListTile(
+                              entry: entry,
+                              onTap: () => _openExpenseDetail(entry.expense),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   );
                 },
               ),

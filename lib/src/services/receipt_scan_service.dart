@@ -22,6 +22,8 @@ class ReceiptScanResult {
   const ReceiptScanResult({
     this.name,
     this.formattedAmount,
+    this.amountConfidence,
+    this.detectedAmounts = const <ReceiptDetectedAmount>[],
     this.date,
     this.time,
     this.location,
@@ -30,6 +32,8 @@ class ReceiptScanResult {
 
   final String? name;
   final String? formattedAmount;
+  final String? amountConfidence;
+  final List<ReceiptDetectedAmount> detectedAmounts;
   final DateTime? date;
   final DateTime? time;
   final ReceiptScanLocation? location;
@@ -43,11 +47,54 @@ class ReceiptScanResult {
       location != null;
 }
 
+class ReceiptDetectedAmount {
+  const ReceiptDetectedAmount({
+    required this.rawText,
+    required this.normalizedValue,
+    required this.lineIndex,
+    required this.lineText,
+    required this.score,
+    required this.reasons,
+    this.isSelected = false,
+  });
+
+  final String rawText;
+  final int normalizedValue;
+  final int lineIndex;
+  final String lineText;
+  final int score;
+  final List<String> reasons;
+  final bool isSelected;
+}
+
+class ReceiptAmountAnalysis {
+  const ReceiptAmountAnalysis({
+    this.selected,
+    this.confidence,
+    this.candidates = const <ReceiptDetectedAmount>[],
+  });
+
+  final ReceiptDetectedAmount? selected;
+  final String? confidence;
+  final List<ReceiptDetectedAmount> candidates;
+
+  String? get formattedSelectedAmount {
+    final value = selected?.normalizedValue;
+    if (value == null) {
+      return null;
+    }
+
+    return NumberFormat('#,##0', 'en_US').format(value);
+  }
+}
+
 class ReceiptScanService {
   ReceiptScanService()
     : _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
   static const List<String> _totalKeywords = <String>[
+    'total exacto',
+    'total cop',
     'total a pagar',
     'total pagar',
     'valor total',
@@ -71,6 +118,61 @@ class ReceiptScanService {
     'cambio',
     'vuelto',
     'change',
+    'credito',
+    'debito',
+    'tarjeta',
+    'visa',
+    'mastercard',
+  ];
+
+  static const List<String> _dueKeywords = <String>[
+    'por cobrar',
+    'saldo',
+    'monto a pagar',
+    'a pagar',
+    'pendiente',
+  ];
+
+  static const List<String> _subtotalKeywords = <String>[
+    'subtotal',
+    'sub total',
+    'base',
+  ];
+
+  static const List<String> _taxKeywords = <String>[
+    'iva',
+    'impuesto',
+    'tax',
+    'rete',
+    'retencion',
+    'tasa',
+  ];
+
+  static const List<String> _countKeywords = <String>[
+    'item',
+    'items',
+    'caja',
+    'cajas',
+    'cantidad',
+    'cant',
+    'articulo',
+    'articulos',
+    'unidad',
+    'unidades',
+    'producto',
+    'productos',
+  ];
+
+  static const List<String> _unitKeywords = <String>[
+    '/pc',
+    '/und',
+    '/un',
+    '/u',
+    '/kg',
+    '/g',
+    '/lt',
+    '/ml',
+    '@',
   ];
 
   static const List<String> _addressLabels = <String>[
@@ -86,14 +188,25 @@ class ReceiptScanService {
     'nit',
     'factura',
     'invoice',
+    'ticket',
+    'tiquete',
     'ref',
     'referencia',
+    'codigo',
     'autorizacion',
     'aprobacion',
     'transaccion',
+    'trans',
     'pedido',
     'orden',
     'documento',
+    'cantidad',
+    'cuota',
+    'cuotas',
+    'correlativo',
+    'serie',
+    'doc',
+    'id',
     'terminal',
     'lote',
   ];
@@ -263,10 +376,13 @@ class ReceiptScanService {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
+    final amountAnalysis = analyzeAmounts(lines);
 
     return ReceiptScanResult(
       name: _extractName(lines, fileName),
-      formattedAmount: extractFormattedAmount(lines),
+      formattedAmount: amountAnalysis.formattedSelectedAmount,
+      amountConfidence: amountAnalysis.confidence,
+      detectedAmounts: amountAnalysis.candidates,
       date: _extractDate(lines) ?? metadata.dateTime,
       time: _extractTime(lines) ?? metadata.dateTime,
       location: metadata.location ?? _extractLocationFromText(lines),
@@ -314,45 +430,46 @@ class ReceiptScanService {
 
   @visibleForTesting
   static String? extractFormattedAmount(List<String> lines) {
-    final matchedAmount = _selectAmountCandidate(lines)?.value;
-    if (matchedAmount == null) {
-      return null;
-    }
-
-    final roundedAmount = matchedAmount.ceil();
-    final formatter = NumberFormat('#,##0', 'en_US');
-    return formatter.format(roundedAmount);
+    return analyzeAmounts(lines).formattedSelectedAmount;
   }
 
-  static _ReceiptAmountCandidate? _selectAmountCandidate(List<String> lines) {
+  @visibleForTesting
+  static ReceiptAmountAnalysis analyzeAmounts(List<String> lines) {
     final candidates = <_ReceiptAmountCandidate>[];
 
     for (var index = 0; index < lines.length; index++) {
       final line = lines[index];
-      final lowerLine = line.toLowerCase();
-      final totalKeywordScore = _totalKeywordScore(lowerLine);
       final previousKeywordScore = index > 0
-          ? _totalKeywordScore(lines[index - 1].toLowerCase())
+          ? _standaloneTotalLabelScore(_normalizeAmountLine(lines[index - 1]))
           : 0;
 
       candidates.addAll(
         _extractAmountCandidates(
           line,
           lineIndex: index,
-          onTotalLine: totalKeywordScore > 0,
-          afterTotalLine: totalKeywordScore == 0 && previousKeywordScore > 0,
-          totalKeywordScore: totalKeywordScore > 0
-              ? totalKeywordScore
-              : previousKeywordScore,
+          previousTotalLabelScore: previousKeywordScore,
         ),
       );
     }
 
     if (candidates.isEmpty) {
-      return null;
+      return const ReceiptAmountAnalysis();
     }
 
-    return _pickPreferredCandidate(candidates);
+    final selectedCandidate = _pickPreferredCandidate(candidates);
+    final detectedAmounts = candidates
+        .map(
+          (candidate) => candidate.toDetectedAmount(
+            isSelected: identical(candidate, selectedCandidate),
+          ),
+        )
+        .toList(growable: false);
+
+    return ReceiptAmountAnalysis(
+      selected: selectedCandidate?.toDetectedAmount(isSelected: true),
+      confidence: _estimateAmountConfidence(candidates, selectedCandidate),
+      candidates: detectedAmounts,
+    );
   }
 
   static _ReceiptAmountCandidate? _pickPreferredCandidate(
@@ -360,100 +477,33 @@ class ReceiptScanService {
   ) {
     var preferred = List<_ReceiptAmountCandidate>.from(candidates);
 
-    final onTotalLine = preferred.where((candidate) => candidate.onTotalLine);
-    if (onTotalLine.isNotEmpty) {
-      preferred = onTotalLine.toList();
-    } else {
-      final afterTotalLine = preferred.where(
-        (candidate) => candidate.afterTotalLine,
-      );
-      if (afterTotalLine.isNotEmpty) {
-        preferred = afterTotalLine.toList();
-      }
-    }
-
-    final highestKeywordScore = preferred
-        .map((candidate) => candidate.totalKeywordScore)
-        .fold<int>(0, (highest, score) => score > highest ? score : highest);
-    if (highestKeywordScore > 0) {
-      preferred = preferred
-          .where(
-            (candidate) => candidate.totalKeywordScore == highestKeywordScore,
-          )
-          .toList();
-    }
-
-    final dollarAmounts = preferred.where(
-      (candidate) => candidate.hasDollarSign,
-    );
-    if (dollarAmounts.isNotEmpty) {
-      preferred = dollarAmounts.toList();
-    } else {
-      final currencyTagged = preferred.where(
-        (candidate) => candidate.hasCurrencyMarker,
-      );
-      if (currencyTagged.isNotEmpty) {
-        preferred = currencyTagged.toList();
-      }
-    }
-
-    final nonIdentifierAmounts = preferred.where(
-      (candidate) => !candidate.looksLikeIdentifier,
-    );
-    if (nonIdentifierAmounts.isNotEmpty) {
-      preferred = nonIdentifierAmounts.toList();
-    }
-
-    final nonPaymentAmounts = preferred.where(
-      (candidate) => !candidate.nearPaymentKeyword,
-    );
-    if (nonPaymentAmounts.isNotEmpty) {
-      preferred = nonPaymentAmounts.toList();
-    }
-
-    final candidatesNearTotalKeyword = preferred
-        .where((candidate) => candidate.distanceToTotalKeyword != null)
+    final withMoneySignal = preferred
+        .where((candidate) => candidate.hasMoneySignal)
         .toList();
-    if (candidatesNearTotalKeyword.isNotEmpty) {
-      final shortestDistance = candidatesNearTotalKeyword
-          .map((candidate) => candidate.distanceToTotalKeyword!)
-          .reduce((left, right) => left < right ? left : right);
-      preferred = candidatesNearTotalKeyword
-          .where(
-            (candidate) => candidate.distanceToTotalKeyword == shortestDistance,
-          )
-          .toList();
+    if (withMoneySignal.isNotEmpty) {
+      preferred = withMoneySignal;
     }
 
-    preferred.sort((left, right) {
-      final leftDistance = left.distanceToTotalKeyword ?? 1 << 30;
-      final rightDistance = right.distanceToTotalKeyword ?? 1 << 30;
-      final distanceComparison = leftDistance.compareTo(rightDistance);
-      if (distanceComparison != 0) {
-        return distanceComparison;
-      }
+    final sorted = preferred..sort(_compareCandidatesForSelection);
+    final selected = sorted.first;
 
-      final valueComparison = right.value.compareTo(left.value);
-      if (valueComparison != 0) {
-        return valueComparison;
-      }
-      return left.lineIndex.compareTo(right.lineIndex);
-    });
+    if (selected.score < 0) {
+      return null;
+    }
 
-    return preferred.first;
+    return selected;
   }
 
   static List<_ReceiptAmountCandidate> _extractAmountCandidates(
     String line, {
     required int lineIndex,
-    required bool onTotalLine,
-    required bool afterTotalLine,
-    required int totalKeywordScore,
+    required int previousTotalLabelScore,
   }) {
     final matches = RegExp(
-      r'(?:(?:cop|col\$|usd|eur)\s*)?[$]?\s*\d[\d.,]*(?:\s*(?:cop|col\$|usd|eur))?',
+      r'(?:(?:cop|col\$|usd|eur)\s*)?-?\s*[$]?\s*\d[\dOoIlSs.,|]*(?:\s*(?:cop|col\$|usd|eur))?',
       caseSensitive: false,
     ).allMatches(line);
+    final normalizedLine = _normalizeAmountLine(line);
 
     final candidates = <_ReceiptAmountCandidate>[];
     for (final match in matches) {
@@ -464,32 +514,108 @@ class ReceiptScanService {
       }
 
       final normalizedRaw = rawCandidate?.toLowerCase() ?? '';
+      final prefix = normalizedLine.substring(0, match.start);
+      final suffix = normalizedLine.substring(match.end);
+      final totalKeywordScore = _keywordScoreBefore(
+        prefix,
+        keywords: _totalKeywords,
+      );
+      final dueKeywordScore = _keywordScoreBefore(
+        prefix,
+        keywords: _dueKeywords,
+      );
+      final effectiveTotalScore = totalKeywordScore > dueKeywordScore
+          ? totalKeywordScore
+          : dueKeywordScore;
+      final nearPaymentKeyword = _hasKeywordBefore(
+        prefix,
+        keywords: _paymentKeywords,
+      );
+      final nearSubtotalKeyword = _hasKeywordBefore(
+        prefix,
+        keywords: _subtotalKeywords,
+      );
+      final nearTaxKeyword = _hasKeywordBefore(prefix, keywords: _taxKeywords);
+      final nearCountKeyword = _hasKeywordBefore(
+        prefix,
+        keywords: _countKeywords,
+      );
+      final nearUnitKeyword = _hasNearbyUnitKeyword(
+        before: prefix,
+        after: suffix,
+      );
+      final onTotalLine =
+          effectiveTotalScore > 0 && !nearTaxKeyword && !nearCountKeyword;
+      final afterTotalLine =
+          !onTotalLine &&
+          previousTotalLabelScore > 0 &&
+          !nearTaxKeyword &&
+          !nearCountKeyword;
+      final distanceToTotalKeyword = _distanceToKeywordBefore(
+        prefix,
+        keywords: totalKeywordScore > 0 ? _totalKeywords : _dueKeywords,
+      );
+      final isNegative =
+          rawCandidate != null && rawCandidate.contains(RegExp(r'-'));
+      final digitCount = _amountDigitCount(rawCandidate ?? '');
+      final hasSeparator = (rawCandidate ?? '').contains(RegExp(r'[.,]'));
+      final score = _scoreAmountCandidate(
+        value: value,
+        digitCount: digitCount,
+        hasSeparator: hasSeparator,
+        normalizedLine: normalizedLine,
+        hasDollarSign: normalizedRaw.contains(r'$'),
+        hasCurrencyMarker: RegExp(
+          r'(?:cop|col\$|usd|eur|\$)',
+          caseSensitive: false,
+        ).hasMatch(normalizedRaw),
+        nearPaymentKeyword: nearPaymentKeyword,
+        nearSubtotalKeyword: nearSubtotalKeyword,
+        nearTaxKeyword: nearTaxKeyword,
+        nearCountKeyword: nearCountKeyword,
+        nearUnitKeyword: nearUnitKeyword,
+        looksLikeIdentifier: _looksLikeIdentifierCandidate(
+          rawCandidate ?? '',
+          normalizedLine,
+        ),
+        onTotalLine: onTotalLine,
+        afterTotalLine: afterTotalLine,
+        totalKeywordScore: effectiveTotalScore > 0
+            ? effectiveTotalScore
+            : previousTotalLabelScore,
+        distanceToTotalKeyword: distanceToTotalKeyword,
+        isNegative: isNegative,
+      );
+
       candidates.add(
         _ReceiptAmountCandidate(
+          rawText: rawCandidate ?? '',
           value: value,
           lineIndex: lineIndex,
+          lineText: line,
+          matchStart: match.start,
+          hasSeparator: hasSeparator,
           hasDollarSign: normalizedRaw.contains(r'$'),
           hasCurrencyMarker: RegExp(
             r'(?:cop|col\$|usd|eur|\$)',
             caseSensitive: false,
           ).hasMatch(normalizedRaw),
-          nearPaymentKeyword: _hasNearbyPaymentKeyword(
-            line: line,
-            matchStart: match.start,
-            matchEnd: match.end,
-          ),
+          nearPaymentKeyword: nearPaymentKeyword,
+          nearSubtotalKeyword: nearSubtotalKeyword,
+          nearTaxKeyword: nearTaxKeyword,
+          nearCountKeyword: nearCountKeyword,
+          nearUnitKeyword: nearUnitKeyword,
           looksLikeIdentifier: _looksLikeIdentifierCandidate(
             rawCandidate ?? '',
-            line,
+            normalizedLine,
           ),
           onTotalLine: onTotalLine,
           afterTotalLine: afterTotalLine,
           totalKeywordScore: totalKeywordScore,
-          distanceToTotalKeyword: _distanceToTotalKeyword(
-            lowerLine: line.toLowerCase(),
-            matchStart: match.start,
-            matchEnd: match.end,
-          ),
+          distanceToTotalKeyword: distanceToTotalKeyword,
+          isNegative: isNegative,
+          score: score.value,
+          reasons: score.reasons,
         ),
       );
     }
@@ -515,9 +641,111 @@ class ReceiptScanService {
     return pattern.hasMatch(lowerLine);
   }
 
-  static bool _looksLikeIdentifierCandidate(String rawCandidate, String line) {
-    final normalizedLine = line.toLowerCase();
-    if (_identifierKeywords.any(normalizedLine.contains)) {
+  static int _keywordScoreBefore(
+    String prefix, {
+    required List<String> keywords,
+    int window = 28,
+  }) {
+    final start = prefix.length - window < 0 ? 0 : prefix.length - window;
+    final context = prefix.substring(start).trimRight();
+
+    for (var index = 0; index < keywords.length; index++) {
+      if (_lineContainsKeyword(context, keywords[index])) {
+        return keywords.length - index;
+      }
+    }
+
+    return 0;
+  }
+
+  static bool _hasKeywordBefore(
+    String prefix, {
+    required List<String> keywords,
+    int window = 28,
+  }) {
+    return _keywordScoreBefore(prefix, keywords: keywords, window: window) > 0;
+  }
+
+  static int? _distanceToKeywordBefore(
+    String prefix, {
+    required List<String> keywords,
+    int window = 28,
+  }) {
+    final start = prefix.length - window < 0 ? 0 : prefix.length - window;
+    final context = prefix.substring(start);
+    int? bestDistance;
+
+    for (final keyword in keywords) {
+      var searchStart = 0;
+      while (searchStart < context.length) {
+        final keywordIndex = context.indexOf(keyword, searchStart);
+        if (keywordIndex == -1) {
+          break;
+        }
+
+        final distance = context.length - (keywordIndex + keyword.length);
+        if (bestDistance == null || distance < bestDistance) {
+          bestDistance = distance;
+        }
+
+        searchStart = keywordIndex + keyword.length;
+      }
+    }
+
+    return bestDistance;
+  }
+
+  static int _standaloneTotalLabelScore(String normalizedLine) {
+    final trimmed = normalizedLine.trim();
+    if (trimmed.isEmpty || RegExp(r'\d').hasMatch(trimmed)) {
+      return 0;
+    }
+
+    if (_countKeywords.any(
+          (keyword) => _lineContainsKeyword(trimmed, keyword),
+        ) ||
+        _taxKeywords.any((keyword) => _lineContainsKeyword(trimmed, keyword))) {
+      return 0;
+    }
+
+    final totalScore = _totalKeywordScore(trimmed);
+    if (totalScore > 0) {
+      return totalScore;
+    }
+
+    return _keywordScoreBefore(trimmed, keywords: _dueKeywords, window: 48);
+  }
+
+  static String _normalizeKeywordLine(String line) {
+    return line
+        .toLowerCase()
+        .replaceAll('0', 'o')
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('Á', 'a')
+        .replaceAll('É', 'e')
+        .replaceAll('Í', 'i')
+        .replaceAll('Ó', 'o')
+        .replaceAll('Ú', 'u')
+        .replaceAll('ñ', 'n')
+        .replaceAll('Ã¡', 'a')
+        .replaceAll('Ã©', 'e')
+        .replaceAll('Ã­', 'i')
+        .replaceAll('Ã³', 'o')
+        .replaceAll('Ãº', 'u')
+        .replaceAll('Ã±', 'n');
+  }
+
+  static bool _looksLikeIdentifierCandidate(
+    String rawCandidate,
+    String normalizedLine,
+  ) {
+    if (_identifierKeywords.any(
+      (keyword) => _lineContainsKeyword(normalizedLine, keyword),
+    )) {
       return true;
     }
 
@@ -533,56 +761,275 @@ class ReceiptScanService {
     return !hasSeparator && digitsOnly.length >= 8;
   }
 
-  static bool _hasNearbyPaymentKeyword({
-    required String line,
-    required int matchStart,
-    required int matchEnd,
+  static bool _hasNearbyUnitKeyword({
+    required String before,
+    required String after,
   }) {
-    final start = matchStart - 20 < 0 ? 0 : matchStart - 20;
-    final end = matchEnd + 20 > line.length ? line.length : matchEnd + 20;
-    final context = line.substring(start, end).toLowerCase();
-    return _paymentKeywords.any(context.contains);
+    final prefixStart = before.length - 16 < 0 ? 0 : before.length - 16;
+    final suffixEnd = after.length > 16 ? 16 : after.length;
+    final context =
+        '${before.substring(prefixStart)}${after.substring(0, suffixEnd)}';
+
+    if (_unitKeywords.any(context.contains)) {
+      return true;
+    }
+
+    return RegExp(
+      r'(?:\b\d+\s*(?:pc|pcs|und|un|u)\b|\bx\s*\d+\b|\b\d+\s*x\b)',
+      caseSensitive: false,
+    ).hasMatch(context);
   }
 
-  static int? _distanceToTotalKeyword({
-    required String lowerLine,
-    required int matchStart,
-    required int matchEnd,
+  static String _normalizeAmountLine(String line) {
+    return _normalizeKeywordLine(line);
+  }
+
+  static _ReceiptAmountScore _scoreAmountCandidate({
+    required int value,
+    required int digitCount,
+    required bool hasSeparator,
+    required String normalizedLine,
+    required bool hasDollarSign,
+    required bool hasCurrencyMarker,
+    required bool nearPaymentKeyword,
+    required bool nearSubtotalKeyword,
+    required bool nearTaxKeyword,
+    required bool nearCountKeyword,
+    required bool nearUnitKeyword,
+    required bool looksLikeIdentifier,
+    required bool onTotalLine,
+    required bool afterTotalLine,
+    required int totalKeywordScore,
+    required int? distanceToTotalKeyword,
+    required bool isNegative,
   }) {
-    int? bestDistance;
+    var score = 0;
+    final reasons = <String>[];
 
-    for (final keyword in _totalKeywords) {
-      var searchStart = 0;
-      while (searchStart < lowerLine.length) {
-        final keywordIndex = lowerLine.indexOf(keyword, searchStart);
-        if (keywordIndex == -1) {
-          break;
-        }
+    if (onTotalLine) {
+      score += 120 + (totalKeywordScore * 4);
+      reasons.add('linea con total');
+    } else if (afterTotalLine) {
+      score += 85 + (totalKeywordScore * 3);
+      reasons.add('monto debajo de total');
+    }
 
-        final keywordEnd = keywordIndex + keyword.length;
-        final distance = keywordEnd <= matchStart
-            ? matchStart - keywordEnd
-            : keywordIndex >= matchEnd
-            ? keywordIndex - matchEnd
-            : 0;
-
-        if (bestDistance == null || distance < bestDistance) {
-          bestDistance = distance;
-        }
-
-        searchStart = keywordIndex + keyword.length;
+    if (distanceToTotalKeyword != null) {
+      final proximityBonus = 40 - _min(distanceToTotalKeyword, 40);
+      if (proximityBonus > 0) {
+        score += proximityBonus;
+        reasons.add('cerca de total');
       }
     }
 
-    return bestDistance;
+    if (normalizedLine.startsWith('total') ||
+        normalizedLine.contains('total \$') ||
+        normalizedLine.contains('total cop') ||
+        normalizedLine.contains('por cobrar') ||
+        normalizedLine.contains('total exacto')) {
+      score += 25;
+      reasons.add('frase de total fuerte');
+    }
+
+    if (hasDollarSign) {
+      score += 12;
+      reasons.add('simbolo monetario');
+    } else if (hasCurrencyMarker) {
+      score += 8;
+      reasons.add('moneda detectada');
+    }
+
+    if (hasSeparator) {
+      score += 10;
+      reasons.add('formato monetario');
+    }
+
+    if (value >= 1000) {
+      final magnitudeBonus = _min(18, value.toString().length * 2);
+      score += magnitudeBonus;
+      reasons.add('magnitud compatible');
+    } else if (value < 100 && !hasCurrencyMarker) {
+      score -= 40;
+      reasons.add('valor poco probable');
+    }
+
+    if (value <= 0) {
+      score -= 220;
+      reasons.add('monto cero o negativo');
+    }
+
+    if (digitCount <= 2) {
+      score -= 220;
+      reasons.add('muy pocos digitos');
+    }
+
+    if (!hasSeparator &&
+        !hasCurrencyMarker &&
+        !onTotalLine &&
+        !afterTotalLine &&
+        digitCount >= 5) {
+      score -= 220;
+      reasons.add('entero largo sin formato monetario');
+    }
+
+    if (nearSubtotalKeyword) {
+      score -= 120;
+      reasons.add('contexto subtotal/base');
+    }
+
+    if (nearTaxKeyword) {
+      score -= 120;
+      reasons.add('contexto iva/impuesto');
+    }
+
+    if (nearCountKeyword) {
+      score -= 220;
+      reasons.add('conteo de items/cajas');
+    }
+
+    if (nearPaymentKeyword) {
+      score -= 130;
+      reasons.add('contexto de pago');
+    }
+
+    if (nearUnitKeyword) {
+      score -= 120;
+      reasons.add('precio unitario');
+    }
+
+    if (looksLikeIdentifier) {
+      if (!hasSeparator &&
+          !hasCurrencyMarker &&
+          !onTotalLine &&
+          !afterTotalLine) {
+        score -= 150;
+        reasons.add('parece identificador');
+      } else {
+        score -= 20;
+        reasons.add('contexto mixto con identificador');
+      }
+    }
+
+    if (isNegative) {
+      score -= 70;
+      reasons.add('monto negativo');
+    }
+
+    return _ReceiptAmountScore(value: score, reasons: reasons);
   }
 
-  static double? _parseAmount(String? rawAmount) {
+  static String? _estimateAmountConfidence(
+    List<_ReceiptAmountCandidate> candidates,
+    _ReceiptAmountCandidate? selected,
+  ) {
+    if (selected == null) {
+      return null;
+    }
+
+    final sorted = List<_ReceiptAmountCandidate>.from(candidates)
+      ..sort(_compareCandidatesForSelection);
+    final runnerUp = sorted.length > 1 ? sorted[1] : null;
+    final scoreGap = runnerUp == null
+        ? selected.score
+        : selected.score - runnerUp.score;
+
+    if ((selected.onTotalLine || selected.afterTotalLine) &&
+        !selected.nearPaymentKeyword &&
+        !selected.nearSubtotalKeyword &&
+        !selected.nearTaxKeyword &&
+        !selected.nearCountKeyword &&
+        !selected.nearUnitKeyword &&
+        selected.score >= 120 &&
+        scoreGap >= 20) {
+      return 'alto';
+    }
+
+    if (selected.score >= 70 && scoreGap >= 10) {
+      return 'medio';
+    }
+
+    return 'bajo';
+  }
+
+  static int _compareCandidatesForSelection(
+    _ReceiptAmountCandidate left,
+    _ReceiptAmountCandidate right,
+  ) {
+    final scoreComparison = right.score.compareTo(left.score);
+    if (scoreComparison != 0) {
+      return scoreComparison;
+    }
+
+    final leftDistance = left.distanceToTotalKeyword ?? 1 << 30;
+    final rightDistance = right.distanceToTotalKeyword ?? 1 << 30;
+    final distanceComparison = leftDistance.compareTo(rightDistance);
+    if (distanceComparison != 0) {
+      return distanceComparison;
+    }
+
+    final valueComparison = right.value.compareTo(left.value);
+    if (valueComparison != 0) {
+      return valueComparison;
+    }
+
+    final lineComparison = left.lineIndex.compareTo(right.lineIndex);
+    if (lineComparison != 0) {
+      return lineComparison;
+    }
+
+    return left.matchStart.compareTo(right.matchStart);
+  }
+
+  static int _amountDigitCount(String rawAmount) {
+    return _normalizeOcrAmountToken(
+      rawAmount,
+    ).replaceAll(RegExp(r'\D'), '').length;
+  }
+
+  static String _normalizeOcrAmountToken(String rawAmount) {
+    final buffer = StringBuffer();
+
+    for (var index = 0; index < rawAmount.length; index++) {
+      final character = rawAmount[index];
+      final previous = index > 0 ? rawAmount[index - 1] : '';
+      final next = index + 1 < rawAmount.length ? rawAmount[index + 1] : '';
+
+      if (RegExp(r'\d').hasMatch(character) ||
+          character == ',' ||
+          character == '.' ||
+          character == '-') {
+        buffer.write(character);
+        continue;
+      }
+
+      final hasNumericNeighbor =
+          _looksLikeAmountNeighbor(previous) || _looksLikeAmountNeighbor(next);
+      if (!hasNumericNeighbor) {
+        continue;
+      }
+
+      if (character == 'o' || character == 'O') {
+        buffer.write('0');
+      } else if (character == 'l' || character == 'I' || character == '|') {
+        buffer.write('1');
+      } else if (character == 's' || character == 'S') {
+        buffer.write('5');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  static bool _looksLikeAmountNeighbor(String character) {
+    return RegExp(r'[\d,.\-oOlIsS|]').hasMatch(character);
+  }
+
+  static int? _parseAmount(String? rawAmount) {
     if (rawAmount == null || rawAmount.isEmpty) {
       return null;
     }
 
-    var cleaned = rawAmount.replaceAll(RegExp(r'[^0-9,.-]'), '');
+    var cleaned = _normalizeOcrAmountToken(rawAmount);
     if (cleaned.isEmpty) {
       return null;
     }
@@ -606,7 +1053,7 @@ class ReceiptScanService {
       }
 
       final parsed = double.tryParse(cleaned);
-      return parsed?.ceilToDouble();
+      return parsed?.round();
     }
 
     final lastSeparatorIndex = _max(lastDot, lastComma);
@@ -627,7 +1074,7 @@ class ReceiptScanService {
     }
 
     final parsed = double.tryParse(cleaned);
-    return parsed?.ceilToDouble();
+    return parsed?.round();
   }
 
   DateTime? _extractDate(List<String> lines) {
@@ -811,6 +1258,8 @@ class ReceiptScanService {
   }
 
   static int _max(int first, int second) => first > second ? first : second;
+
+  static int _min(int first, int second) => first < second ? first : second;
 }
 
 class _ReceiptMetadata {
@@ -822,26 +1271,70 @@ class _ReceiptMetadata {
 
 class _ReceiptAmountCandidate {
   const _ReceiptAmountCandidate({
+    required this.rawText,
     required this.value,
     required this.lineIndex,
+    required this.lineText,
+    required this.matchStart,
+    required this.hasSeparator,
     required this.hasDollarSign,
     required this.hasCurrencyMarker,
     required this.nearPaymentKeyword,
+    required this.nearSubtotalKeyword,
+    required this.nearTaxKeyword,
+    required this.nearCountKeyword,
+    required this.nearUnitKeyword,
     required this.looksLikeIdentifier,
     required this.onTotalLine,
     required this.afterTotalLine,
     required this.totalKeywordScore,
     required this.distanceToTotalKeyword,
+    required this.isNegative,
+    required this.score,
+    required this.reasons,
   });
 
-  final double value;
+  final String rawText;
+  final int value;
   final int lineIndex;
+  final String lineText;
+  final int matchStart;
+  final bool hasSeparator;
   final bool hasDollarSign;
   final bool hasCurrencyMarker;
   final bool nearPaymentKeyword;
+  final bool nearSubtotalKeyword;
+  final bool nearTaxKeyword;
+  final bool nearCountKeyword;
+  final bool nearUnitKeyword;
   final bool looksLikeIdentifier;
   final bool onTotalLine;
   final bool afterTotalLine;
   final int totalKeywordScore;
   final int? distanceToTotalKeyword;
+  final bool isNegative;
+  final int score;
+  final List<String> reasons;
+
+  bool get hasMoneySignal =>
+      hasSeparator || hasCurrencyMarker || onTotalLine || afterTotalLine;
+
+  ReceiptDetectedAmount toDetectedAmount({required bool isSelected}) {
+    return ReceiptDetectedAmount(
+      rawText: rawText,
+      normalizedValue: value,
+      lineIndex: lineIndex,
+      lineText: lineText,
+      score: score,
+      reasons: reasons,
+      isSelected: isSelected,
+    );
+  }
+}
+
+class _ReceiptAmountScore {
+  const _ReceiptAmountScore({required this.value, required this.reasons});
+
+  final int value;
+  final List<String> reasons;
 }

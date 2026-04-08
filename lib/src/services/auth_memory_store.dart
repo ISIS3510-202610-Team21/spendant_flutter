@@ -28,10 +28,13 @@ abstract final class AuthMemoryStore {
   static const _hasSavedSessionKey = 'has_saved_session';
   static const _usernameKey = 'last_username';
   static const _userIdKey = 'authenticated_user_id';
+  static const _lastActiveUserIdKey = 'last_active_user_id';
   static const _fingerprintEnabledKey = 'fingerprint_enabled_for_saved_login';
   static const _avatarBase64Key = 'profile_avatar_base64';
-  static const _hasCompletedLocationPermissionPromptKey =
+  static const _legacyHasCompletedLocationPermissionPromptKey =
       'has_completed_location_permission_prompt';
+  static const _completedPermissionsOnboardingKeyPrefix =
+      'completed_permissions_onboarding';
 
   static const AuthGreetingState _emptyState = AuthGreetingState(
     hasSavedSession: false,
@@ -73,6 +76,12 @@ abstract final class AuthMemoryStore {
     final trimmedUsername = username.trim();
     final shouldPersistSession = rememberLogin || fingerprintEnabled;
     final prefs = await SharedPreferences.getInstance();
+    final previousUserId = _currentState.userId;
+    if (previousUserId != null &&
+        _currentState.hasCompletedLocationPermissionPrompt) {
+      await prefs.setBool(_permissionsOnboardingKey(previousUserId), true);
+    }
+    await prefs.setInt(_lastActiveUserIdKey, userId);
 
     if (shouldPersistSession) {
       await prefs.setBool(_hasSavedSessionKey, true);
@@ -86,14 +95,17 @@ abstract final class AuthMemoryStore {
       await prefs.remove(_fingerprintEnabledKey);
     }
 
+    final hasCompletedPermissionsOnboarding = _readPermissionsOnboardingState(
+      prefs,
+      userId,
+    );
     _currentState = AuthGreetingState(
       hasSavedSession: shouldPersistSession,
       username: trimmedUsername,
       userId: userId,
       isFingerprintEnabled: shouldPersistSession && fingerprintEnabled,
       avatarBase64: _currentState.avatarBase64,
-      hasCompletedLocationPermissionPrompt:
-          _currentState.hasCompletedLocationPermissionPrompt,
+      hasCompletedLocationPermissionPrompt: hasCompletedPermissionsOnboarding,
     );
     _didInitialize = true;
   }
@@ -152,7 +164,11 @@ abstract final class AuthMemoryStore {
 
   static Future<void> markLocationPermissionPromptCompleted() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hasCompletedLocationPermissionPromptKey, true);
+    final currentUserId = _currentState.userId;
+    if (currentUserId != null) {
+      await prefs.setBool(_permissionsOnboardingKey(currentUserId), true);
+    }
+    await prefs.setBool(_legacyHasCompletedLocationPermissionPromptKey, true);
 
     _currentState = AuthGreetingState(
       hasSavedSession: _currentState.hasSavedSession,
@@ -166,12 +182,11 @@ abstract final class AuthMemoryStore {
   }
 
   static Future<void> clearSession() async {
-    final hasCompletedLocationPermissionPrompt =
-        _currentState.hasCompletedLocationPermissionPrompt;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_hasSavedSessionKey);
     await prefs.remove(_usernameKey);
     await prefs.remove(_userIdKey);
+    await prefs.remove(_lastActiveUserIdKey);
     await prefs.remove(_fingerprintEnabledKey);
     await prefs.remove(_avatarBase64Key);
     _currentState = AuthGreetingState(
@@ -180,8 +195,7 @@ abstract final class AuthMemoryStore {
       userId: null,
       isFingerprintEnabled: false,
       avatarBase64: null,
-      hasCompletedLocationPermissionPrompt:
-          hasCompletedLocationPermissionPrompt,
+      hasCompletedLocationPermissionPrompt: false,
     );
     _didInitialize = true;
   }
@@ -189,17 +203,44 @@ abstract final class AuthMemoryStore {
   static Future<AuthGreetingState> _loadPersistedState() async {
     final prefs = await SharedPreferences.getInstance();
     final hasSavedSession = prefs.getBool(_hasSavedSessionKey) ?? false;
-    final userId = prefs.getInt(_userIdKey);
+    final rememberedUserId = prefs.getInt(_userIdKey);
+    final lastActiveUserId = prefs.getInt(_lastActiveUserIdKey);
+    final restoredUserId = hasSavedSession
+        ? (rememberedUserId ?? lastActiveUserId)
+        : lastActiveUserId;
 
     return AuthGreetingState(
       hasSavedSession: hasSavedSession,
       username: prefs.getString(_usernameKey),
-      userId: hasSavedSession ? userId : null,
+      userId: restoredUserId,
       isFingerprintEnabled:
           hasSavedSession && (prefs.getBool(_fingerprintEnabledKey) ?? false),
       avatarBase64: prefs.getString(_avatarBase64Key),
       hasCompletedLocationPermissionPrompt:
-          prefs.getBool(_hasCompletedLocationPermissionPromptKey) ?? false,
+          restoredUserId == null
+              ? false
+              : _readPermissionsOnboardingState(prefs, restoredUserId),
     );
+  }
+
+  static bool _readPermissionsOnboardingState(
+    SharedPreferences prefs,
+    int userId,
+  ) {
+    final perUserKey = _permissionsOnboardingKey(userId);
+    if (prefs.containsKey(perUserKey)) {
+      return prefs.getBool(perUserKey) ?? false;
+    }
+
+    final legacyCompleted =
+        prefs.getBool(_legacyHasCompletedLocationPermissionPromptKey) ?? false;
+    final legacyRememberedUserId = prefs.getInt(_userIdKey);
+    return legacyCompleted &&
+        legacyRememberedUserId != null &&
+        legacyRememberedUserId == userId;
+  }
+
+  static String _permissionsOnboardingKey(int userId) {
+    return '$_completedPermissionsOnboardingKeyPrefix-$userId';
   }
 }

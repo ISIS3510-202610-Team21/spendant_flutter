@@ -190,19 +190,16 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       return;
     }
 
-    final shouldShowLocationPermissionPrompt =
+    final shouldShowPermissionsOnboarding =
         _isRegisterMode || authState.needsLocationPermissionPrompt;
     final redirect = widget.postAuthRedirect;
-    if (shouldShowLocationPermissionPrompt) {
-      final nextRoute = _isRegisterMode
-          ? AppRoutes.registerIntro
-          : AppRoutes.locationPermissionIntro;
+    if (shouldShowPermissionsOnboarding) {
       final navigationArgs = redirect == null
           ? null
           : PostAuthNavigationArgs(redirect: redirect);
 
       Navigator.of(context).pushNamedAndRemoveUntil(
-        nextRoute,
+        AppRoutes.registerIntro,
         (route) => false,
         arguments: navigationArgs,
       );

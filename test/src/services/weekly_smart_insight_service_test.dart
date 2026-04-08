@@ -19,6 +19,7 @@ void main() {
     test('builds the micro-expenses summary from the last 7 days', () {
       final insight = WeeklySmartInsightService.buildInsight(
         expenses: <ExpenseModel>[
+          _expense(amount: 1800, dateTime: DateTime(2026, 3, 15, 8, 0)),
           _expense(amount: 1200, dateTime: DateTime(2026, 3, 20, 9, 0)),
           _expense(amount: 3100, dateTime: DateTime(2026, 3, 18, 13, 30)),
           _expense(amount: 8000, dateTime: DateTime(2026, 3, 17, 10, 0)),
@@ -31,10 +32,11 @@ void main() {
 
       expect(insight, isNotNull);
       expect(insight!.kind, WeeklySmartInsightKind.microExpensesSummary);
-      expect(insight.amount, 4300);
+      expect(insight.title, 'Weekly spending insight');
+      expect(insight.amount, 6100);
       expect(
         insight.detailMessage,
-        'This week you spent COP 4,300 on small purchases. These can add up quickly.',
+        'This week you spent COP 6,100 on small purchases. These can add up quickly.',
       );
     });
 
@@ -52,9 +54,10 @@ void main() {
 
       expect(insight, isNotNull);
       expect(insight!.kind, WeeklySmartInsightKind.mostCommonSpendingTime);
+      expect(insight.title, 'Weekly spending insight');
       expect(
         insight.detailMessage,
-        'You usually spend money in the morning. Stay mindful during this period.',
+        'You usually spend money around 8am to 9am. Stay mindful during this period.',
       );
     });
 
@@ -89,6 +92,7 @@ void main() {
 
       expect(insight, isNotNull);
       expect(insight!.kind, WeeklySmartInsightKind.autoCategorizationUsage);
+      expect(insight.title, 'Weekly spending insight');
       expect(insight.amount, 2);
       expect(
         insight.detailMessage,

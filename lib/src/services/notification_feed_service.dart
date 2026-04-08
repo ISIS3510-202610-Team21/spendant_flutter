@@ -6,12 +6,17 @@ import 'auth_memory_store.dart';
 
 enum NotificationFeedType {
   warning,
+  welcome,
   goalCreated,
   goalHalfway,
   goalAchieved,
+  goalAdjustment,
   incomeCreated,
   incomeDue,
   budgetWarning,
+  spendingAnomaly,
+  expenseImported,
+  expenseImportedNeedsCategory,
 }
 
 class NotificationFeedItem {
@@ -126,18 +131,28 @@ abstract final class NotificationFeedService {
 
   static NotificationFeedType _mapType(String type) {
     switch (type) {
+      case AppNotificationTypes.welcome:
+        return NotificationFeedType.welcome;
       case AppNotificationTypes.goalCreated:
         return NotificationFeedType.goalCreated;
       case AppNotificationTypes.goalHalfway:
         return NotificationFeedType.goalHalfway;
       case AppNotificationTypes.goalAchieved:
         return NotificationFeedType.goalAchieved;
+      case AppNotificationTypes.goalAdjustment:
+        return NotificationFeedType.goalAdjustment;
       case AppNotificationTypes.incomeCreated:
         return NotificationFeedType.incomeCreated;
       case AppNotificationTypes.incomeDue:
         return NotificationFeedType.incomeDue;
       case AppNotificationTypes.budgetWarning:
         return NotificationFeedType.budgetWarning;
+      case AppNotificationTypes.spendingAnomaly:
+        return NotificationFeedType.spendingAnomaly;
+      case AppNotificationTypes.expenseImported:
+        return NotificationFeedType.expenseImported;
+      case AppNotificationTypes.expenseImportedNeedsCategory:
+        return NotificationFeedType.expenseImportedNeedsCategory;
       case AppNotificationTypes.expenseCategoryNeeded:
       case AppNotificationTypes.spendingSpike:
       case AppNotificationTypes.spendingPace:

@@ -35,14 +35,14 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_waving.svg',
       message:
-          'To help us spot patterns in your\nspending, import a calendar .ics file\nso SpendAnt can understand your\nupcoming plans and routines.',
-      primaryLabel: 'Import Calendar (.ics)',
+          'To help us spot patterns in your\nspending, import or replace a\ncalendar .ics file so SpendAnt can\nunderstand your upcoming plans\nand routines.',
+      primaryLabel: 'Import or Replace Calendar',
       secondaryLabel: 'Skip',
     ),
     _RegisterIntroStep(
       antAssetPath: 'web/ant/ant_idle.svg',
       message:
-          'On Android, SpendAnt can send\nits own alerts and read Google Pay\nnotifications so purchases become\nexpenses automatically.',
+          'On Android, SpendAnt can send\nits own alerts and read Google Pay,\nGmail, and Nequi notifications.\nUse this step to review or change\nthose permissions if needed.',
       primaryLabel: 'Allow Notification Access',
       secondaryLabel: 'Skip',
     ),
@@ -89,7 +89,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
 
     _waitingForNotificationReaderAccess = false;
     await _showInfoDialog(
-      'Google Pay notification reading is enabled. New purchases can now be imported automatically.',
+      'Notification reading is enabled. New supported purchases can now be imported automatically.',
     );
     await _openLocationPermissionIntro();
   }
@@ -113,8 +113,9 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     final status = await Permission.notification.status;
     if (!grantedNow && (status.isPermanentlyDenied || status.isRestricted)) {
       await _showInfoDialog(
-        'SpendAnt alerts are blocked right now. You can enable them later from system settings.',
+        'SpendAnt alerts are blocked right now. SpendAnt will open the app settings so you can review them.',
       );
+      await openAppSettings();
       return;
     }
 
@@ -199,7 +200,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
 
     if (defaultTargetPlatform != TargetPlatform.android) {
       await _showInfoDialog(
-        'Automatic Google Pay import is only available on Android.',
+        'Automatic notification-based import is only available on Android.',
       );
       await _openLocationPermissionIntro();
       return;
@@ -216,7 +217,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     }
 
     await _showInfoDialog(
-      'Android also needs notification reading access to import Google Pay purchases. Enable it in the next screen.',
+      'Android also needs notification reading access to import supported purchases from Google Pay, Gmail, and Nequi. Enable it in the next screen.',
     );
     setState(() {
       _waitingForNotificationReaderAccess = true;
@@ -292,7 +293,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
               const SizedBox(height: 28),
               BlackPrimaryButton(
                 label: step.primaryLabel,
-                width: _step == 1 || _step == 2 ? 244 : 154,
+                width: _step == 1 || _step == 2 ? 274 : 154,
                 height: 44,
                 onPressed: _handlePrimaryAction,
               ),

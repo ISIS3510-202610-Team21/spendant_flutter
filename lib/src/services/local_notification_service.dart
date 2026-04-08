@@ -126,8 +126,9 @@ abstract final class LocalNotificationService {
   }
 
   static Future<void> showTrackedNotification(
-    AppNotificationModel notification,
-  ) async {
+    AppNotificationModel notification, {
+    bool promptIfNeeded = true,
+  }) async {
     if (!_isInitialized) {
       try {
         await initialize();
@@ -140,7 +141,9 @@ abstract final class LocalNotificationService {
       }
     }
 
-    final hasPermission = await ensurePermission(promptIfNeeded: true);
+    final hasPermission = await ensurePermission(
+      promptIfNeeded: promptIfNeeded,
+    );
     if (!hasPermission) {
       debugPrint(
         'LocalNotificationService.showTrackedNotification skipped: notification permission not granted.',

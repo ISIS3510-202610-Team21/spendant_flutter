@@ -8,6 +8,7 @@ import 'app.dart';
 import 'firebase_options.dart';
 import 'src/services/app_notification_service.dart';
 import 'src/services/auth_memory_store.dart';
+import 'src/services/background_task_service.dart';
 import 'src/services/calendar_availability_service.dart';
 import 'src/services/cloud_sync_service.dart';
 import 'src/services/firebase_uid_service.dart';
@@ -17,6 +18,7 @@ import 'src/services/local_storage_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(BackgroundTaskService.initialize());
   runApp(const _BootstrapApp());
 }
 
@@ -54,6 +56,12 @@ class _BootstrapAppState extends State<_BootstrapApp> {
   }
 
   Future<void> _initializeOptionalServices() async {
+    try {
+      await BackgroundTaskService.initialize();
+    } catch (error) {
+      debugPrint('Error initializing background tasks: $error');
+    }
+
     try {
       await CalendarAvailabilityService.instance.initialize();
       await LocalNotificationService.initialize();

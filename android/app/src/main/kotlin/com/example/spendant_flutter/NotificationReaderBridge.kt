@@ -22,6 +22,7 @@ object NotificationReaderBridge {
     private const val PREFS_NAME = "spendant_notification_reader"
     private const val PENDING_EVENTS_KEY = "pending_events_v1"
     private const val MAX_PENDING_EVENTS = 40
+    private const val MAX_TEXT_LENGTH = 900
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
@@ -56,6 +57,9 @@ object NotificationReaderBridge {
     ) {
         val payload = buildPayload(context, statusBarNotification) ?: return
         storePendingEvent(context, payload)
+        if (eventSink == null) {
+            BackgroundTaskScheduler.enqueueNotificationImport(context, payload)
+        }
         emit(payload)
     }
 
@@ -101,15 +105,23 @@ object NotificationReaderBridge {
         val packageName = statusBarNotification.packageName ?: return null
         val appName = resolveApplicationName(context, packageName)
 
-        if (!isGooglePayCandidate(packageName, appName)) {
+        if (!isSupportedExpenseCandidate(packageName, appName)) {
             return null
         }
 
         val extras = notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
-        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
-        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim().orEmpty()
+        val title = truncateText(
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+        )
+        val text = truncateText(
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        )
+        val bigText = truncateText(
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
+        )
+        val subText = truncateText(
+            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim().orEmpty()
+        )
 
         if (title.isBlank() && text.isBlank() && bigText.isBlank() && subText.isBlank()) {
             return null
@@ -140,6 +152,15 @@ object NotificationReaderBridge {
         }
     }
 
+    private fun isSupportedExpenseCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        return isGooglePayCandidate(packageName, appName) ||
+            isGmailCandidate(packageName, appName) ||
+            isNequiCandidate(packageName, appName)
+    }
+
     private fun isGooglePayCandidate(
         packageName: String,
         appName: String,
@@ -152,6 +173,31 @@ object NotificationReaderBridge {
         return isGooglePackage ||
             normalizedAppName.contains("google pay") ||
             normalizedAppName.contains("google wallet")
+    }
+
+    private fun isGmailCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        val normalizedSource = "$packageName $appName".lowercase()
+        return normalizedSource.contains("gmail") ||
+            normalizedSource.contains("com.google.android.gm")
+    }
+
+    private fun isNequiCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        val normalizedSource = "$packageName $appName".lowercase()
+        return normalizedSource.contains("nequi")
+    }
+
+    private fun truncateText(value: String): String {
+        if (value.length <= MAX_TEXT_LENGTH) {
+            return value
+        }
+
+        return value.take(MAX_TEXT_LENGTH)
     }
 
     private fun isNotificationListenerEnabled(context: Context): Boolean {

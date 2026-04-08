@@ -83,7 +83,9 @@ abstract final class GooglePayExpenseImportService {
     await refresh();
   }
 
-  static Future<void> refresh() async {
+  static Future<void> refresh({
+    bool promptForNotificationPermission = true,
+  }) async {
     if (!NotificationReaderService.isSupportedPlatform) {
       return;
     }
@@ -93,7 +95,9 @@ abstract final class GooglePayExpenseImportService {
       return currentRefresh;
     }
 
-    final refreshFuture = _refreshInternal();
+    final refreshFuture = _refreshInternal(
+      promptForNotificationPermission: promptForNotificationPermission,
+    );
     _activeRefresh = refreshFuture;
 
     try {
@@ -105,11 +109,26 @@ abstract final class GooglePayExpenseImportService {
     }
   }
 
-  static Future<void> _refreshInternal() async {
+  static Future<void> _refreshInternal({
+    required bool promptForNotificationPermission,
+  }) async {
     final pendingEvents = await NotificationReaderService.drainPendingEvents();
     for (final event in pendingEvents) {
-      await _importEvent(event);
+      await _importEvent(
+        event,
+        promptForNotificationPermission: promptForNotificationPermission,
+      );
     }
+  }
+
+  static Future<GooglePayImportResult> importNotificationEvent(
+    NotificationReaderEvent event, {
+    bool promptForNotificationPermission = true,
+  }) {
+    return _importEvent(
+      event,
+      promptForNotificationPermission: promptForNotificationPermission,
+    );
   }
 
   static Future<GooglePayImportResult> simulateExpenseImport() async {
@@ -135,12 +154,13 @@ abstract final class GooglePayExpenseImportService {
       postedAtMillis: now.millisecondsSinceEpoch,
     );
 
-    return _importEvent(event);
+    return _importEvent(event, promptForNotificationPermission: true);
   }
 
   static Future<GooglePayImportResult> _importEvent(
-    NotificationReaderEvent event,
-  ) async {
+    NotificationReaderEvent event, {
+    required bool promptForNotificationPermission,
+  }) async {
     if (_currentUserId < 0) {
       return const GooglePayImportResult(
         status: GooglePayImportStatus.unavailable,
@@ -200,7 +220,17 @@ abstract final class GooglePayExpenseImportService {
 
     await LocalStorageService().saveExpense(expense);
     if (expense.isPendingCategory) {
-      await _showManualCategorizationNotification(expense);
+      await _showImportedNeedsCategoryNotification(
+        expense,
+        parsedExpense,
+        promptForNotificationPermission: promptForNotificationPermission,
+      );
+    } else {
+      await _showImportedExpenseNotification(
+        expense,
+        parsedExpense,
+        promptForNotificationPermission: promptForNotificationPermission,
+      );
     }
     await _markEventAsProcessed(prefs, processedIds, dedupeKey);
     return GooglePayImportResult(
@@ -212,7 +242,7 @@ abstract final class GooglePayExpenseImportService {
   static Future<void> _importEventAndDiscard(
     NotificationReaderEvent event,
   ) async {
-    await _importEvent(event);
+    await _importEvent(event, promptForNotificationPermission: true);
   }
 
   static bool _hasMatchingImportedExpense(ParsedNotificationExpense candidate) {
@@ -294,23 +324,70 @@ abstract final class GooglePayExpenseImportService {
     await prefs.setStringList(_processedEventIdsKey, updatedIds);
   }
 
-  static Future<void> _showManualCategorizationNotification(
+  static Future<void> _showImportedExpenseNotification(
     ExpenseModel expense,
-  ) async {
+    ParsedNotificationExpense parsedExpense, {
+    required bool promptForNotificationPermission,
+  }) async {
+    final sourceLabel = _sourceLabel(parsedExpense.source);
     final notification = AppNotificationModel()
-      ..id =
-          'expense-category-${expense.key ?? expense.createdAt.microsecondsSinceEpoch}'
-      ..type = AppNotificationTypes.expenseCategoryNeeded
+      ..id = 'expense-imported-${expense.createdAt.microsecondsSinceEpoch}'
+      ..type = AppNotificationTypes.expenseImported
       ..createdAt = DateTime.now()
       ..userId = expense.userId
-      ..title = 'Categorize ${expense.name}'
-      ..subtitle = 'Manual category needed'
+      ..title = 'Imported from $sourceLabel'
+      ..subtitle = expense.name
       ..amount = expense.amount
-      ..detailTitle = 'Expense needs a category'
+      ..category = expense.primaryCategory
+      ..detailTitle = 'Expense imported automatically'
       ..detailMessage =
-          'SpendAnt could not categorize ${expense.name} automatically. Open Notifications and add a label.'
+          'SpendAnt imported ${expense.name} for ${_formatCurrency(expense.amount)} from $sourceLabel and added it to your expenses.'
       ..routeName = '/notifications';
-    await AppNotificationService.deliverNotification(notification);
+    await AppNotificationService.deliverNotification(
+      notification,
+      promptForNotificationPermission: promptForNotificationPermission,
+    );
+  }
+
+  static Future<void> _showImportedNeedsCategoryNotification(
+    ExpenseModel expense,
+    ParsedNotificationExpense parsedExpense, {
+    required bool promptForNotificationPermission,
+  }) async {
+    final sourceLabel = _sourceLabel(parsedExpense.source);
+    final notification = AppNotificationModel()
+      ..id = 'expense-import-review-${expense.createdAt.microsecondsSinceEpoch}'
+      ..type = AppNotificationTypes.expenseImportedNeedsCategory
+      ..createdAt = DateTime.now()
+      ..userId = expense.userId
+      ..title = 'Imported from $sourceLabel'
+      ..subtitle = 'Needs category: ${expense.name}'
+      ..amount = expense.amount
+      ..detailTitle = 'Imported, but category is still missing'
+      ..detailMessage =
+          'SpendAnt imported ${expense.name} for ${_formatCurrency(expense.amount)} from $sourceLabel, but it still needs a category. Open Notifications and assign one.'
+      ..routeName = '/notifications';
+    await AppNotificationService.deliverNotification(
+      notification,
+      promptForNotificationPermission: promptForNotificationPermission,
+    );
+  }
+
+  static String _sourceLabel(String source) {
+    switch (source) {
+      case 'GOOGLE_PAY':
+        return 'Google Pay';
+      case 'GMAIL':
+        return 'Gmail';
+      case 'NEQUI':
+        return 'Nequi';
+      default:
+        return 'notifications';
+    }
+  }
+
+  static String _formatCurrency(double amount) {
+    return 'COP ${_titleAmountFormat.format(amount.round())}';
   }
 }
 

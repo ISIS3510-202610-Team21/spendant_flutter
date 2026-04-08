@@ -645,6 +645,12 @@ class _NotificationVisuals {
               ? null
               : ExpenseVisuals.iconAssetPathFor(item.category!),
         );
+      case NotificationFeedType.welcome:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.waving_hand_outlined,
+        );
       case NotificationFeedType.goalCreated:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -663,6 +669,12 @@ class _NotificationVisuals {
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
         );
+      case NotificationFeedType.goalAdjustment:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.track_changes_outlined,
+        );
       case NotificationFeedType.incomeCreated:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -680,6 +692,27 @@ class _NotificationVisuals {
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.account_balance_wallet_outlined,
+        );
+      case NotificationFeedType.spendingAnomaly:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.query_stats_outlined,
+        );
+      case NotificationFeedType.expenseImported:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.receipt_long_outlined,
+          iconAssetPath: item.category == null
+              ? null
+              : ExpenseVisuals.iconAssetPathFor(item.category!),
+        );
+      case NotificationFeedType.expenseImportedNeedsCategory:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.sell_outlined,
         );
     }
   }

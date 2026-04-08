@@ -3040,7 +3040,7 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
-class _SublabelChip extends StatefulWidget {
+class _SublabelChip extends StatelessWidget {
   const _SublabelChip({
     required this.label,
     required this.selected,
@@ -3051,134 +3051,54 @@ class _SublabelChip extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  @override
-  State<_SublabelChip> createState() => _SublabelChipState();
-}
-
-class _SublabelChipState extends State<_SublabelChip> {
   static const Duration _animationDuration = Duration(milliseconds: 180);
-  static const double _nudgeDistance = 6;
-  static const double _screenEdgePadding = 12;
-
-  final GlobalKey _chipKey = GlobalKey();
-  double _slideDx = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _scheduleBoundsCheck();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _scheduleBoundsCheck();
-  }
-
-  @override
-  void didUpdateWidget(covariant _SublabelChip oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selected != widget.selected ||
-        oldWidget.label != widget.label) {
-      _scheduleBoundsCheck();
-    }
-  }
-
-  void _scheduleBoundsCheck() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _updateSlideOffset();
-      }
-    });
-  }
-
-  void _updateSlideOffset() {
-    final chipContext = _chipKey.currentContext;
-    if (chipContext == null || !widget.selected) {
-      if (_slideDx != 0) {
-        setState(() {
-          _slideDx = 0;
-        });
-      }
-      return;
-    }
-
-    final renderObject = chipContext.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) {
-      return;
-    }
-
-    final mediaQuery = MediaQuery.of(chipContext);
-    final topLeft = renderObject.localToGlobal(Offset.zero);
-    final leftLimit = mediaQuery.padding.left + _screenEdgePadding;
-    final rightLimit =
-        mediaQuery.size.width - mediaQuery.padding.right - _screenEdgePadding;
-    final double availableLeft = math.max<double>(0, topLeft.dx - leftLimit);
-    final double availableRight = math.max<double>(
-      0,
-      rightLimit - (topLeft.dx + renderObject.size.width),
-    );
-
-    final moveRight = availableRight >= availableLeft;
-    final double targetDx = moveRight
-        ? math.min<double>(_nudgeDistance, availableRight)
-        : -math.min<double>(_nudgeDistance, availableLeft);
-
-    if ((targetDx - _slideDx).abs() < 0.1) {
-      return;
-    }
-
-    setState(() {
-      _slideDx = targetDx;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      key: _chipKey,
-      duration: _animationDuration,
-      curve: Curves.easeOutBack,
-      transform: Matrix4.translationValues(_slideDx, 0, 0),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(999),
-          child: AnimatedContainer(
-            duration: _animationDuration,
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-            decoration: BoxDecoration(
-              color: widget.selected ? AppPalette.green : Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: widget.selected
-                    ? AppPalette.green
-                    : const Color(0xFFD8D8D8),
-              ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: _animationDuration,
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? AppPalette.green : Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
             ),
-            child: AnimatedSize(
-              duration: _animationDuration,
-              curve: Curves.easeOut,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.selected) ...[
-                    const Icon(Icons.check, size: 15, color: AppPalette.ink),
-                    const SizedBox(width: 6),
-                  ],
-                  Text(
-                    widget.label,
-                    style: GoogleFonts.nunito(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: AppPalette.ink,
-                    ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
+              ),
+              const SizedBox(width: 6),
+              AnimatedOpacity(
+                duration: _animationDuration,
+                curve: Curves.easeOut,
+                opacity: selected ? 1 : 0,
+                child: AnimatedScale(
+                  duration: _animationDuration,
+                  curve: Curves.easeOutBack,
+                  scale: selected ? 1 : 0.85,
+                  child: const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: Icon(Icons.check, size: 15, color: AppPalette.ink),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),

@@ -17,6 +17,18 @@ abstract final class AppPalette {
   static const expenseRed = Color(0xFFF04C4C);
 }
 
+abstract final class AppHeaderMetrics {
+  static const double top = 58;
+
+  static EdgeInsets padding({
+    double horizontal = 12,
+    double top = AppHeaderMetrics.top,
+    double bottom = 14,
+  }) {
+    return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
+  }
+}
+
 abstract final class SpendAntTheme {
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(

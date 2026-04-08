@@ -348,6 +348,23 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       platform: defaultTargetPlatform,
     ).black;
     const timeDisplayHeight = 64 / 57;
+    const timeInputHeight = 54 / 48;
+    final timePickerTextTheme = Theme.of(context).textTheme.copyWith(
+      displayLarge: materialTextTheme.displayLarge?.copyWith(
+        fontSize: 57,
+        height: timeDisplayHeight,
+        color: AppPalette.ink,
+      ),
+      displayMedium: materialTextTheme.displayMedium?.copyWith(
+        fontSize: 48,
+        height: timeInputHeight,
+        color: AppPalette.ink,
+      ),
+      labelMedium: materialTextTheme.labelMedium?.copyWith(
+        color: AppPalette.fieldHint,
+      ),
+      bodyLarge: materialTextTheme.bodyLarge?.copyWith(color: AppPalette.ink),
+    );
     final selected = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
@@ -362,6 +379,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         final theme = Theme.of(context);
         return Theme(
           data: theme.copyWith(
+            textTheme: timePickerTextTheme,
             colorScheme: theme.colorScheme.copyWith(
               primary: AppPalette.green,
               onPrimary: AppPalette.ink,
@@ -374,9 +392,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 borderRadius: BorderRadius.circular(28),
               ),
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-              helpTextStyle: materialTextTheme.labelMedium?.copyWith(
-                color: AppPalette.fieldHint,
-              ),
+              helpTextStyle: timePickerTextTheme.labelMedium,
               hourMinuteShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -396,22 +412,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.green;
               }),
-              hourMinuteTextStyle: materialTextTheme.displayLarge?.copyWith(
-                fontSize: 57,
-                height: timeDisplayHeight,
-                color: AppPalette.ink,
-              ),
-              timeSelectorSeparatorColor: const WidgetStatePropertyAll<Color?>(
-                AppPalette.ink,
-              ),
-              timeSelectorSeparatorTextStyle:
-                  WidgetStatePropertyAll<TextStyle?>(
-                    materialTextTheme.displayLarge?.copyWith(
-                      fontSize: 57,
-                      height: timeDisplayHeight,
-                      color: AppPalette.ink,
-                    ),
-                  ),
               dayPeriodShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
                 side: const BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
@@ -432,8 +432,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.ink;
               }),
-              dayPeriodTextStyle: materialTextTheme.labelMedium?.copyWith(
-                color: AppPalette.fieldHint,
+              dayPeriodTextStyle: timePickerTextTheme.labelMedium,
+              timeSelectorSeparatorColor: const WidgetStatePropertyAll<Color?>(
+                AppPalette.ink,
               ),
               dialBackgroundColor: Colors.white.withValues(alpha: 0.8),
               dialHandColor: AppPalette.green,
@@ -445,9 +446,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.ink;
               }),
-              dialTextStyle: materialTextTheme.bodyLarge?.copyWith(
-                color: AppPalette.ink,
-              ),
+              dialTextStyle: timePickerTextTheme.bodyLarge,
               entryModeIconColor: AppPalette.fieldHint,
               cancelButtonStyle: TextButton.styleFrom(
                 foregroundColor: AppPalette.green,
@@ -462,7 +461,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 16,
+                  vertical: 18,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1143,6 +1142,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       body: Stack(
         children: [
           SafeArea(
+            top: false,
             child: Column(
               children: [
                 _ExpenseHeader(
@@ -1215,15 +1215,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              'Do you regret this expense?',
-                                              style: GoogleFonts.nunito(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w800,
-                                                color: AppPalette.ink,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
                                             SizedBox(
                                               width: 24,
                                               height: 24,
@@ -1248,6 +1239,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                   color: AppPalette.ink,
                                                   width: 1.2,
                                                 ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Do you regret this expense?',
+                                              style: GoogleFonts.nunito(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppPalette.ink,
                                               ),
                                             ),
                                           ],
@@ -1860,6 +1860,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _ExpenseHeader(
@@ -2052,6 +2053,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _ExpenseHeader(
@@ -2784,6 +2786,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
       body: Stack(
         children: [
           SafeArea(
+            top: false,
             child: Column(
               children: [
                 _ExpenseHeader(
@@ -2912,7 +2915,7 @@ class _ExpenseHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 50, 12, 14),
+      padding: AppHeaderMetrics.padding(),
       child: Row(
         children: [
           IconButton(
@@ -3037,7 +3040,7 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
-class _SublabelChip extends StatelessWidget {
+class _SublabelChip extends StatefulWidget {
   const _SublabelChip({
     required this.label,
     required this.selected,
@@ -3049,38 +3052,134 @@ class _SublabelChip extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_SublabelChip> createState() => _SublabelChipState();
+}
+
+class _SublabelChipState extends State<_SublabelChip> {
+  static const Duration _animationDuration = Duration(milliseconds: 180);
+  static const double _nudgeDistance = 6;
+  static const double _screenEdgePadding = 12;
+
+  final GlobalKey _chipKey = GlobalKey();
+  double _slideDx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleBoundsCheck();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleBoundsCheck();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SublabelChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selected != widget.selected ||
+        oldWidget.label != widget.label) {
+      _scheduleBoundsCheck();
+    }
+  }
+
+  void _scheduleBoundsCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _updateSlideOffset();
+      }
+    });
+  }
+
+  void _updateSlideOffset() {
+    final chipContext = _chipKey.currentContext;
+    if (chipContext == null || !widget.selected) {
+      if (_slideDx != 0) {
+        setState(() {
+          _slideDx = 0;
+        });
+      }
+      return;
+    }
+
+    final renderObject = chipContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return;
+    }
+
+    final mediaQuery = MediaQuery.of(chipContext);
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final leftLimit = mediaQuery.padding.left + _screenEdgePadding;
+    final rightLimit =
+        mediaQuery.size.width - mediaQuery.padding.right - _screenEdgePadding;
+    final double availableLeft = math.max<double>(0, topLeft.dx - leftLimit);
+    final double availableRight = math.max<double>(
+      0,
+      rightLimit - (topLeft.dx + renderObject.size.width),
+    );
+
+    final moveRight = availableRight >= availableLeft;
+    final double targetDx = moveRight
+        ? math.min<double>(_nudgeDistance, availableRight)
+        : -math.min<double>(_nudgeDistance, availableLeft);
+
+    if ((targetDx - _slideDx).abs() < 0.1) {
+      return;
+    }
+
+    setState(() {
+      _slideDx = targetDx;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        decoration: BoxDecoration(
-          color: selected ? AppPalette.green : Colors.white,
+    return AnimatedContainer(
+      key: _chipKey,
+      duration: _animationDuration,
+      curve: Curves.easeOutBack,
+      transform: Matrix4.translationValues(_slideDx, 0, 0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Opacity(
-              opacity: selected ? 1 : 0,
-              child: const Icon(Icons.check, size: 15, color: AppPalette.ink),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: AppPalette.ink,
+          child: AnimatedContainer(
+            duration: _animationDuration,
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              color: widget.selected ? AppPalette.green : Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: widget.selected
+                    ? AppPalette.green
+                    : const Color(0xFFD8D8D8),
               ),
             ),
-          ],
+            child: AnimatedSize(
+              duration: _animationDuration,
+              curve: Curves.easeOut,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.selected) ...[
+                    const Icon(Icons.check, size: 15, color: AppPalette.ink),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    widget.label,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

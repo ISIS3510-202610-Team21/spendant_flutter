@@ -176,6 +176,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _NotificationsHeader(
@@ -281,7 +282,7 @@ class _NotificationsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 50, 12, 16),
+      padding: AppHeaderMetrics.padding(bottom: 16),
       child: Row(
         children: [
           IconButton(

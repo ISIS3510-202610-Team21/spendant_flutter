@@ -31,6 +31,8 @@ class SetGoalScreen extends StatefulWidget {
 
 class _SetGoalScreenState extends State<SetGoalScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static const double _bottomDockButtonOffset = 40;
+  static const double _bottomDockButtonClearance = 112;
 
   int _currentStep = -1;
   int _viewState = 0;
@@ -540,8 +542,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isCompactHeight = constraints.maxHeight < 760;
-        final antHeight = isCompactHeight ? 170.0 : 250.0;
+        final antHeight = isCompactHeight ? 180.0 : 270.0;
         final topPadding = isCompactHeight ? 20.0 : 30.0;
+        final antTopSpacing = isCompactHeight ? 64.0 : 112.0;
 
         final content = Column(
           children: [
@@ -630,7 +633,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 ),
               ],
             ),
-            SizedBox(height: isCompactHeight ? 24 : 36),
+            SizedBox(height: antTopSpacing),
             Center(
               child: SizedBox(
                 width: isCompactHeight ? 150 : 200,
@@ -638,7 +641,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 child: const AntAsset('web/ant/ant_idle.svg'),
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: isCompactHeight ? 28 : 40),
           ],
         );
 
@@ -730,48 +733,56 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 );
               final canCreateGoal = summary.hasIncome;
 
-              return ListView(
-                padding: const EdgeInsets.all(24),
+              return Stack(
                 children: [
-                  if (!summary.hasIncome) ...[
-                    const _GoalRulesNotice(
-                      message:
-                          'Goals need at least one active income because every goal reserves part of your daily budget.',
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      24,
+                      24,
+                      24,
+                      _bottomDockButtonClearance,
                     ),
-                    const SizedBox(height: 14),
-                  ] else if (summary.isSpendableBudgetExhausted) ...[
-                    _GoalRulesNotice(
-                      message: summary.isInternalBudgetExhausted
-                          ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
-                          : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (goalStates.isEmpty) const _EmptyGoalsCard(),
-                  for (final goalState in goalStates)
-                    _GoalTile(
-                      goalState: goalState,
-                      onDelete: () => _confirmDeleteGoal(goalState.goal),
-                      onEdit: () => _startGoalSetup(goal: goalState.goal),
-                    ),
-                  const SizedBox(height: 30),
-                  ElevatedButton(
-                    onPressed: canCreateGoal
-                        ? _startGoalSetup
-                        : () =>
-                              Navigator.of(context).pushNamed(AppRoutes.budget),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      minimumSize: const Size(double.infinity, 55),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                    ),
-                    child: Text(
-                      canCreateGoal ? 'New Goal' : 'Add Income First',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    children: [
+                      if (!summary.hasIncome) ...[
+                        const _GoalRulesNotice(
+                          message:
+                              'Goals need at least one active income because every goal reserves part of your daily budget.',
+                        ),
+                        const SizedBox(height: 14),
+                      ] else if (summary.isSpendableBudgetExhausted) ...[
+                        _GoalRulesNotice(
+                          message: summary.isInternalBudgetExhausted
+                              ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
+                              : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if (goalStates.isEmpty) const _EmptyGoalsCard(),
+                      for (final goalState in goalStates)
+                        _GoalTile(
+                          goalState: goalState,
+                          onDelete: () => _confirmDeleteGoal(goalState.goal),
+                          onEdit: () => _startGoalSetup(goal: goalState.goal),
+                        ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _bottomDockButtonOffset,
+                    child: Center(
+                      child: BlackPrimaryButton(
+                        label: canCreateGoal ? 'New Goal' : 'Add Income First',
+                        width: null,
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        borderRadius: BorderRadius.circular(12),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onPressed: canCreateGoal
+                            ? _startGoalSetup
+                            : () => Navigator.of(
+                                context,
+                              ).pushNamed(AppRoutes.budget),
                       ),
                     ),
                   ),
@@ -838,7 +849,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             const SizedBox(height: 30),
             content,
             const SizedBox(height: 40),
-            SizedBox(height: 150, child: AntAsset(asset)),
+            SizedBox(height: 180, child: AntAsset(asset)),
             const Spacer(),
             ElevatedButton(
               onPressed: _continueGoalSetup,
@@ -897,7 +908,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 40),
             const SizedBox(
-              height: 180,
+              height: 220,
               child: AntAsset('web/ant/ant_thumb.svg'),
             ),
             const Spacer(),
@@ -980,7 +991,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 34),
             const SizedBox(
-              height: 170,
+              height: 210,
               child: AntAsset('web/ant/ant_suprised.svg'),
             ),
             const Spacer(),

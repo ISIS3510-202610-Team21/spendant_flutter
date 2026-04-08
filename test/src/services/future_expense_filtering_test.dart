@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:spendant/src/models/app_notification_model.dart';
 import 'package:spendant/src/models/expense_model.dart';
-import 'package:spendant/src/models/goal_model.dart';
 import 'package:spendant/src/services/expense_moment_service.dart';
 import 'package:spendant/src/services/notification_feed_service.dart';
 import 'package:spendant/src/theme/expense_visuals.dart';
@@ -46,33 +45,35 @@ void main() {
       expect(totals.first.amount, 200);
     });
 
-    test('notification feed ignores future expenses', () {
-      final currentExpense = ExpenseModel()
+    test('notification feed only includes generated app notifications', () {
+      final generatedNotification = AppNotificationModel()
+        ..id = 'budget-warning-2026-04-07'
+        ..type = 'budget_warning'
         ..userId = 7
-        ..name = 'Lunch'
-        ..amount = 200
-        ..date = DateTime(2020, 3, 20)
-        ..time = '10:15'
-        ..createdAt = DateTime(2020, 3, 20, 10, 15)
-        ..detailLabels = <String>['Food'];
-      final futureExpense = ExpenseModel()
-        ..userId = 7
-        ..name = 'Shoes'
-        ..amount = 1000
-        ..date = DateTime(2099, 3, 25)
-        ..time = '09:00'
-        ..createdAt = DateTime(2020, 3, 20, 10, 30)
-        ..detailLabels = <String>['Other'];
+        ..title = 'Daily budget exhausted'
+        ..detailTitle = 'Daily budget warning'
+        ..detailMessage = 'Review today\'s budget.'
+        ..createdAt = DateTime(2026, 4, 7, 9, 0);
+      final otherUserNotification = AppNotificationModel()
+        ..id = 'goal-created-1'
+        ..type = 'goal_created'
+        ..userId = 8
+        ..title = 'New goal created'
+        ..detailTitle = 'Goal created'
+        ..detailMessage = 'Another user notification.'
+        ..createdAt = DateTime(2026, 4, 7, 10, 0);
 
       final feed = NotificationFeedService.buildFeed(
-        expenses: <ExpenseModel>[currentExpense, futureExpense],
-        goals: <GoalModel>[],
-        appNotifications: <AppNotificationModel>[],
+        appNotifications: <AppNotificationModel>[
+          generatedNotification,
+          otherUserNotification,
+        ],
         userId: 7,
       );
 
       expect(feed, hasLength(1));
-      expect(feed.single.title, 'Lunch');
+      expect(feed.single.title, 'Daily budget exhausted');
+      expect(feed.single.type, NotificationFeedType.budgetWarning);
     });
   });
 }

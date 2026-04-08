@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_notification_model.dart';
 import 'app_navigation_service.dart';
@@ -49,7 +48,26 @@ abstract final class LocalNotificationService {
   static Future<void> _initializeInternal() async {
     const initializationSettings = InitializationSettings(
       android: AndroidInitializationSettings(_androidNotificationIcon),
-      iOS: DarwinInitializationSettings(),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+        defaultPresentAlert: true,
+        defaultPresentBadge: true,
+        defaultPresentSound: true,
+        defaultPresentBanner: true,
+        defaultPresentList: true,
+      ),
+      macOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+        defaultPresentAlert: true,
+        defaultPresentBadge: true,
+        defaultPresentSound: true,
+        defaultPresentBanner: true,
+        defaultPresentList: true,
+      ),
     );
 
     await _plugin.initialize(
@@ -82,6 +100,10 @@ abstract final class LocalNotificationService {
   static Future<bool> ensurePermission({bool promptIfNeeded = false}) async {
     if (kIsWeb) {
       return false;
+    }
+
+    if (!_isInitialized) {
+      await initialize();
     }
 
     final currentRequest = _permissionRequest;
@@ -126,17 +148,7 @@ abstract final class LocalNotificationService {
       return;
     }
 
-    final routeName = notification.routeName;
-    if (routeName == null || routeName.isEmpty) {
-      return;
-    }
-
-    final payload = jsonEncode(
-      AppRedirect(
-        routeName: routeName,
-        routeArgumentInt: notification.routeArgumentInt,
-      ).toMap(),
-    );
+    final payload = _payloadForNotification(notification);
 
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -149,7 +161,20 @@ abstract final class LocalNotificationService {
         category: AndroidNotificationCategory.reminder,
         styleInformation: BigTextStyleInformation(notification.detailMessage),
       ),
-      iOS: const DarwinNotificationDetails(),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        presentBanner: true,
+        presentList: true,
+      ),
+      macOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        presentBanner: true,
+        presentList: true,
+      ),
     );
 
     try {
@@ -196,24 +221,123 @@ abstract final class LocalNotificationService {
     }
   }
 
+  static String? _payloadForNotification(AppNotificationModel notification) {
+    final routeName = notification.routeName;
+    if (routeName == null || routeName.isEmpty) {
+      return null;
+    }
+
+    return jsonEncode(
+      AppRedirect(
+        routeName: routeName,
+        routeArgumentInt: notification.routeArgumentInt,
+      ).toMap(),
+    );
+  }
+
   static Future<bool> _ensurePermissionInternal({
     required bool promptIfNeeded,
   }) async {
-    if (defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS) {
-      return true;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return _ensureAndroidPermission(promptIfNeeded: promptIfNeeded);
+      case TargetPlatform.iOS:
+        return _ensureIosPermission(promptIfNeeded: promptIfNeeded);
+      case TargetPlatform.macOS:
+        return _ensureMacOsPermission(promptIfNeeded: promptIfNeeded);
+      default:
+        return true;
     }
+  }
 
-    var status = await Permission.notification.status;
-    if (status.isGranted || status.isLimited || status.isProvisional) {
-      return true;
-    }
-
-    if (!promptIfNeeded || status.isPermanentlyDenied || status.isRestricted) {
+  static Future<bool> _ensureAndroidPermission({
+    required bool promptIfNeeded,
+  }) async {
+    final androidImplementation = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidImplementation == null) {
       return false;
     }
 
-    status = await Permission.notification.request();
-    return status.isGranted || status.isLimited || status.isProvisional;
+    final notificationsEnabled =
+        await androidImplementation.areNotificationsEnabled() ?? false;
+    if (notificationsEnabled) {
+      return true;
+    }
+
+    if (!promptIfNeeded) {
+      return false;
+    }
+
+    return await androidImplementation.requestNotificationsPermission() ??
+        false;
+  }
+
+  static Future<bool> _ensureIosPermission({
+    required bool promptIfNeeded,
+  }) async {
+    final iOSImplementation = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (iOSImplementation == null) {
+      return false;
+    }
+
+    final currentPermissions = await iOSImplementation.checkPermissions();
+    if (_darwinPermissionsAllowAlerts(currentPermissions)) {
+      return true;
+    }
+
+    if (!promptIfNeeded) {
+      return false;
+    }
+
+    return await iOSImplementation.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        ) ??
+        false;
+  }
+
+  static Future<bool> _ensureMacOsPermission({
+    required bool promptIfNeeded,
+  }) async {
+    final macOSImplementation = _plugin
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >();
+    if (macOSImplementation == null) {
+      return false;
+    }
+
+    final currentPermissions = await macOSImplementation.checkPermissions();
+    if (_darwinPermissionsAllowAlerts(currentPermissions)) {
+      return true;
+    }
+
+    if (!promptIfNeeded) {
+      return false;
+    }
+
+    return await macOSImplementation.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        ) ??
+        false;
+  }
+
+  static bool _darwinPermissionsAllowAlerts(
+    NotificationsEnabledOptions? permissions,
+  ) {
+    if (permissions == null || !permissions.isEnabled) {
+      return false;
+    }
+
+    return permissions.isAlertEnabled || permissions.isProvisionalEnabled;
   }
 }

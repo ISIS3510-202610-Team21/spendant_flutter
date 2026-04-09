@@ -6,14 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
+import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
-import '../services/app_notification_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
+import '../services/local_notification_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -45,6 +47,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   String? _goalBudgetBlockedTitle;
   String? _goalBudgetBlockedMessage;
   bool _isSavingGoal = false;
+  bool _isSendingTestNotification = false;
   String _profileName = 'John Doe';
   String _profileHandle = '@johndoe';
   Uint8List? _profileAvatarBytes;
@@ -394,7 +397,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _isSavingGoal = true;
     });
 
-    GoalModel? createdGoal;
     try {
       final editingGoal = _editingGoal;
       if (editingGoal == null) {
@@ -408,7 +410,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveGoal(goal);
-        createdGoal = goal;
       } else {
         final currentGoalAmount = _goalCurrentAmount(editingGoal);
         final updatedCurrentAmount = currentGoalAmount > amount
@@ -446,9 +447,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _currentStep = -1;
       _viewState = 1;
     });
-    if (createdGoal != null) {
-      unawaited(AppNotificationService.notifyGoalCreated(createdGoal));
-    }
     _resetGoalForm();
     _syncPendingDataInBackground();
   }
@@ -480,6 +478,74 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         );
       },
     );
+  }
+
+  AppNotificationModel _buildHabitFixerTestNotification() {
+    final now = DateTime.now();
+    final timeLabel = DateFormat('HH:mm').format(
+      DateTime(now.year, now.month, now.day, 9, 15),
+    );
+
+    return AppNotificationModel()
+      ..id = 'habit-fixer-test-${now.microsecondsSinceEpoch}'
+      ..type = AppNotificationTypes.habitFixerWarning
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'Pause before spending here'
+      ..subtitle = '3 regretted purchases around $timeLabel'
+      ..category = 'Small purchases'
+      ..detailTitle = 'You have a regret pattern here'
+      ..detailMessage =
+          'You previously marked 3 purchases near this place around $timeLabel as regretted. You are back in the same area and your calendar looks free, so take a moment before spending.'
+      ..routeName = AppRoutes.notifications;
+  }
+
+  Future<void> _sendTestNotificationToDevice() async {
+    if (_isSendingTestNotification) {
+      return;
+    }
+
+    setState(() {
+      _isSendingTestNotification = true;
+    });
+
+    try {
+      final result = await LocalNotificationService.showTrackedNotification(
+        _buildHabitFixerTestNotification(),
+        promptIfNeeded: true,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (result.wasShown) {
+        return;
+      }
+
+      final permissionStatus = await Permission.notification.status;
+      if (!mounted) {
+        return;
+      }
+
+      if (permissionStatus.isPermanentlyDenied ||
+          permissionStatus.isRestricted) {
+        await openAppSettings();
+        return;
+      }
+
+      final statusLabel = permissionStatus == PermissionStatus.granted
+          ? 'Android says notifications are enabled, but the test alert was not posted. ${result.errorMessage ?? ''}'
+                .trim()
+          : 'Notification permission was not granted, so the test alert could not be sent.';
+      _showMessage(
+        '$statusLabel Review system notification settings for SpendAnt and try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingTestNotification = false;
+        });
+      }
+    }
   }
 
   Future<bool> _showDeleteConfirmation({
@@ -717,7 +783,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 48),
+              GestureDetector(
+                onLongPress: _isSendingTestNotification
+                    ? null
+                    : _sendTestNotificationToDevice,
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox(width: 48, height: 48),
+              ),
             ],
           ),
         ),

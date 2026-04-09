@@ -8,7 +8,6 @@ import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
 import '../services/app_date_format_service.dart';
-import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
@@ -486,7 +485,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       _isSavingIncome = true;
     });
 
-    IncomeModel? createdIncome;
     try {
       final editingIncome = widget.editingIncome;
       if (editingIncome == null) {
@@ -501,7 +499,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveIncome(income);
-        createdIncome = income;
       } else {
         editingIncome
           ..userId = _currentUserId
@@ -530,9 +527,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       return;
     }
 
-    if (createdIncome != null) {
-      unawaited(AppNotificationService.notifyIncomeCreated(createdIncome));
-    }
     final navigator = Navigator.of(context);
     navigator.pop(true);
     _syncPendingDataInBackground();

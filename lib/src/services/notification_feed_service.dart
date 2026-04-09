@@ -50,6 +50,16 @@ class NotificationFeedItem {
 abstract final class NotificationFeedService {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
+  static bool isVisibleInFeedType(String type) {
+    switch (type) {
+      case AppNotificationTypes.goalCreated:
+      case AppNotificationTypes.incomeCreated:
+        return false;
+      default:
+        return true;
+    }
+  }
+
   static List<NotificationFeedItem> buildFeed({
     required Iterable<AppNotificationModel> appNotifications,
     int? userId,
@@ -69,6 +79,7 @@ abstract final class NotificationFeedService {
   }) {
     return appNotifications
         .where((notification) => notification.userId == resolvedUserId)
+        .where((notification) => isVisibleInFeedType(notification.type))
         .map((notification) {
           return NotificationFeedItem(
             id: notification.id,

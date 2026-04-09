@@ -107,50 +107,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() {
       _isSimulatingGooglePay = false;
     });
-
-    final parsedExpense = result.expense;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    switch (result.status) {
-      case GooglePayImportStatus.imported:
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              parsedExpense == null
-                  ? 'Simulated Google Pay expense imported.'
-                  : 'Imported ${parsedExpense.name} for ${NotificationFeedService.formatAmount(parsedExpense.amount)}.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.duplicate:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'That simulated Google Pay expense already exists nearby.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.ignored:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'The simulated Google Pay notification could not be parsed.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.unavailable:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Sign in first to import a simulated Google Pay expense.',
-            ),
-          ),
-        );
-        return;
-    }
   }
 
   Future<void> _openNotificationDetail(

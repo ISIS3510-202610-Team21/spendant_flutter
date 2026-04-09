@@ -36,10 +36,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
-  static const Duration _exitConfirmWindow = Duration(seconds: 2);
 
   bool _hasUnreadNotifications = true;
-  DateTime? _lastBackPressAt;
   late final ValueListenable<Box<AppNotificationModel>>
   _notificationsListenable;
   late final int _expenseColorStartIndex;
@@ -151,27 +149,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleBackPressed() async {
-    final now = DateTime.now();
-    final previousBackPress = _lastBackPressAt;
-    if (previousBackPress != null &&
-        now.difference(previousBackPress) <= _exitConfirmWindow) {
-      await SystemNavigator.pop();
-      return;
-    }
-
-    _lastBackPressAt = now;
-    if (!mounted) {
-      return;
-    }
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Press back again to exit SpendAnt.'),
-        duration: Duration(seconds: 2),
-      ),
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Exit SpendAnt?'),
+          content: const Text(
+            'You will close the app and return to your phone home screen.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Exit'),
+            ),
+          ],
+        );
+      },
     );
+    if (shouldExit == true) {
+      await SystemNavigator.pop();
+    }
   }
 
   @override

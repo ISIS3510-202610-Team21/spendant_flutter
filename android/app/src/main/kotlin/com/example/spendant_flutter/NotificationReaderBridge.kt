@@ -5,6 +5,7 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -75,11 +76,7 @@ object NotificationReaderBridge {
 
             "openNotificationListenerSettings" -> {
                 try {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    activity.startActivity(intent)
-                    result.success(true)
+                    result.success(openNotificationListenerSettings(activity))
                 } catch (error: Exception) {
                     result.error(
                         "open_settings_failed",
@@ -214,6 +211,36 @@ object NotificationReaderBridge {
                 component.packageName == expectedComponent.packageName &&
                     component.className == expectedComponent.className
             }
+    }
+
+    private fun openNotificationListenerSettings(activity: Activity): Boolean {
+        val expectedComponent = ComponentName(activity, SpendAntNotificationListenerService::class.java)
+        val intents = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                add(
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
+                        putExtra(
+                            Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                            expectedComponent.flattenToString(),
+                        )
+                    }
+                )
+            }
+
+            add(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
+        val packageManager = activity.packageManager
+        val intent = intents.firstOrNull { candidate ->
+            candidate.resolveActivity(packageManager) != null
+        } ?: return false
+
+        activity.startActivity(
+            intent.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+        return true
     }
 
     private fun emit(payload: Map<String, Any?>) {

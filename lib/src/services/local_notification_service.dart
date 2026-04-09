@@ -1,14 +1,31 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/app_notification_model.dart';
 import 'app_navigation_service.dart';
+import 'auth_memory_store.dart';
+import 'local_storage_service.dart';
+import 'notification_feed_service.dart';
 import 'post_auth_navigation.dart';
+
+class LocalNotificationAttemptResult {
+  const LocalNotificationAttemptResult({
+    required this.wasShown,
+    this.errorMessage,
+  });
+
+  final bool wasShown;
+  final String? errorMessage;
+}
 
 abstract final class LocalNotificationService {
   static const String _androidNotificationIcon = 'ic_stat_spendant';
+  static const Color _androidNotificationColor = Color(0xFF44C669);
+  static const DrawableResourceAndroidBitmap _androidLargeIcon =
+      DrawableResourceAndroidBitmap('spendant_notification_large_icon');
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
         'spendant_alerts',
@@ -17,6 +34,11 @@ abstract final class LocalNotificationService {
             'Goal, budget, and spending alerts generated locally by SpendAnt.',
         importance: Importance.max,
       );
+  static const String _androidNotificationGroupKey = 'spendant_alerts_group';
+  static const String _androidTestNotificationGroupKey =
+      'spendant_alerts_test_group';
+  static const int _androidSummaryNotificationId = 0x53414D;
+  static const int _androidTestSummaryNotificationId = 0x534154;
 
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -125,7 +147,7 @@ abstract final class LocalNotificationService {
     }
   }
 
-  static Future<void> showTrackedNotification(
+  static Future<LocalNotificationAttemptResult> showTrackedNotification(
     AppNotificationModel notification, {
     bool promptIfNeeded = true,
   }) async {
@@ -137,7 +159,10 @@ abstract final class LocalNotificationService {
           'LocalNotificationService initialization failed before show: $error',
         );
         debugPrintStack(stackTrace: stackTrace);
-        return;
+        return LocalNotificationAttemptResult(
+          wasShown: false,
+          errorMessage: '$error',
+        );
       }
     }
 
@@ -148,21 +173,97 @@ abstract final class LocalNotificationService {
       debugPrint(
         'LocalNotificationService.showTrackedNotification skipped: notification permission not granted.',
       );
-      return;
+      return const LocalNotificationAttemptResult(wasShown: false);
     }
 
     final payload = _payloadForNotification(notification);
+    final notificationId = notification.id.hashCode & 0x7fffffff;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return _showAndroidGroupedNotification(
+        childNotificationId: notificationId,
+        summaryNotificationId: _androidSummaryNotificationId,
+        groupKey: _androidNotificationGroupKey,
+        title: notification.title,
+        body: notification.detailMessage,
+        payload: payload,
+        summaryLines: _buildStoredSummaryLines(),
+      );
+    }
 
+    return _showNotification(
+      notificationId: notificationId,
+      title: notification.title,
+      body: notification.detailMessage,
+      payload: payload,
+    );
+  }
+
+  static Future<LocalNotificationAttemptResult> showTestNotification({
+    required String title,
+    required String body,
+    bool promptIfNeeded = true,
+  }) async {
+    if (!_isInitialized) {
+      try {
+        await initialize();
+      } catch (error, stackTrace) {
+        debugPrint(
+          'LocalNotificationService initialization failed before test show: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+        return LocalNotificationAttemptResult(
+          wasShown: false,
+          errorMessage: '$error',
+        );
+      }
+    }
+
+    final hasPermission = await ensurePermission(
+      promptIfNeeded: promptIfNeeded,
+    );
+    if (!hasPermission) {
+      debugPrint(
+        'LocalNotificationService.showTestNotification skipped: notification permission not granted.',
+      );
+      return const LocalNotificationAttemptResult(wasShown: false);
+    }
+
+    final notificationId = DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return _showAndroidGroupedNotification(
+        childNotificationId: notificationId,
+        summaryNotificationId: _androidTestSummaryNotificationId,
+        groupKey: _androidTestNotificationGroupKey,
+        title: title,
+        body: body,
+        summaryLines: <String>[title],
+      );
+    }
+
+    return _showNotification(
+      notificationId: notificationId,
+      title: title,
+      body: body,
+    );
+  }
+
+  static Future<LocalNotificationAttemptResult> _showNotification({
+    required int notificationId,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _androidChannel.id,
         _androidChannel.name,
         channelDescription: _androidChannel.description,
         icon: _androidNotificationIcon,
+        color: _androidNotificationColor,
         importance: Importance.max,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,
-        styleInformation: BigTextStyleInformation(notification.detailMessage),
+        styleInformation: BigTextStyleInformation(body),
       ),
       iOS: const DarwinNotificationDetails(
         presentAlert: true,
@@ -182,18 +283,131 @@ abstract final class LocalNotificationService {
 
     try {
       await _plugin.show(
-        notification.id.hashCode & 0x7fffffff,
-        notification.title,
-        notification.detailMessage,
+        notificationId,
+        title,
+        body,
         details,
         payload: payload,
       );
+      return const LocalNotificationAttemptResult(wasShown: true);
+    } catch (error, stackTrace) {
+      debugPrint('LocalNotificationService._showNotification failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return LocalNotificationAttemptResult(
+        wasShown: false,
+        errorMessage: '$error',
+      );
+    }
+  }
+
+  static Future<LocalNotificationAttemptResult> _showAndroidGroupedNotification({
+    required int childNotificationId,
+    required int summaryNotificationId,
+    required String groupKey,
+    required String title,
+    required String body,
+    String? payload,
+    required List<String> summaryLines,
+  }) async {
+    final childDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _androidChannel.id,
+        _androidChannel.name,
+        channelDescription: _androidChannel.description,
+        icon: _androidNotificationIcon,
+        color: _androidNotificationColor,
+        largeIcon: _androidLargeIcon,
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.reminder,
+        styleInformation: BigTextStyleInformation(body),
+        groupKey: groupKey,
+        groupAlertBehavior: GroupAlertBehavior.children,
+      ),
+    );
+
+    final normalizedSummaryLines = summaryLines
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .take(5)
+        .toList(growable: false);
+    final resolvedSummaryLines = normalizedSummaryLines.isEmpty
+        ? <String>[title]
+        : normalizedSummaryLines;
+    final summaryCount = resolvedSummaryLines.length;
+    final summaryBody = summaryCount == 1
+        ? '1 alert from SpendAnt'
+        : '$summaryCount alerts from SpendAnt';
+    final summaryDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _androidChannel.id,
+        _androidChannel.name,
+        channelDescription: _androidChannel.description,
+        icon: _androidNotificationIcon,
+        color: _androidNotificationColor,
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.status,
+        styleInformation: InboxStyleInformation(
+          resolvedSummaryLines,
+          contentTitle: 'SpendAnt',
+          summaryText: summaryBody,
+        ),
+        groupKey: groupKey,
+        setAsGroupSummary: true,
+        groupAlertBehavior: GroupAlertBehavior.summary,
+      ),
+    );
+
+    try {
+      await _plugin.show(
+        childNotificationId,
+        title,
+        body,
+        childDetails,
+        payload: payload,
+      );
+      await _plugin.show(
+        summaryNotificationId,
+        'SpendAnt',
+        summaryBody,
+        summaryDetails,
+      );
+      return const LocalNotificationAttemptResult(wasShown: true);
     } catch (error, stackTrace) {
       debugPrint(
-        'LocalNotificationService.showTrackedNotification failed: $error',
+        'LocalNotificationService._showAndroidGroupedNotification failed: $error',
       );
       debugPrintStack(stackTrace: stackTrace);
+      return LocalNotificationAttemptResult(
+        wasShown: false,
+        errorMessage: '$error',
+      );
     }
+  }
+
+  static List<String> _buildStoredSummaryLines() {
+    final currentUserId = AuthMemoryStore.currentUserIdOrGuest;
+    if (currentUserId < 0) {
+      return const <String>[];
+    }
+
+    final notifications = LocalStorageService.notificationBox.values
+        .where((notification) => notification.userId == currentUserId)
+        .where(
+          (notification) =>
+              NotificationFeedService.isVisibleInFeedType(notification.type),
+        )
+        .toList()
+      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+
+    return notifications.take(5).map((notification) {
+      final subtitle = notification.subtitle?.trim();
+      if (subtitle != null && subtitle.isNotEmpty) {
+        return '${notification.title} - $subtitle';
+      }
+      return notification.title.trim();
+    }).where((line) => line.isNotEmpty).toList(growable: false);
   }
 
   static void _handleNotificationResponse(NotificationResponse response) {

@@ -5,12 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../app.dart';
 import '../models/user_model.dart';
 import '../services/app_notification_service.dart';
-import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
+import '../services/permissions_review_service.dart';
 import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
 import '../theme/spendant_theme.dart';
@@ -185,35 +185,46 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       _isSubmitting = false;
     });
 
-    final authState = await AuthMemoryStore.loadGreetingState();
+    final redirect = widget.postAuthRedirect;
+    if (_isRegisterMode) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        AppRoutes.registerIntro,
+        (route) => false,
+        arguments: PermissionsIntroArgs.fullOnboarding(redirect: redirect),
+      );
+      return;
+    }
+
+    final permissionsReviewFlow =
+        await PermissionsReviewService.planForNormalLogin();
     if (!mounted) {
       return;
     }
 
-    final shouldShowPermissionsOnboarding =
-        _isRegisterMode || authState.needsLocationPermissionPrompt;
-    final redirect = widget.postAuthRedirect;
-    if (shouldShowPermissionsOnboarding) {
+    if (permissionsReviewFlow.destination ==
+        PermissionsReviewDestination.locationPermissionIntro) {
       final navigationArgs = redirect == null
           ? null
           : PostAuthNavigationArgs(redirect: redirect);
-
       Navigator.of(context).pushNamedAndRemoveUntil(
-        AppRoutes.registerIntro,
+        AppRoutes.locationPermissionIntro,
         (route) => false,
         arguments: navigationArgs,
       );
       return;
     }
 
-    if (redirect != null) {
-      await AppNavigationService.openRedirect(redirect);
-      return;
-    }
-
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(widget.successRoute, (route) => false);
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.registerIntro,
+      (route) => false,
+      arguments: PermissionsIntroArgs.review(
+        redirect: redirect,
+        initialStep:
+            permissionsReviewFlow.initialStep ?? PermissionsIntroStep.calendar,
+        showCalendarStep: permissionsReviewFlow.showCalendarStep,
+        showNotificationStep: permissionsReviewFlow.showNotificationStep,
+      ),
+    );
   }
 
   String? _validateFields({

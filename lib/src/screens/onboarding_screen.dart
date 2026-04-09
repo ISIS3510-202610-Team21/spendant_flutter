@@ -16,6 +16,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   late final Future<AuthGreetingState> _greetingFuture;
   bool _isAuthenticatingWithFingerprint = false;
+  String? _authStatusText;
 
   @override
   void initState() {
@@ -24,6 +25,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _openLoginFlow() {
+    setState(() {
+      _authStatusText = null;
+    });
     Navigator.of(context).pushNamed(AppRoutes.login);
   }
 
@@ -44,6 +48,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     setState(() {
       _isAuthenticatingWithFingerprint = true;
+      _authStatusText = null;
     });
 
     final result = await FingerprintLoginService.authenticate(
@@ -55,15 +60,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     setState(() {
       _isAuthenticatingWithFingerprint = false;
+      _authStatusText = result.didAuthenticate ? null : result.message;
     });
 
     if (result.didAuthenticate || result.message == null) {
       return;
     }
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text(result.message!)));
   }
 
   @override
@@ -127,6 +129,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                           child: const Text('Login with other User'),
                         ),
+                        if (_authStatusText != null) ...[
+                          const SizedBox(height: 14),
+                          Text(
+                            _authStatusText!,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.nunito(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
                         SizedBox(height: constraints.maxHeight * 0.34),
                       ],
                     ),

@@ -3076,26 +3076,20 @@ class _SublabelChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 15,
-                height: 15,
-                child: AnimatedOpacity(
-                  duration: _animationDuration,
-                  curve: Curves.easeOut,
-                  opacity: selected ? 1 : 0,
-                  child: AnimatedScale(
-                    duration: _animationDuration,
-                    curve: Curves.easeOutBack,
-                    scale: selected ? 1 : 0.85,
-                    child: const Icon(
-                      Icons.check,
-                      size: 15,
-                      color: AppPalette.ink,
-                    ),
-                  ),
-                ),
+              AnimatedSize(
+                duration: _animationDuration,
+                curve: Curves.easeOut,
+                child: selected
+                    ? const Padding(
+                        padding: EdgeInsets.only(right: 6),
+                        child: Icon(
+                          Icons.check,
+                          size: 15,
+                          color: AppPalette.ink,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-              const SizedBox(width: 6),
               Text(
                 label,
                 style: GoogleFonts.nunito(

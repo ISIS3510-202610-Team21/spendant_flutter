@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
@@ -358,17 +359,29 @@ class _EmptyIncomesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40),
-      child: Center(
-        child: Text(
-          'No incomes yet.\nTap "New Income" to add one.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.fieldHint,
-            height: 1.5,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset('web/ant/ant_suprised.svg', height: 160),
+          const SizedBox(height: 20),
+          Text(
+            'No incomes yet',
+            style: GoogleFonts.nunito(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
           ),
-        ),
+          const SizedBox(height: 6),
+          Text(
+            'Add your first income source',
+            style: GoogleFonts.nunito(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.fieldHint,
+            ),
+          ),
+        ],
       ),
     );
   }

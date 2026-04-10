@@ -264,7 +264,7 @@ abstract final class AppNotificationService {
         promptForNotificationPermission: promptForNotificationPermission,
       );
     }
-    if (summary.isSpendableBudgetExhausted) {
+    if (summary.hasIncome && summary.isSpendableBudgetExhausted) {
       final budgetSignalId = _budgetSignalId(now);
       final shouldNotify = !trackedSignals.contains(budgetSignalId);
       if (shouldNotify) {
@@ -352,7 +352,7 @@ abstract final class AppNotificationService {
       trackedSignals.add(spendingAnomaly.signalId);
     }
 
-    if (summary.isSpendableBudgetExhausted) {
+    if (summary.hasIncome && summary.isSpendableBudgetExhausted) {
       trackedSignals.add(_budgetSignalId(now));
     }
 

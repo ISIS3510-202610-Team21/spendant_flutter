@@ -25,6 +25,9 @@ class SpendingAnomalyInsight {
 abstract final class SpendingAnomalyService {
   static const int _minimumHistoryDays = 5;
 
+  // Total closed days we look back: 1 analyzed (yesterday) + 5 baseline days.
+  static const int _lookbackDays = _minimumHistoryDays + 1;
+
   static SpendingAnomalyInsight? buildInsight({
     required Iterable<ExpenseModel> expenses,
     DateTime? accountCreatedAt,
@@ -37,12 +40,17 @@ abstract final class SpendingAnomalyService {
       fallback: todayStart,
     );
     final accountAgeInDays = todayStart.difference(accountStart).inDays;
-    if (accountAgeInDays < _minimumHistoryDays) {
+    // Need _lookbackDays closed days entirely within account lifetime.
+    // With accountAgeInDays == 5, offset=6 lands before account creation,
+    // injecting a phantom $0 baseline entry. Require > 5 days (>= 6).
+    if (accountAgeInDays <= _minimumHistoryDays) {
       return null;
     }
 
+    // Build exactly _lookbackDays closed-day totals (yesterday … 6 days ago).
+    // Today is never included (offset starts at 1).
     final closedDays = <_DailyExpenseTotal>[
-      for (var offset = 1; offset <= 6; offset++)
+      for (var offset = 1; offset <= _lookbackDays; offset++)
         _DailyExpenseTotal(
           dayStart: todayStart.subtract(Duration(days: offset)),
           totalExpense: _sumExpensesForDay(
@@ -51,11 +59,9 @@ abstract final class SpendingAnomalyService {
           ),
         ),
     ];
-    if (closedDays.length < 6) {
-      return null;
-    }
+    assert(closedDays.length == _lookbackDays);
 
-    final analyzedDay = closedDays.first;
+    final analyzedDay = closedDays.first; // yesterday
     final baseline = closedDays.skip(1).take(_minimumHistoryDays).toList();
     if (baseline.length < _minimumHistoryDays) {
       return null;

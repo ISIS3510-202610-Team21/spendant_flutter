@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart analyze:*)",
+      "Bash(find /d/Proyectos/Moviles/spendant_flutter/android -type f -name \"*.kt\" -exec grep -l -i \"anomaly\\\\|anomalia\" {} \\\\;)"
+    ]
+  }
+}

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
 import '../models/user_model.dart';
+import '../services/app_analytics_service.dart';
 import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
@@ -123,6 +126,32 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       _isSubmitting = true;
       _errorText = null;
     });
+
+    try {
+      await _submitAuthenticated(
+        username: username,
+        email: email,
+        password: password,
+      );
+    } catch (e) {
+      unawaited(
+        AppAnalyticsService.instance.logModuleCrash('login', e),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmitting = false;
+        _errorText = 'Something went wrong. Please try again.';
+      });
+    }
+  }
+
+  Future<void> _submitAuthenticated({
+    required String username,
+    required String email,
+    required String password,
+  }) async {
 
     final result = _isRegisterMode
         ? await _authService.register(

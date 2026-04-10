@@ -28,8 +28,6 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
   AppLifecycleListener? _appLifecycleListener;
   bool _didResolveFlow = false;
   bool _waitingForNotificationReaderAccess = false;
-  bool? _postingPermissionEnabled;
-  bool? _notificationReaderEnabled;
   late PermissionsIntroArgs _flowArgs;
   late List<PermissionsIntroStep> _visibleSteps;
 
@@ -168,18 +166,7 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
       return;
     }
 
-    final postingEnabled = await LocalNotificationService.ensurePermission();
-    final readerEnabled = NotificationReaderService.isSupportedPlatform
-        ? await NotificationReaderService.isAccessEnabled()
-        : null;
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _postingPermissionEnabled = postingEnabled;
-      _notificationReaderEnabled = readerEnabled;
-    });
+    await LocalNotificationService.ensurePermission();
   }
 
   Future<void> _requestPostingPermission() async {
@@ -419,98 +406,6 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
     return PostAuthNavigationArgs(redirect: redirect);
   }
 
-  Widget _buildNotificationStatusCard() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppPalette.ink.withValues(alpha: 0.12)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Current notification status',
-            style: GoogleFonts.nunito(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildStatusRow(
-            label: 'SpendAnt alerts',
-            isEnabled: _postingPermissionEnabled,
-          ),
-          const SizedBox(height: 10),
-          _buildStatusRow(
-            label: 'Read supported phone notifications',
-            isEnabled: _notificationReaderEnabled,
-            unsupportedLabel: 'Android only',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusRow({
-    required String label,
-    required bool? isEnabled,
-    String? unsupportedLabel,
-  }) {
-    final statusLabel = unsupportedLabel != null && !NotificationReaderService.isSupportedPlatform
-        ? unsupportedLabel
-        : isEnabled == null
-        ? 'Checking...'
-        : isEnabled
-        ? 'Enabled'
-        : 'Not enabled';
-    final statusColor = unsupportedLabel != null &&
-            !NotificationReaderService.isSupportedPlatform
-        ? AppPalette.ink.withValues(alpha: 0.68)
-        : isEnabled == null
-        ? AppPalette.ink.withValues(alpha: 0.68)
-        : isEnabled
-        ? const Color(0xFF159447)
-        : const Color(0xFFB25025);
-
-    return Row(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: statusColor,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: AppPalette.ink,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          statusLabel,
-          style: GoogleFonts.nunito(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: statusColor,
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_didResolveFlow || _visibleSteps.isEmpty) {
@@ -539,8 +434,6 @@ class _PostRegisterIntroScreenState extends State<PostRegisterIntroScreen> {
               const SizedBox(height: 26),
               AntAsset(step.antAssetPath, height: 240),
               const SizedBox(height: 28),
-              if (_currentStepType == PermissionsIntroStep.notifications)
-                _buildNotificationStatusCard(),
               BlackPrimaryButton(
                 label: step.primaryLabel,
                 width: step.buttonWidth,

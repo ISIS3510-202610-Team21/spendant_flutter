@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/app_analytics_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
@@ -1033,7 +1034,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           'The selected expense is no longer attached to local storage.',
         );
       }
-    } catch (_) {
+    } catch (e) {
+      unawaited(AppAnalyticsService.instance.logModuleCrash('expenses', e));
       if (!mounted) {
         return;
       }
@@ -3074,28 +3076,32 @@ class _SublabelChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              SizedBox(
+                width: 15,
+                height: 15,
+                child: AnimatedOpacity(
+                  duration: _animationDuration,
+                  curve: Curves.easeOut,
+                  opacity: selected ? 1 : 0,
+                  child: AnimatedScale(
+                    duration: _animationDuration,
+                    curve: Curves.easeOutBack,
+                    scale: selected ? 1 : 0.85,
+                    child: const Icon(
+                      Icons.check,
+                      size: 15,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               Text(
                 label,
                 style: GoogleFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                   color: AppPalette.ink,
-                ),
-              ),
-              const SizedBox(width: 6),
-              AnimatedOpacity(
-                duration: _animationDuration,
-                curve: Curves.easeOut,
-                opacity: selected ? 1 : 0,
-                child: AnimatedScale(
-                  duration: _animationDuration,
-                  curve: Curves.easeOutBack,
-                  scale: selected ? 1 : 0.85,
-                  child: const SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: Icon(Icons.check, size: 15, color: AppPalette.ink),
-                  ),
                 ),
               ),
             ],

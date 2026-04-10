@@ -44,7 +44,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
-  DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
+  DateTime _goalDeadline = DateTime.now();
   GoalModel? _editingGoal;
   String? _goalBudgetBlockedTitle;
   String? _goalBudgetBlockedMessage;

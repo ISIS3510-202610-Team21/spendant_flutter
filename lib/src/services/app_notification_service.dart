@@ -23,9 +23,11 @@ abstract final class AppNotificationService {
   static const String _bootstrapKeyPrefix = 'app_notification_bootstrap_v2';
   static const String _trackedSignalIdsKeyPrefix =
       'app_notification_tracked_signal_ids_v2';
+  static const int _inactivityThresholdDays = 3;
   static const String _goalRouteName = '/set-goal';
   static const String _budgetRouteName = '/budget';
   static const String _notificationsRouteName = '/notifications';
+  static const String _newExpenseRouteName = '/new-expense';
 
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
@@ -279,6 +281,29 @@ abstract final class AppNotificationService {
       );
     }
 
+    if (expenses.isNotEmpty) {
+      final lastMoment = expenses
+          .map(ExpenseMomentService.expenseMoment)
+          .reduce((a, b) => a.isAfter(b) ? a : b);
+      final daysSinceLastExpense = now.difference(lastMoment).inDays;
+      if (daysSinceLastExpense >= _inactivityThresholdDays) {
+        final inactivitySignalId = _inactivityReminderSignalId(now);
+        final shouldNotify = !trackedSignals.contains(inactivitySignalId);
+        if (shouldNotify) {
+          trackedSignals.add(inactivitySignalId);
+          shouldPersistTrackedSignals = true;
+        }
+        await _upsertNotification(
+          _buildInactivityReminderNotification(
+            daysSinceLastExpense: daysSinceLastExpense,
+            now: now,
+          ),
+          notifySystem: shouldNotify,
+          promptForNotificationPermission: promptForNotificationPermission,
+        );
+      }
+    }
+
     if (!shouldPersistTrackedSignals) {
       return;
     }
@@ -431,6 +456,13 @@ abstract final class AppNotificationService {
   static String _budgetNotificationId(DateTime now) {
     return 'budget-warning-${_dayKey(now)}';
   }
+
+  static String _inactivityReminderSignalId(DateTime now) {
+    return 'inactivity:${_dayKey(now)}';
+  }
+
+  static const String _inactivityReminderNotificationId =
+      'inactivity-reminder';
 
   static String _dayKey(DateTime value) {
     final day = DateUtils.dateOnly(value);
@@ -622,6 +654,23 @@ abstract final class AppNotificationService {
       ..detailTitle = 'Daily budget warning'
       ..detailMessage = detailMessage
       ..routeName = _budgetRouteName;
+  }
+
+  static AppNotificationModel _buildInactivityReminderNotification({
+    required int daysSinceLastExpense,
+    required DateTime now,
+  }) {
+    return AppNotificationModel()
+      ..id = _inactivityReminderNotificationId
+      ..type = AppNotificationTypes.inactivityReminder
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'Time to log your expenses'
+      ..subtitle = '$daysSinceLastExpense days without a new expense'
+      ..detailTitle = 'Keep your budget on track'
+      ..detailMessage =
+          'You haven\'t registered any expenses in $daysSinceLastExpense days. Tap to add your most recent spending and keep your daily budget accurate.'
+      ..routeName = _newExpenseRouteName;
   }
 
   static AppNotificationModel _buildSpendingAdviceNotification(

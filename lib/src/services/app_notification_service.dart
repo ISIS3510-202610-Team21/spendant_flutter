@@ -115,10 +115,6 @@ abstract final class AppNotificationService {
       _currentUserId,
       now: now,
     );
-    final accountCreatedAt = LocalStorageService()
-        .getUserById(_currentUserId)
-        ?.createdAt;
-
     final shouldShowWelcome = _shouldShowWelcomeNotification(
       summary: summary,
       expenses: expenses,
@@ -237,7 +233,6 @@ abstract final class AppNotificationService {
 
     final spendingAnomaly = SpendingAnomalyService.buildInsight(
       expenses: expenses,
-      accountCreatedAt: accountCreatedAt,
       now: now,
     );
     if (spendingAnomaly != null &&
@@ -365,12 +360,8 @@ abstract final class AppNotificationService {
       trackedSignals.add(_goalAdjustmentSignalId(now));
     }
 
-    final accountCreatedAt = LocalStorageService()
-        .getUserById(_currentUserId)
-        ?.createdAt;
     final spendingAnomaly = SpendingAnomalyService.buildInsight(
       expenses: expenses,
-      accountCreatedAt: accountCreatedAt,
       now: now,
     );
     if (spendingAnomaly != null) {

@@ -30,20 +30,24 @@ abstract final class SpendingAnomalyService {
 
   static SpendingAnomalyInsight? buildInsight({
     required Iterable<ExpenseModel> expenses,
-    DateTime? accountCreatedAt,
     required DateTime now,
   }) {
     final todayStart = DateUtils.dateOnly(now);
-    final accountStart = _resolveAccountStart(
-      accountCreatedAt: accountCreatedAt,
-      expenses: expenses,
-      fallback: todayStart,
-    );
-    final accountAgeInDays = todayStart.difference(accountStart).inDays;
-    // Need _lookbackDays closed days entirely within account lifetime.
-    // With accountAgeInDays == 5, offset=6 lands before account creation,
-    // injecting a phantom $0 baseline entry. Require > 5 days (>= 6).
-    if (accountAgeInDays <= _minimumHistoryDays) {
+
+    // Count distinct past calendar days that have at least one recorded
+    // expense with a positive amount. Days with $0 provide no statistical
+    // signal and must not count toward the grace period threshold.
+    final distinctPastSpendingDays = expenses
+        .where(
+          (e) =>
+              e.amount > 0 &&
+              DateUtils.dateOnly(e.date).isBefore(todayStart),
+        )
+        .map((e) => DateUtils.dateOnly(e.date))
+        .toSet()
+        .length;
+
+    if (distinctPastSpendingDays < _minimumHistoryDays) {
       return null;
     }
 
@@ -86,32 +90,6 @@ abstract final class SpendingAnomalyService {
     );
   }
 
-  static DateTime _resolveAccountStart({
-    required DateTime? accountCreatedAt,
-    required Iterable<ExpenseModel> expenses,
-    required DateTime fallback,
-  }) {
-    DateTime? earliestExpenseDay;
-    for (final expense in expenses) {
-      final day = DateUtils.dateOnly(expense.date);
-      if (earliestExpenseDay == null || day.isBefore(earliestExpenseDay)) {
-        earliestExpenseDay = day;
-      }
-    }
-
-    final createdAtDay = accountCreatedAt == null
-        ? null
-        : DateUtils.dateOnly(accountCreatedAt);
-    if (createdAtDay == null) {
-      return earliestExpenseDay ?? fallback;
-    }
-    if (earliestExpenseDay == null) {
-      return createdAtDay;
-    }
-    return createdAtDay.isBefore(earliestExpenseDay)
-        ? createdAtDay
-        : earliestExpenseDay;
-  }
 
   static double _sumExpensesForDay(
     Iterable<ExpenseModel> expenses,

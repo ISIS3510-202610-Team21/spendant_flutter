@@ -1,12 +1,17 @@
 import 'package:hive/hive.dart';
 
 abstract final class AppNotificationTypes {
+  static const welcome = 'welcome';
   static const goalCreated = 'goal_created';
   static const goalHalfway = 'goal_halfway';
   static const goalAchieved = 'goal_achieved';
+  static const goalAdjustment = 'goal_adjustment';
   static const incomeCreated = 'income_created';
   static const incomeDue = 'income_due';
   static const budgetWarning = 'budget_warning';
+  static const spendingAnomaly = 'spending_anomaly';
+  static const expenseImported = 'expense_imported';
+  static const expenseImportedNeedsCategory = 'expense_imported_needs_category';
   static const expenseCategoryNeeded = 'expense_category_needed';
   static const spendingSpike = 'spending_spike';
   static const spendingPace = 'spending_pace';

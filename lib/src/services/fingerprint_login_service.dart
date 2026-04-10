@@ -65,7 +65,7 @@ abstract final class FingerprintLoginService {
           ? null
           : PostAuthNavigationArgs(redirect: redirect);
       navigator.pushNamedAndRemoveUntil(
-        AppRoutes.locationPermissionIntro,
+        AppRoutes.registerIntro,
         (route) => false,
         arguments: navigationArgs,
       );

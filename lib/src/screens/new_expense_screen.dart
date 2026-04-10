@@ -15,6 +15,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/app_date_format_service.dart';
+import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloudinary_receipt_upload_service.dart';
@@ -249,13 +251,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   TimeOfDay _timeOfDayFromStoredValue(String rawValue) {
-    final parts = rawValue.trim().split(':');
-    final parsedHour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final parsedMinute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-
-    final hour = parsedHour.clamp(0, 23);
-    final minute = parsedMinute.clamp(0, 59);
-    return TimeOfDay(hour: hour, minute: minute);
+    final parsedTime = AppTimeFormatService.parseHourMinute(rawValue);
+    return TimeOfDay(
+      hour: parsedTime.hour.clamp(0, 23),
+      minute: parsedTime.minute.clamp(0, 59),
+    );
   }
 
   ExpenseLocationSelection? _buildLocationSelection({
@@ -348,6 +348,23 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       platform: defaultTargetPlatform,
     ).black;
     const timeDisplayHeight = 64 / 57;
+    const timeInputHeight = 54 / 48;
+    final timePickerTextTheme = Theme.of(context).textTheme.copyWith(
+      displayLarge: materialTextTheme.displayLarge?.copyWith(
+        fontSize: 57,
+        height: timeDisplayHeight,
+        color: AppPalette.ink,
+      ),
+      displayMedium: materialTextTheme.displayMedium?.copyWith(
+        fontSize: 48,
+        height: timeInputHeight,
+        color: AppPalette.ink,
+      ),
+      labelMedium: materialTextTheme.labelMedium?.copyWith(
+        color: AppPalette.fieldHint,
+      ),
+      bodyLarge: materialTextTheme.bodyLarge?.copyWith(color: AppPalette.ink),
+    );
     final selected = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
@@ -362,6 +379,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         final theme = Theme.of(context);
         return Theme(
           data: theme.copyWith(
+            textTheme: timePickerTextTheme,
             colorScheme: theme.colorScheme.copyWith(
               primary: AppPalette.green,
               onPrimary: AppPalette.ink,
@@ -374,9 +392,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 borderRadius: BorderRadius.circular(28),
               ),
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-              helpTextStyle: materialTextTheme.labelMedium?.copyWith(
-                color: AppPalette.fieldHint,
-              ),
+              helpTextStyle: timePickerTextTheme.labelMedium,
               hourMinuteShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -396,22 +412,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.green;
               }),
-              hourMinuteTextStyle: materialTextTheme.displayLarge?.copyWith(
-                fontSize: 57,
-                height: timeDisplayHeight,
-                color: AppPalette.ink,
-              ),
-              timeSelectorSeparatorColor: const WidgetStatePropertyAll<Color?>(
-                AppPalette.ink,
-              ),
-              timeSelectorSeparatorTextStyle:
-                  WidgetStatePropertyAll<TextStyle?>(
-                    materialTextTheme.displayLarge?.copyWith(
-                      fontSize: 57,
-                      height: timeDisplayHeight,
-                      color: AppPalette.ink,
-                    ),
-                  ),
               dayPeriodShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
                 side: const BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
@@ -432,8 +432,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.ink;
               }),
-              dayPeriodTextStyle: materialTextTheme.labelMedium?.copyWith(
-                color: AppPalette.fieldHint,
+              dayPeriodTextStyle: timePickerTextTheme.labelMedium,
+              timeSelectorSeparatorColor: const WidgetStatePropertyAll<Color?>(
+                AppPalette.ink,
               ),
               dialBackgroundColor: Colors.white.withValues(alpha: 0.8),
               dialHandColor: AppPalette.green,
@@ -445,9 +446,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.ink;
               }),
-              dialTextStyle: materialTextTheme.bodyLarge?.copyWith(
-                color: AppPalette.ink,
-              ),
+              dialTextStyle: timePickerTextTheme.bodyLarge,
               entryModeIconColor: AppPalette.fieldHint,
               cancelButtonStyle: TextButton.styleFrom(
                 foregroundColor: AppPalette.green,
@@ -462,7 +461,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 16,
+                  vertical: 18,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1143,6 +1142,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       body: Stack(
         children: [
           SafeArea(
+            top: false,
             child: Column(
               children: [
                 _ExpenseHeader(
@@ -1215,15 +1215,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              'Do you regret this expense?',
-                                              style: GoogleFonts.nunito(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w800,
-                                                color: AppPalette.ink,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
                                             SizedBox(
                                               width: 24,
                                               height: 24,
@@ -1248,6 +1239,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                   color: AppPalette.ink,
                                                   width: 1.2,
                                                 ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Do you regret this expense?',
+                                              style: GoogleFonts.nunito(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppPalette.ink,
                                               ),
                                             ),
                                           ],
@@ -1382,7 +1382,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     Expanded(
                       child: _MetaChip(
                         icon: Icons.calendar_today_outlined,
-                        label: DateFormat('d/M/y').format(_selectedDate),
+                        label: AppDateFormatService.longDate(_selectedDate),
                         onTap: _pickDate,
                       ),
                     ),
@@ -1860,6 +1860,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _ExpenseHeader(
@@ -2052,6 +2053,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _ExpenseHeader(
@@ -2784,6 +2786,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
       body: Stack(
         children: [
           SafeArea(
+            top: false,
             child: Column(
               children: [
                 _ExpenseHeader(
@@ -2912,7 +2915,7 @@ class _ExpenseHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 50, 12, 14),
+      padding: AppHeaderMetrics.padding(),
       child: Row(
         children: [
           IconButton(
@@ -3048,39 +3051,55 @@ class _SublabelChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  static const Duration _animationDuration = Duration(milliseconds: 180);
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        decoration: BoxDecoration(
-          color: selected ? AppPalette.green : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: _animationDuration,
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? AppPalette.green : Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Opacity(
-              opacity: selected ? 1 : 0,
-              child: const Icon(Icons.check, size: 15, color: AppPalette.ink),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: AppPalette.ink,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppPalette.ink,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              AnimatedOpacity(
+                duration: _animationDuration,
+                curve: Curves.easeOut,
+                opacity: selected ? 1 : 0,
+                child: AnimatedScale(
+                  duration: _animationDuration,
+                  curve: Curves.easeOutBack,
+                  scale: selected ? 1 : 0.85,
+                  child: const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: Icon(Icons.check, size: 15, color: AppPalette.ink),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

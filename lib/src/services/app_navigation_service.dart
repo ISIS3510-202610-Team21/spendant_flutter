@@ -6,8 +6,7 @@ import 'post_auth_navigation.dart';
 
 abstract final class AppNavigationService {
   static const String _loginRouteName = '/login';
-  static const String _locationPermissionIntroRouteName =
-      '/location-permission-intro';
+  static const String _permissionsIntroRouteName = '/register-intro';
 
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
@@ -47,7 +46,7 @@ abstract final class AppNavigationService {
       if (authState.needsLocationPermissionPrompt) {
         final args = PostAuthNavigationArgs(redirect: redirect);
         navigator.pushNamedAndRemoveUntil(
-          _locationPermissionIntroRouteName,
+          _permissionsIntroRouteName,
           (route) => false,
           arguments: args,
         );

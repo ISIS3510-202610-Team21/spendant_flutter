@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
@@ -10,8 +12,11 @@ import 'package:intl/intl.dart';
 import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
-import '../models/goal_model.dart';
+import '../services/app_date_format_service.dart';
+import '../services/app_analytics_service.dart';
+import '../services/app_time_format_service.dart';
 import '../services/auth_memory_store.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
 import '../services/expense_moment_service.dart';
 import '../services/local_storage_service.dart';
@@ -33,8 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
 
   bool _hasUnreadNotifications = true;
-  late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
-  late final ValueListenable<Box<GoalModel>> _goalsListenable;
   late final ValueListenable<Box<AppNotificationModel>>
   _notificationsListenable;
   late final int _expenseColorStartIndex;
@@ -43,22 +46,21 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _expensesListenable = LocalStorageService.expensesListenable;
-    _goalsListenable = LocalStorageService.goalsListenable;
     _notificationsListenable = LocalStorageService.notificationsListenable;
     _expenseColorStartIndex = math.Random().nextInt(
       ExpenseVisuals.rotatingColors.length,
     );
-    _expensesListenable.addListener(_handleNotificationSourcesChanged);
-    _goalsListenable.addListener(_handleNotificationSourcesChanged);
     _notificationsListenable.addListener(_handleNotificationSourcesChanged);
     _loadUnreadNotifications();
+    unawaited(
+      AppAnalyticsService.instance.logAllBusinessQuestions(
+        userId: _currentUserId,
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _expensesListenable.removeListener(_handleNotificationSourcesChanged);
-    _goalsListenable.removeListener(_handleNotificationSourcesChanged);
     _notificationsListenable.removeListener(_handleNotificationSourcesChanged);
     super.dispose();
   }
@@ -69,8 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadUnreadNotifications() async {
     final notifications = NotificationFeedService.buildFeed(
-      expenses: LocalStorageService.expenseBox.values,
-      goals: LocalStorageService.goalBox.values,
       appNotifications: LocalStorageService.notificationBox.values,
       userId: _currentUserId,
     );
@@ -102,6 +102,79 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _refreshHomeFeed() async {
+    if (!CloudSyncService.isSupportedPlatform) {
+      return;
+    }
+
+    await CloudSyncService().syncAllPendingData();
+    await _loadUnreadNotifications();
+  }
+
+  Future<void> _handleLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Log out?'),
+          content: const Text(
+            'You will return to the onboarding screen and this session will be closed on this device.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Log out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout != true || !mounted) {
+      return;
+    }
+
+    await AuthMemoryStore.clearSession();
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+  }
+
+  Future<void> _handleBackPressed() async {
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Exit SpendAnt?'),
+          content: const Text(
+            'You will close the app and return to your phone home screen.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Exit'),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldExit == true) {
+      await SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final homeDependencies = Listenable.merge(<Listenable>[
@@ -112,14 +185,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
+      onPopInvokedWithResult: (didPop, _) async {
         if (didPop) {
           return;
         }
 
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil(AppRoutes.onboarding, (route) => false);
+        await _handleBackPressed();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -168,100 +239,106 @@ class _HomeScreenState extends State<HomeScreen> {
                         current > stat.amount ? current : stat.amount,
                   );
 
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                    children: [
-                      Text(
-                        'Your Budget for today',
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _AmountHeadline(
-                        amount: summary.spendableDailyBudget,
-                        amountColor: AppPalette.green,
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'This month you have spent',
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _AmountHeadline(
-                        amount: monthTotal,
-                        amountColor: AppPalette.expenseRed,
-                        fontSize: 40,
-                      ),
-                      if (categoryStats.isNotEmpty) ...[
-                        const SizedBox(height: 28),
-                        SizedBox(
-                          height: 260,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final itemCount = categoryStats.length;
-                              const gap = 18.0;
-                              final totalGap = gap * (itemCount - 1);
-                              final availableWidth =
-                                  constraints.maxWidth - totalGap;
-                              final itemWidth = math.min(
-                                110.0,
-                                availableWidth / itemCount,
-                              );
-
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  for (
-                                    var index = 0;
-                                    index < itemCount;
-                                    index++
-                                  ) ...[
-                                    SizedBox(
-                                      width: itemWidth,
-                                      child: _CategoryBarCard(
-                                        stat: categoryStats[index],
-                                        maxAmount: maxCategoryAmount,
-                                      ),
-                                    ),
-                                    if (index < itemCount - 1)
-                                      const SizedBox(width: gap),
-                                  ],
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                      ] else
-                        const SizedBox(height: 22),
-                      if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
-                      for (final group in expenseGroups) ...[
+                  return RefreshIndicator(
+                    onRefresh: _refreshHomeFeed,
+                    color: AppPalette.green,
+                    backgroundColor: Colors.white,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                      children: [
                         Text(
-                          group.title,
+                          'Your Budget for today',
                           style: GoogleFonts.nunito(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                             color: AppPalette.ink,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        for (final entry in group.entries) ...[
-                          _ExpenseListTile(
-                            entry: entry,
-                            onTap: () => _openExpenseDetail(entry.expense),
+                        const SizedBox(height: 6),
+                        _AmountHeadline(
+                          amount: summary.spendableDailyBudget,
+                          amountColor: AppPalette.green,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'This month you have spent',
+                          style: GoogleFonts.nunito(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppPalette.ink,
                           ),
-                          const SizedBox(height: 12),
+                        ),
+                        const SizedBox(height: 6),
+                        _AmountHeadline(
+                          amount: monthTotal,
+                          amountColor: AppPalette.expenseRed,
+                          fontSize: 40,
+                        ),
+                        if (categoryStats.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            height: 260,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final itemCount = categoryStats.length;
+                                const gap = 18.0;
+                                final totalGap = gap * (itemCount - 1);
+                                final availableWidth =
+                                    constraints.maxWidth - totalGap;
+                                final itemWidth = math.min(
+                                  110.0,
+                                  availableWidth / itemCount,
+                                );
+
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < itemCount;
+                                      index++
+                                    ) ...[
+                                      SizedBox(
+                                        width: itemWidth,
+                                        child: _CategoryBarCard(
+                                          stat: categoryStats[index],
+                                          maxAmount: maxCategoryAmount,
+                                        ),
+                                      ),
+                                      if (index < itemCount - 1)
+                                        const SizedBox(width: gap),
+                                    ],
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                        ] else
+                          const SizedBox(height: 22),
+                        if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
+                        for (final group in expenseGroups) ...[
+                          Text(
+                            group.title,
+                            style: GoogleFonts.nunito(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              color: AppPalette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          for (final entry in group.entries) ...[
+                            _ExpenseListTile(
+                              entry: entry,
+                              onTap: () => _openExpenseDetail(entry.expense),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   );
                 },
               ),
@@ -310,6 +387,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                   ],
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: InkWell(
+              onTap: _handleLogout,
+              borderRadius: BorderRadius.circular(999),
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(
+                  Icons.logout_rounded,
+                  color: AppPalette.ink,
+                  size: 26,
                 ),
               ),
             ),
@@ -445,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Tomorrow Expenses';
     }
     if (date.isAfter(today)) {
-      return '${DateFormat('d/M/y').format(date)} Expenses';
+      return '${AppDateFormatService.longDate(date)} Expenses';
     }
 
     final daysDifference = today.difference(date).inDays;
@@ -453,7 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return '${DateFormat('EEEE').format(date)} Expenses';
     }
 
-    return '${DateFormat('d/M/y').format(date)} Expenses';
+    return '${AppDateFormatService.longDate(date)} Expenses';
   }
 
   int _compareExpenseGroupDates(DateTime left, DateTime right) {
@@ -487,16 +579,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   DateTime _expenseDateTime(ExpenseModel expense) {
-    final parts = expense.time.split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final parsedTime = AppTimeFormatService.parseHourMinute(expense.time);
 
     return DateTime(
       expense.date.year,
       expense.date.month,
       expense.date.day,
-      hour,
-      minute,
+      parsedTime.hour,
+      parsedTime.minute,
     );
   }
 }

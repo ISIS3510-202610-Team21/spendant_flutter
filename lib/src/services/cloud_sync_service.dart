@@ -7,6 +7,7 @@ import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import '../models/label_model.dart';
 import '../models/user_model.dart';
+import 'app_time_format_service.dart';
 import 'auth_memory_store.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
@@ -98,6 +99,27 @@ class CloudSyncService {
 
   final FirebaseFirestore _firestore;
   final LocalStorageService _localStorage = LocalStorageService();
+  static const Map<String, String> _detailLabelPrimaryCategories =
+      <String, String>{
+        'Food': 'Food',
+        'Food Delivery': 'Food',
+        'Groceries': 'Food',
+        'Commute': 'Transport',
+        'Transport': 'Transport',
+        'Learning Materials': 'Services',
+        'University Fees': 'Services',
+        'Personal Care': 'Services',
+        'Rent': 'Services',
+        'Services': 'Services',
+        'Utilities': 'Services',
+        'Entertainment': 'Other',
+        'Gifts': 'Other',
+        'Group Hangouts': 'Other',
+        'Subscriptions': 'Other',
+        'Emergency': 'Other',
+        'Impulse': 'Other',
+        'Owed': 'Other',
+      };
 
   static bool get isSupportedPlatform {
     if (kIsWeb) {
@@ -139,10 +161,7 @@ class CloudSyncService {
     return _deleteRecord(
       collectionName: 'expenses',
       serverId: expense.serverId,
-      fallbackDocumentId: _entityDocumentId(
-        firebaseUid: _firebaseUidForEntity(),
-        localId: _localIdFor(expense, 0),
-      ),
+      fallbackDocumentId: _canonicalExpenseDocumentId(expense),
       deleteLocal: () => expense.delete(),
     );
   }
@@ -151,10 +170,7 @@ class CloudSyncService {
     return _deleteRecord(
       collectionName: 'incomes',
       serverId: income.serverId,
-      fallbackDocumentId: _entityDocumentId(
-        firebaseUid: _firebaseUidForEntity(),
-        localId: _localIdFor(income, 0),
-      ),
+      fallbackDocumentId: _canonicalIncomeDocumentId(income),
       deleteLocal: () => income.delete(),
     );
   }
@@ -163,10 +179,7 @@ class CloudSyncService {
     return _deleteRecord(
       collectionName: 'goals',
       serverId: goal.serverId,
-      fallbackDocumentId: _entityDocumentId(
-        firebaseUid: _firebaseUidForEntity(),
-        localId: _localIdFor(goal, 0),
-      ),
+      fallbackDocumentId: _canonicalGoalDocumentId(goal),
       deleteLocal: () => goal.delete(),
     );
   }
@@ -202,6 +215,7 @@ class CloudSyncService {
     var failures = 0;
 
     final expenseBox = LocalStorageService.expenseBox;
+    final expenseDocumentIds = _buildCanonicalExpenseDocumentIds();
     for (var index = 0; index < expenseBox.length; index++) {
       final expense = expenseBox.getAt(index);
       if (expense == null) {
@@ -210,9 +224,13 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(expense, index);
+        final firebaseUid = _firebaseUidForUserId(expense.userId);
+        final canonicalDocumentId =
+            expenseDocumentIds[_recordStorageKey(expense, index)];
         if (!_shouldSyncRecord(
           isSynced: expense.isSynced,
           serverId: expense.serverId,
+          canonicalDocumentId: canonicalDocumentId,
         )) {
           continue;
         }
@@ -220,8 +238,11 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'expenses',
           serverId: expense.serverId,
+          fallbackDocumentId: canonicalDocumentId,
           includeSyncMetadata: false,
-          data: _expenseToMap(expense, localId),
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _expenseToMap(expense, localId, firebaseUid: firebaseUid),
         );
         await _localStorage.markExpenseAsSynced(index, documentId);
         uploadedExpenses++;
@@ -231,6 +252,7 @@ class CloudSyncService {
     }
 
     final incomeBox = LocalStorageService.incomeBox;
+    final incomeDocumentIds = _buildCanonicalIncomeDocumentIds();
     for (var index = 0; index < incomeBox.length; index++) {
       final income = incomeBox.getAt(index);
       if (income == null) {
@@ -239,9 +261,13 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(income, index);
+        final firebaseUid = _firebaseUidForUserId(income.userId);
+        final canonicalDocumentId =
+            incomeDocumentIds[_recordStorageKey(income, index)];
         if (!_shouldSyncRecord(
           isSynced: income.isSynced,
           serverId: income.serverId,
+          canonicalDocumentId: canonicalDocumentId,
         )) {
           continue;
         }
@@ -249,8 +275,11 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'incomes',
           serverId: income.serverId,
+          fallbackDocumentId: canonicalDocumentId,
           includeSyncMetadata: false,
-          data: _incomeToMap(income, localId),
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _incomeToMap(income, localId, firebaseUid: firebaseUid),
         );
         await _localStorage.markIncomeAsSynced(index, documentId);
         uploadedIncomes++;
@@ -260,6 +289,7 @@ class CloudSyncService {
     }
 
     final goalBox = LocalStorageService.goalBox;
+    final goalDocumentIds = _buildCanonicalGoalDocumentIds();
     for (var index = 0; index < goalBox.length; index++) {
       final goal = goalBox.getAt(index);
       if (goal == null) {
@@ -268,9 +298,13 @@ class CloudSyncService {
 
       try {
         final localId = _localIdFor(goal, index);
+        final firebaseUid = _firebaseUidForUserId(goal.userId);
+        final canonicalDocumentId =
+            goalDocumentIds[_recordStorageKey(goal, index)];
         if (!_shouldSyncRecord(
           isSynced: goal.isSynced,
           serverId: goal.serverId,
+          canonicalDocumentId: canonicalDocumentId,
         )) {
           continue;
         }
@@ -278,8 +312,11 @@ class CloudSyncService {
         final documentId = await _upsertDocument(
           collectionName: 'goals',
           serverId: goal.serverId,
+          fallbackDocumentId: canonicalDocumentId,
           includeSyncMetadata: false,
-          data: _goalToMap(goal, localId),
+          preferFallbackDocumentId: true,
+          deleteLegacyDocumentWhenMigrating: true,
+          data: _goalToMap(goal, localId, firebaseUid: firebaseUid),
         );
         await _localStorage.markGoalAsSynced(index, documentId);
         uploadedGoals++;
@@ -454,13 +491,25 @@ class CloudSyncService {
 
       final data = document.data();
       final expense = existingExpense ?? ExpenseModel();
+      final remoteIsRecurring = _boolValue(
+        data['isRecurring'],
+        fallback: expense.isRecurring,
+      );
+      final detailLabels = _expenseDetailLabelsValue(
+        detailLabels: data['detailLabels'],
+        labelNames: data['labelNames'],
+        fallback: expense.detailLabels,
+      );
       expense
         ..userId = localUserId
         ..name = _stringValue(data['name'], fallback: expense.name)
         ..amount = _doubleValue(data['amount'], fallback: expense.amount)
         ..date = _dateTimeValue(data['date']) ?? expense.date
-        ..time = _stringValue(
-          data['time'],
+        ..time = AppTimeFormatService.to24HourString(
+          _stringValue(
+            data['time'],
+            fallback: expense.time.isNotEmpty ? expense.time : '00:00',
+          ),
           fallback: expense.time.isNotEmpty ? expense.time : '00:00',
         )
         ..latitude = _doubleOrNull(data['latitude'], fallback: expense.latitude)
@@ -484,10 +533,7 @@ class CloudSyncService {
           data['isPendingCategory'],
           fallback: expense.isPendingCategory,
         )
-        ..isRecurring = _boolValue(
-          data['isRecurring'],
-          fallback: expense.isRecurring,
-        )
+        ..isRecurring = remoteIsRecurring
         ..recurrenceInterval = _intOrNull(
           data['recurrenceInterval'],
           fallback: expense.recurrenceInterval,
@@ -500,18 +546,19 @@ class CloudSyncService {
             _dateTimeValue(data['nextOccurrenceDate']) ??
             expense.nextOccurrenceDate
         ..createdAt = _dateTimeValue(data['createdAt']) ?? expense.createdAt
-        ..primaryCategory = _stringOrNull(
-          data['primaryCategory'],
-          fallback: expense.primaryCategory,
-        )
-        ..detailLabels = _stringListValue(
-          data['detailLabels'],
-          fallback: expense.detailLabels,
-        )
-        ..isRegretted = _boolValue(
-          data['isRegretted'],
-          fallback: expense.isRegretted,
-        )
+        ..primaryCategory =
+            _normalizePrimaryCategory(
+              _stringOrNull(
+                data['primaryCategory'],
+                fallback: expense.primaryCategory,
+              ),
+            ) ??
+            _derivePrimaryCategoryFromLabels(detailLabels) ??
+            expense.primaryCategory
+        ..detailLabels = detailLabels
+        ..isRegretted = data.containsKey('isRegretted')
+            ? _boolValue(data['isRegretted'], fallback: expense.isRegretted)
+            : remoteIsRecurring
         ..wasAutoCategorized = _boolValue(
           data['wasAutoCategorized'],
           fallback: expense.wasAutoCategorized,
@@ -847,13 +894,28 @@ class CloudSyncService {
     return missing;
   }
 
-  bool _shouldSyncRecord({required bool isSynced, required String? serverId}) {
+  bool _shouldSyncRecord({
+    required bool isSynced,
+    required String? serverId,
+    String? canonicalDocumentId,
+  }) {
     if (!isSynced) {
       return true;
     }
 
     final normalizedServerId = serverId?.trim();
-    return normalizedServerId == null || normalizedServerId.isEmpty;
+    if (normalizedServerId == null || normalizedServerId.isEmpty) {
+      return true;
+    }
+
+    final normalizedCanonicalId = canonicalDocumentId?.trim();
+    if (normalizedCanonicalId != null &&
+        normalizedCanonicalId.isNotEmpty &&
+        normalizedCanonicalId != normalizedServerId) {
+      return true;
+    }
+
+    return false;
   }
 
   Future<String> _upsertDocument({
@@ -941,38 +1003,50 @@ class CloudSyncService {
     return deletedFromCloud;
   }
 
-  Map<String, Object?> _expenseToMap(ExpenseModel expense, int localId) {
+  Map<String, Object?> _expenseToMap(
+    ExpenseModel expense,
+    int localId, {
+    required String firebaseUid,
+  }) {
     return <String, Object?>{
       'id': localId,
       'userId': expense.userId,
-      'firebaseUid': _firebaseUidForEntity(),
+      'firebaseUid': firebaseUid,
       'name': expense.name,
       'amount': expense.amount,
       'date': _toEpochMillis(expense.date),
-      'time': expense.time,
+      'time': AppTimeFormatService.to24HourString(
+        expense.time,
+        fallback: expense.time.isNotEmpty ? expense.time : '00:00',
+      ),
       'latitude': expense.latitude,
       'longitude': expense.longitude,
       'locationName': expense.locationName,
       'source': expense.source,
       'receiptImagePath': expense.receiptImagePath,
       'isPendingCategory': expense.isPendingCategory,
-      'isRecurring': expense.isRecurring,
+      'isRecurring': expense.isRecurring || expense.isRegretted,
       'recurrenceInterval': expense.recurrenceInterval,
       'recurrenceUnit': expense.recurrenceUnit,
       'nextOccurrenceDate': _toEpochMillis(expense.nextOccurrenceDate),
       'createdAt': _toEpochMillis(expense.createdAt),
       'primaryCategory': expense.primaryCategory,
       'detailLabels': expense.detailLabels,
+      'labelNames': expense.detailLabels,
       'isRegretted': expense.isRegretted,
       'wasAutoCategorized': expense.wasAutoCategorized,
     };
   }
 
-  Map<String, Object?> _incomeToMap(IncomeModel income, int localId) {
+  Map<String, Object?> _incomeToMap(
+    IncomeModel income,
+    int localId, {
+    required String firebaseUid,
+  }) {
     return <String, Object?>{
       'id': localId,
       'userId': income.userId,
-      'firebaseUid': _firebaseUidForEntity(),
+      'firebaseUid': firebaseUid,
       'name': income.name,
       'amount': income.amount,
       'type': income.type,
@@ -984,11 +1058,15 @@ class CloudSyncService {
     };
   }
 
-  Map<String, Object?> _goalToMap(GoalModel goal, int localId) {
+  Map<String, Object?> _goalToMap(
+    GoalModel goal,
+    int localId, {
+    required String firebaseUid,
+  }) {
     return <String, Object?>{
       'id': localId,
       'userId': goal.userId,
-      'firebaseUid': _firebaseUidForEntity(),
+      'firebaseUid': firebaseUid,
       'name': goal.name,
       'targetAmount': goal.targetAmount,
       'currentAmount': goal.currentAmount,
@@ -1004,9 +1082,10 @@ class CloudSyncService {
       'userId': label.userId,
       'firebaseUid': _firebaseUidForEntity(),
       'name': label.name,
+      'category': _derivePrimaryCategoryFromLabels(<String>[label.name]),
       'iconEmoji': label.iconEmoji,
       'colorHex': label.colorHex,
-      'createdAt': label.createdAt,
+      'createdAt': _toEpochMillis(label.createdAt),
       'entityType': 'label',
     };
   }
@@ -1052,11 +1131,169 @@ class CloudSyncService {
     return fallbackIndex;
   }
 
+  String _recordStorageKey(HiveObject object, int fallbackIndex) {
+    return object.key?.toString() ?? 'index_$fallbackIndex';
+  }
+
   String _entityDocumentId({
     required String firebaseUid,
-    required int localId,
+    required int counter,
   }) {
-    return '${firebaseUid}_$localId';
+    return '${firebaseUid}_$counter';
+  }
+
+  String _canonicalExpenseDocumentId(ExpenseModel expense) {
+    final recordKey = _recordStorageKey(expense, _localIdFor(expense, 0));
+    return _buildCanonicalExpenseDocumentIds()[recordKey] ??
+        _entityDocumentId(
+          firebaseUid: _firebaseUidForUserId(expense.userId),
+          counter: 1,
+        );
+  }
+
+  String _canonicalIncomeDocumentId(IncomeModel income) {
+    final recordKey = _recordStorageKey(income, _localIdFor(income, 0));
+    return _buildCanonicalIncomeDocumentIds()[recordKey] ??
+        _entityDocumentId(
+          firebaseUid: _firebaseUidForUserId(income.userId),
+          counter: 1,
+        );
+  }
+
+  String _canonicalGoalDocumentId(GoalModel goal) {
+    final recordKey = _recordStorageKey(goal, _localIdFor(goal, 0));
+    return _buildCanonicalGoalDocumentIds()[recordKey] ??
+        _entityDocumentId(
+          firebaseUid: _firebaseUidForUserId(goal.userId),
+          counter: 1,
+        );
+  }
+
+  Map<String, String> _buildCanonicalExpenseDocumentIds() {
+    return _buildCanonicalDocumentIds<ExpenseModel>(
+      box: LocalStorageService.expenseBox,
+      readUserId: (expense) => expense.userId,
+      readServerId: (expense) => expense.serverId,
+      readCreatedAt: (expense) => expense.createdAt,
+    );
+  }
+
+  Map<String, String> _buildCanonicalIncomeDocumentIds() {
+    return _buildCanonicalDocumentIds<IncomeModel>(
+      box: LocalStorageService.incomeBox,
+      readUserId: (income) => income.userId,
+      readServerId: (income) => income.serverId,
+      readCreatedAt: (income) => income.createdAt,
+    );
+  }
+
+  Map<String, String> _buildCanonicalGoalDocumentIds() {
+    return _buildCanonicalDocumentIds<GoalModel>(
+      box: LocalStorageService.goalBox,
+      readUserId: (goal) => goal.userId,
+      readServerId: (goal) => goal.serverId,
+      readCreatedAt: (goal) => goal.createdAt,
+    );
+  }
+
+  Map<String, String> _buildCanonicalDocumentIds<T extends HiveObject>({
+    required Box<T> box,
+    required int Function(T value) readUserId,
+    required String? Function(T value) readServerId,
+    required DateTime Function(T value) readCreatedAt,
+  }) {
+    final candidatesByFirebaseUid =
+        <String, List<_CanonicalDocumentCandidate<T>>>{};
+
+    for (var index = 0; index < box.length; index++) {
+      final value = box.getAt(index);
+      if (value == null) {
+        continue;
+      }
+
+      final firebaseUid = _firebaseUidForUserId(readUserId(value)).trim();
+      if (firebaseUid.isEmpty) {
+        continue;
+      }
+
+      candidatesByFirebaseUid
+          .putIfAbsent(firebaseUid, () => <_CanonicalDocumentCandidate<T>>[])
+          .add(
+            _CanonicalDocumentCandidate<T>(
+              value: value,
+              recordKey: _recordStorageKey(value, index),
+              firebaseUid: firebaseUid,
+              serverId: readServerId(value),
+              createdAt: readCreatedAt(value),
+              localOrder: _localIdFor(value, index),
+            ),
+          );
+    }
+
+    final canonicalDocumentIds = <String, String>{};
+
+    for (final entry in candidatesByFirebaseUid.entries) {
+      final firebaseUid = entry.key;
+      final candidates = entry.value
+        ..sort((left, right) {
+          final createdAtComparison = left.createdAt.compareTo(right.createdAt);
+          if (createdAtComparison != 0) {
+            return createdAtComparison;
+          }
+          return left.localOrder.compareTo(right.localOrder);
+        });
+
+      final usedCounters = <int>{};
+      final unresolved = <_CanonicalDocumentCandidate<T>>[];
+
+      for (final candidate in candidates) {
+        final counter = _canonicalCounterFromDocumentId(
+          candidate.serverId,
+          firebaseUid,
+        );
+        if (counter == null || counter <= 0 || !usedCounters.add(counter)) {
+          unresolved.add(candidate);
+          continue;
+        }
+
+        canonicalDocumentIds[candidate.recordKey] = _entityDocumentId(
+          firebaseUid: firebaseUid,
+          counter: counter,
+        );
+      }
+
+      var nextCounter = 1;
+      for (final candidate in unresolved) {
+        while (usedCounters.contains(nextCounter)) {
+          nextCounter++;
+        }
+
+        usedCounters.add(nextCounter);
+        canonicalDocumentIds[candidate.recordKey] = _entityDocumentId(
+          firebaseUid: firebaseUid,
+          counter: nextCounter,
+        );
+        nextCounter++;
+      }
+    }
+
+    return canonicalDocumentIds;
+  }
+
+  int? _canonicalCounterFromDocumentId(String? documentId, String firebaseUid) {
+    final normalizedDocumentId = documentId?.trim();
+    if (normalizedDocumentId == null || normalizedDocumentId.isEmpty) {
+      return null;
+    }
+
+    final match = RegExp(
+      '^${RegExp.escape(firebaseUid)}_(\\d+)\$',
+    ).firstMatch(normalizedDocumentId);
+    if (match == null) {
+      return null;
+    }
+
+    return int.tryParse(match.group(1)!);
   }
 
   String _resolvedDocumentId({
@@ -1177,6 +1414,26 @@ class CloudSyncService {
         : List<String>.from(fallback, growable: false);
   }
 
+  List<String> _expenseDetailLabelsValue({
+    required Object? detailLabels,
+    required Object? labelNames,
+    List<String>? fallback,
+  }) {
+    final primaryValues = _stringListValue(detailLabels);
+    if (primaryValues.isNotEmpty) {
+      return primaryValues;
+    }
+
+    final legacyValues = _stringListValue(labelNames);
+    if (legacyValues.isNotEmpty) {
+      return legacyValues;
+    }
+
+    return fallback == null
+        ? const <String>[]
+        : List<String>.from(fallback, growable: false);
+  }
+
   DateTime? _dateTimeValue(Object? value) {
     if (value is Timestamp) {
       return value.toDate();
@@ -1204,6 +1461,40 @@ class CloudSyncService {
     return DateTime.tryParse(normalized);
   }
 
+  String? _derivePrimaryCategoryFromLabels(Iterable<String> labels) {
+    for (final label in labels) {
+      final normalizedLabel = label.trim();
+      if (normalizedLabel.isEmpty) {
+        continue;
+      }
+
+      final category = _detailLabelPrimaryCategories[normalizedLabel];
+      if (category != null) {
+        return category;
+      }
+    }
+
+    return labels.any((label) => label.trim().isNotEmpty) ? 'Other' : null;
+  }
+
+  String? _normalizePrimaryCategory(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+
+    switch (trimmed) {
+      case 'Food':
+        return 'Food';
+      case 'Transport':
+        return 'Transport';
+      case 'Services':
+        return 'Services';
+      default:
+        return 'Other';
+    }
+  }
+
   String _firebaseUidForEntity() {
     final currentFirebaseUid = FirebaseUidService.currentFirebaseUid();
     if (currentFirebaseUid != null && currentFirebaseUid.isNotEmpty) {
@@ -1220,6 +1511,15 @@ class CloudSyncService {
       return _firebaseUidForUser(user, _localIdFor(user, index));
     }
     return 'user_1';
+  }
+
+  String _firebaseUidForUserId(int userId) {
+    final user = _localStorage.getUserById(userId);
+    if (user != null) {
+      return _firebaseUidForUser(user, userId);
+    }
+
+    return _firebaseUidForEntity();
   }
 
   String _firebaseUidForUser(UserModel user, int localId) {
@@ -1271,4 +1571,22 @@ class CloudSyncService {
     final safeValue = normalized.isEmpty ? 'spendant' : normalized;
     return '@$safeValue';
   }
+}
+
+class _CanonicalDocumentCandidate<T extends HiveObject> {
+  const _CanonicalDocumentCandidate({
+    required this.value,
+    required this.recordKey,
+    required this.firebaseUid,
+    required this.serverId,
+    required this.createdAt,
+    required this.localOrder,
+  });
+
+  final T value;
+  final String recordKey;
+  final String firebaseUid;
+  final String? serverId;
+  final DateTime createdAt;
+  final int localOrder;
 }

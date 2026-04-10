@@ -61,6 +61,8 @@ dependencies:
   connectivity_plus: ^7.0.0
   firstfloor_calendar: ^1.0.8
   timezone: ^0.10.1
+  firebase_analytics: ^12.2.0
+  workmanager: ^0.7.0
 
 dev_dependencies:
   flutter_test:

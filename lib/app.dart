@@ -20,6 +20,7 @@ import 'src/screens/register_screen.dart';
 import 'src/screens/set_goal_screen.dart';
 import 'src/services/app_navigation_service.dart';
 import 'src/services/app_notification_service.dart';
+import 'src/services/app_runtime_state_service.dart';
 import 'src/services/auto_categorization_service.dart';
 import 'src/services/cloud_sync_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
@@ -76,6 +77,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _startContextAwareNotificationLoop();
     _schedulePendingCategoryBackfill();
     _scheduleAppNotificationRefresh();
+    unawaited(AppRuntimeStateService.markForeground(true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
     });
@@ -83,6 +85,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
 
   @override
   void dispose() {
+    unawaited(AppRuntimeStateService.markForeground(false));
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();
     _notificationRefreshTimer?.cancel();
@@ -101,10 +104,23 @@ class _SpendAntAppState extends State<SpendAntApp> {
 
     _appLifecycleListener = AppLifecycleListener(
       onResume: () {
+        unawaited(AppRuntimeStateService.markForeground(true));
         unawaited(GooglePayExpenseImportService.refresh());
         _syncPendingDataInBackground();
         _schedulePendingCategoryBackfill();
         _scheduleAppNotificationRefresh();
+      },
+      onInactive: () {
+        unawaited(AppRuntimeStateService.markForeground(false));
+      },
+      onPause: () {
+        unawaited(AppRuntimeStateService.markForeground(false));
+      },
+      onHide: () {
+        unawaited(AppRuntimeStateService.markForeground(false));
+      },
+      onDetach: () {
+        unawaited(AppRuntimeStateService.markForeground(false));
       },
     );
 
@@ -115,6 +131,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
   }
 
   void _syncPendingDataInBackground() {
+    unawaited(AppRuntimeStateService.markForeground(true));
     unawaited(_runPendingCloudSync());
   }
 
@@ -148,6 +165,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
   }
 
   void _scheduleAppNotificationRefresh() {
+    unawaited(AppRuntimeStateService.markForeground(true));
     _notificationRefreshTimer?.cancel();
     _notificationRefreshTimer = Timer(const Duration(milliseconds: 180), () {
       unawaited(AppNotificationService.refresh());
@@ -170,6 +188,19 @@ class _SpendAntAppState extends State<SpendAntApp> {
       title: 'SpendAnt',
       theme: SpendAntTheme.light(),
       navigatorKey: AppNavigationService.navigatorKey,
+      builder: (context, child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+
+        return SafeArea(
+          left: true,
+          right: true,
+          top: false,
+          bottom: false,
+          child: child,
+        );
+      },
       initialRoute: AppRoutes.onboarding,
       routes: {
         AppRoutes.onboarding: (_) => const OnboardingScreen(),

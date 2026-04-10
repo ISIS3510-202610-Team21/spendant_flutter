@@ -29,7 +29,7 @@ class ExpenseModel extends HiveObject {
   String? locationName;
 
   @HiveField(8)
-  String source = 'MANUAL'; // MANUAL, OCR, GOOGLE_PAY
+  String source = 'MANUAL'; // MANUAL, OCR, GOOGLE_PAY, GMAIL, NEQUI
 
   @HiveField(9)
   String? receiptImagePath;

@@ -5,12 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../app.dart';
 import '../models/user_model.dart';
 import '../services/app_notification_service.dart';
-import '../services/app_navigation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
+import '../services/permissions_review_service.dart';
 import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
 import '../theme/spendant_theme.dart';
@@ -185,38 +185,46 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       _isSubmitting = false;
     });
 
-    final authState = await AuthMemoryStore.loadGreetingState();
+    final redirect = widget.postAuthRedirect;
+    if (_isRegisterMode) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        AppRoutes.registerIntro,
+        (route) => false,
+        arguments: PermissionsIntroArgs.fullOnboarding(redirect: redirect),
+      );
+      return;
+    }
+
+    final permissionsReviewFlow =
+        await PermissionsReviewService.planForNormalLogin();
     if (!mounted) {
       return;
     }
 
-    final shouldShowLocationPermissionPrompt =
-        _isRegisterMode || authState.needsLocationPermissionPrompt;
-    final redirect = widget.postAuthRedirect;
-    if (shouldShowLocationPermissionPrompt) {
-      final nextRoute = _isRegisterMode
-          ? AppRoutes.registerIntro
-          : AppRoutes.locationPermissionIntro;
+    if (permissionsReviewFlow.destination ==
+        PermissionsReviewDestination.locationPermissionIntro) {
       final navigationArgs = redirect == null
           ? null
           : PostAuthNavigationArgs(redirect: redirect);
-
       Navigator.of(context).pushNamedAndRemoveUntil(
-        nextRoute,
+        AppRoutes.locationPermissionIntro,
         (route) => false,
         arguments: navigationArgs,
       );
       return;
     }
 
-    if (redirect != null) {
-      await AppNavigationService.openRedirect(redirect);
-      return;
-    }
-
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(widget.successRoute, (route) => false);
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.registerIntro,
+      (route) => false,
+      arguments: PermissionsIntroArgs.review(
+        redirect: redirect,
+        initialStep:
+            permissionsReviewFlow.initialStep ?? PermissionsIntroStep.calendar,
+        showCalendarStep: permissionsReviewFlow.showCalendarStep,
+        showNotificationStep: permissionsReviewFlow.showNotificationStep,
+      ),
+    );
   }
 
   String? _validateFields({
@@ -346,16 +354,34 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       resizeToAvoidBottomInset: false,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final mediaQuery = MediaQuery.of(context);
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+          final antHeight = isLandscape
+              ? (constraints.maxHeight * 0.62).clamp(220.0, widget.antHeight)
+              : widget.antHeight;
+          final antLeft = isLandscape ? 8.0 : widget.antLeft;
+          final antBottom = isLandscape ? -18.0 : widget.antBottom;
+          final horizontalPadding = isLandscape ? 28.0 : 38.0;
+          final bottomSpacerFactor = isLandscape
+              ? (widget.showEmail ? 0.12 : 0.16)
+              : (widget.showEmail ? 0.29 : 0.34);
+
           return Stack(
             children: [
               Positioned(
-                left: widget.antLeft,
-                bottom: widget.antBottom,
-                child: AntAsset(widget.antAssetPath, height: widget.antHeight),
+                left: antLeft,
+                bottom: antBottom,
+                child: AntAsset(widget.antAssetPath, height: antHeight),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 38),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    0,
+                    horizontalPadding +
+                        (isLandscape ? mediaQuery.viewPadding.right : 0),
+                    0,
+                  ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: constraints.maxHeight,
@@ -416,14 +442,11 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                         ],
                         const SizedBox(height: 20),
                         BlackPrimaryButton(
-                          label: _isSubmitting
-                              ? (_isRegisterMode
-                                    ? 'Creating...'
-                                    : 'Checking...')
-                              : widget.primaryLabel,
+                          label: widget.primaryLabel,
                           width: widget.showEmail ? 128 : 103,
                           height: 46,
-                          onPressed: _isSubmitting ? () {} : _submit,
+                          isLoading: _isSubmitting,
+                          onPressed: _submit,
                         ),
                         const SizedBox(height: 18),
                         Wrap(
@@ -459,9 +482,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                           ],
                         ),
                         SizedBox(
-                          height:
-                              constraints.maxHeight *
-                              (widget.showEmail ? 0.29 : 0.34),
+                          height: constraints.maxHeight * bottomSpacerFactor,
                         ),
                       ],
                     ),

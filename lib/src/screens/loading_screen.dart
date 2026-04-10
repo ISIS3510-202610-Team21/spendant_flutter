@@ -42,7 +42,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
 
     final nextRoute = authState.hasSavedSession
         ? authState.needsLocationPermissionPrompt
-              ? AppRoutes.locationPermissionIntro
+              ? AppRoutes.registerIntro
               : AppRoutes.home
         : AppRoutes.login;
 

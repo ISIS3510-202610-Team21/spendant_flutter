@@ -1,17 +1,16 @@
 import '../models/expense_model.dart';
+import 'app_time_format_service.dart';
 
 abstract final class ExpenseMomentService {
   static DateTime expenseMoment(ExpenseModel expense) {
-    final parts = expense.time.trim().split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final parsedTime = AppTimeFormatService.parseHourMinute(expense.time);
 
     return DateTime(
       expense.date.year,
       expense.date.month,
       expense.date.day,
-      hour.clamp(0, 23),
-      minute.clamp(0, 59),
+      parsedTime.hour.clamp(0, 23),
+      parsedTime.minute.clamp(0, 59),
     );
   }
 

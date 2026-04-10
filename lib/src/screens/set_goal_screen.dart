@@ -6,13 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../app.dart';
+import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
-import '../services/app_notification_service.dart';
+import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
+import '../services/local_notification_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -30,6 +33,8 @@ class SetGoalScreen extends StatefulWidget {
 
 class _SetGoalScreenState extends State<SetGoalScreen> {
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static const double _bottomDockButtonOffset = 40;
+  static const double _bottomDockButtonClearance = 112;
 
   int _currentStep = -1;
   int _viewState = 0;
@@ -42,6 +47,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   String? _goalBudgetBlockedTitle;
   String? _goalBudgetBlockedMessage;
   bool _isSavingGoal = false;
+  bool _isSendingTestNotification = false;
   String _profileName = 'John Doe';
   String _profileHandle = '@johndoe';
   Uint8List? _profileAvatarBytes;
@@ -225,6 +231,12 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     return DailyBudgetService.buildSummaryForUser(_currentUserId);
   }
 
+  double _goalCurrentAmount(GoalModel goal, {DailyBudgetSummary? summary}) {
+    final resolvedSummary = summary ?? _budgetSummary();
+    final goalState = resolvedSummary.stateFor(goal);
+    return goalState?.currentAmount ?? goal.currentAmount;
+  }
+
   GoalBudgetValidationResult? _goalValidation() {
     final amount = _parsedGoalAmount();
     if (amount == null || amount <= 0) {
@@ -242,15 +254,16 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     }
 
     final summary = _budgetSummary();
-    final currentGoalDailyCommitment = DailyBudgetService.dailyGoalContribution(
-      editingGoal,
-    );
+    final currentGoalAmount = _goalCurrentAmount(editingGoal, summary: summary);
+    final currentGoalDailyCommitment =
+        summary.stateFor(editingGoal)?.dailyContribution ??
+        DailyBudgetService.dailyGoalContribution(editingGoal);
     final editedDailyGoalAmount =
         DailyBudgetService.projectedGoalDailyContribution(
           targetAmount: amount,
-          currentAmount: editingGoal.currentAmount,
+          currentAmount: currentGoalAmount,
           deadline: _goalDeadline,
-          isCompleted: editingGoal.currentAmount >= amount,
+          isCompleted: currentGoalAmount >= amount,
         );
     final remainingGoalsCommitment =
         summary.totalGoalDailyCommitment - currentGoalDailyCommitment;
@@ -384,7 +397,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _isSavingGoal = true;
     });
 
-    GoalModel? createdGoal;
     try {
       final editingGoal = _editingGoal;
       if (editingGoal == null) {
@@ -398,14 +410,19 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveGoal(goal);
-        createdGoal = goal;
       } else {
+        final currentGoalAmount = _goalCurrentAmount(editingGoal);
+        final updatedCurrentAmount = currentGoalAmount > amount
+            ? amount
+            : currentGoalAmount;
         editingGoal
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
           ..targetAmount = amount
+          ..currentAmount = updatedCurrentAmount
           ..deadline = _goalDeadline
-          ..isCompleted = editingGoal.currentAmount >= amount
+          ..isCompleted = updatedCurrentAmount >= amount
+          ..createdAt = DateTime.now()
           ..isSynced = false;
         await editingGoal.save();
       }
@@ -430,9 +447,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       _currentStep = -1;
       _viewState = 1;
     });
-    if (createdGoal != null) {
-      unawaited(AppNotificationService.notifyGoalCreated(createdGoal));
-    }
     _resetGoalForm();
     _syncPendingDataInBackground();
   }
@@ -464,6 +478,74 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         );
       },
     );
+  }
+
+  AppNotificationModel _buildHabitFixerTestNotification() {
+    final now = DateTime.now();
+    final timeLabel = DateFormat('HH:mm').format(
+      DateTime(now.year, now.month, now.day, 9, 15),
+    );
+
+    return AppNotificationModel()
+      ..id = 'habit-fixer-test-${now.microsecondsSinceEpoch}'
+      ..type = AppNotificationTypes.habitFixerWarning
+      ..createdAt = now
+      ..userId = _currentUserId
+      ..title = 'Pause before spending here'
+      ..subtitle = '3 regretted purchases around $timeLabel'
+      ..category = 'Small purchases'
+      ..detailTitle = 'You have a regret pattern here'
+      ..detailMessage =
+          'You previously marked 3 purchases near this place around $timeLabel as regretted. You are back in the same area and your calendar looks free, so take a moment before spending.'
+      ..routeName = AppRoutes.notifications;
+  }
+
+  Future<void> _sendTestNotificationToDevice() async {
+    if (_isSendingTestNotification) {
+      return;
+    }
+
+    setState(() {
+      _isSendingTestNotification = true;
+    });
+
+    try {
+      final result = await LocalNotificationService.showTrackedNotification(
+        _buildHabitFixerTestNotification(),
+        promptIfNeeded: true,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (result.wasShown) {
+        return;
+      }
+
+      final permissionStatus = await Permission.notification.status;
+      if (!mounted) {
+        return;
+      }
+
+      if (permissionStatus.isPermanentlyDenied ||
+          permissionStatus.isRestricted) {
+        await openAppSettings();
+        return;
+      }
+
+      final statusLabel = permissionStatus == PermissionStatus.granted
+          ? 'Android says notifications are enabled, but the test alert was not posted. ${result.errorMessage ?? ''}'
+                .trim()
+          : 'Notification permission was not granted, so the test alert could not be sent.';
+      _showMessage(
+        '$statusLabel Review system notification settings for SpendAnt and try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingTestNotification = false;
+        });
+      }
+    }
   }
 
   Future<bool> _showDeleteConfirmation({
@@ -523,100 +605,120 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   Widget _buildProfileView() {
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
-          decoration: const BoxDecoration(
-            color: AppPalette.green,
-            borderRadius: BorderRadius.only(
-              bottomLeft: Radius.circular(30),
-              bottomRight: Radius.circular(30),
-            ),
-          ),
-          child: Column(
-            children: [
-              Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompactHeight = constraints.maxHeight < 760;
+        final antHeight = isCompactHeight ? 180.0 : 270.0;
+        final topPadding = isCompactHeight ? 20.0 : 30.0;
+        final antTopSpacing = isCompactHeight ? 64.0 : 112.0;
+
+        final content = Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
+              decoration: const BoxDecoration(
+                color: AppPalette.green,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
+              ),
+              child: Column(
                 children: [
-                  const SizedBox(width: 32, height: 32),
-                  Expanded(
-                    child: Text(
-                      'Profile',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
+                  Row(
+                    children: [
+                      const SizedBox(width: 32, height: 32),
+                      Expanded(
+                        child: Text(
+                          'Profile',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.nunito(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: AppPalette.ink,
+                          ),
+                        ),
                       ),
+                      IconButton(
+                        onPressed: _openProfileEditor,
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundColor: const Color(0xFFFFCCBB),
+                    backgroundImage: _profileAvatarBytes != null
+                        ? MemoryImage(_profileAvatarBytes!)
+                        : null,
+                    child: _profileAvatarBytes == null
+                        ? const Icon(
+                            Icons.person,
+                            color: Color(0xFFFF9999),
+                            size: 45,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _profileName,
+                    style: GoogleFonts.nunito(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  IconButton(
-                    onPressed: _openProfileEditor,
-                    icon: const Icon(
-                      Icons.edit_outlined,
-                      color: AppPalette.ink,
+                  Text(
+                    _profileHandle,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      color: Colors.black54,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: const Color(0xFFFFCCBB),
-                backgroundImage: _profileAvatarBytes != null
-                    ? MemoryImage(_profileAvatarBytes!)
-                    : null,
-                child: _profileAvatarBytes == null
-                    ? const Icon(
-                        Icons.person,
-                        color: Color(0xFFFF9999),
-                        size: 45,
-                      )
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _profileName,
-                style: GoogleFonts.nunito(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
+            ),
+            SizedBox(height: topPadding),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _profileActionButton(
+                  'Income',
+                  assetPath: 'web/icons/IncomeWhite.svg',
+                  isIncomeBtn: true,
                 ),
-              ),
-              Text(
-                _profileHandle,
-                style: GoogleFonts.nunito(fontSize: 14, color: Colors.black54),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 30),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _profileActionButton(
-              'Income',
-              assetPath: 'web/icons/IncomeWhite.svg',
-              isIncomeBtn: true,
+                const SizedBox(width: 16),
+                _profileActionButton(
+                  'Goals',
+                  icon: Icons.flag_outlined,
+                  isGoalBtn: true,
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            _profileActionButton(
-              'Goals',
-              icon: Icons.flag_outlined,
-              isGoalBtn: true,
+            SizedBox(height: antTopSpacing),
+            Center(
+              child: SizedBox(
+                width: isCompactHeight ? 150 : 200,
+                height: antHeight,
+                child: const AntAsset('web/ant/ant_idle.svg'),
+              ),
             ),
+            SizedBox(height: isCompactHeight ? 28 : 40),
           ],
-        ),
-        const Spacer(),
-        const Center(
-          child: SizedBox(
-            width: 200,
-            height: 250,
-            child: AntAsset('web/ant/ant_idle.svg'),
+        );
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: content,
           ),
-        ),
-        const SizedBox(height: 20),
-      ],
+        );
+      },
     );
   }
 
@@ -681,7 +783,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 48),
+              GestureDetector(
+                onLongPress: _isSendingTestNotification
+                    ? null
+                    : _sendTestNotificationToDevice,
+                behavior: HitTestBehavior.translucent,
+                child: const SizedBox(width: 48, height: 48),
+              ),
             ],
           ),
         ),
@@ -689,60 +797,64 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           child: AnimatedBuilder(
             animation: budgetDependencies,
             builder: (context, _) {
-              final box = LocalStorageService.goalBox;
-              final goals =
-                  box.values
-                      .where((goal) => goal.userId == _currentUserId)
-                      .toList()
-                    ..sort(
-                      (left, right) =>
-                          right.createdAt.compareTo(left.createdAt),
-                    );
               final summary = _budgetSummary();
+              final goalStates = summary.goalStates.toList()
+                ..sort(
+                  (left, right) =>
+                      right.goal.createdAt.compareTo(left.goal.createdAt),
+                );
               final canCreateGoal = summary.hasIncome;
 
-              return ListView(
-                padding: const EdgeInsets.all(24),
+              return Stack(
                 children: [
-                  if (!summary.hasIncome) ...[
-                    const _GoalRulesNotice(
-                      message:
-                          'Goals need at least one active income because every goal reserves part of your daily budget.',
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      24,
+                      24,
+                      24,
+                      _bottomDockButtonClearance,
                     ),
-                    const SizedBox(height: 14),
-                  ] else if (summary.isSpendableBudgetExhausted) ...[
-                    _GoalRulesNotice(
-                      message: summary.isInternalBudgetExhausted
-                          ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
-                          : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (goals.isEmpty) const _EmptyGoalsCard(),
-                  for (final goal in goals)
-                    _GoalTile(
-                      goal: goal,
-                      onDelete: () => _confirmDeleteGoal(goal),
-                      onEdit: () => _startGoalSetup(goal: goal),
-                    ),
-                  const SizedBox(height: 30),
-                  ElevatedButton(
-                    onPressed: canCreateGoal
-                        ? _startGoalSetup
-                        : () =>
-                              Navigator.of(context).pushNamed(AppRoutes.budget),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      minimumSize: const Size(double.infinity, 55),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                    ),
-                    child: Text(
-                      canCreateGoal ? 'New Goal' : 'Add Income First',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    children: [
+                      if (!summary.hasIncome) ...[
+                        const _GoalRulesNotice(
+                          message:
+                              'Goals need at least one active income because every goal reserves part of your daily budget.',
+                        ),
+                        const SizedBox(height: 14),
+                      ] else if (summary.isSpendableBudgetExhausted) ...[
+                        _GoalRulesNotice(
+                          message: summary.isInternalBudgetExhausted
+                              ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
+                              : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if (goalStates.isEmpty) const _EmptyGoalsCard(),
+                      for (final goalState in goalStates)
+                        _GoalTile(
+                          goalState: goalState,
+                          onDelete: () => _confirmDeleteGoal(goalState.goal),
+                          onEdit: () => _startGoalSetup(goal: goalState.goal),
+                        ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: _bottomDockButtonOffset,
+                    child: Center(
+                      child: BlackPrimaryButton(
+                        label: canCreateGoal ? 'New Goal' : 'Add Income First',
+                        width: null,
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        borderRadius: BorderRadius.circular(12),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onPressed: canCreateGoal
+                            ? _startGoalSetup
+                            : () => Navigator.of(
+                                context,
+                              ).pushNamed(AppRoutes.budget),
                       ),
                     ),
                   ),
@@ -809,7 +921,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             const SizedBox(height: 30),
             content,
             const SizedBox(height: 40),
-            SizedBox(height: 150, child: AntAsset(asset)),
+            SizedBox(height: 180, child: AntAsset(asset)),
             const Spacer(),
             ElevatedButton(
               onPressed: _continueGoalSetup,
@@ -858,7 +970,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${DateFormat('d/M/y').format(_goalDeadline)}.',
+              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 16,
@@ -868,7 +980,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 40),
             const SizedBox(
-              height: 180,
+              height: 220,
               child: AntAsset('web/ant/ant_thumb.svg'),
             ),
             const Spacer(),
@@ -951,7 +1063,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 34),
             const SizedBox(
-              height: 170,
+              height: 210,
               child: AntAsset('web/ant/ant_suprised.svg'),
             ),
             const Spacer(),
@@ -1014,7 +1126,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(
-          DateFormat('d/M/y').format(_goalDeadline),
+          AppDateFormatService.longDate(_goalDeadline),
           style: GoogleFonts.nunito(
             fontSize: 18,
             fontWeight: FontWeight.w800,
@@ -1029,20 +1141,21 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
-    required this.goal,
+    required this.goalState,
     required this.onDelete,
     required this.onEdit,
   });
 
-  final GoalModel goal;
+  final GoalComputedState goalState;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final progress = goal.getProgressPercent() / 100;
+    final goal = goalState.goal;
+    final progress = goalState.progress;
     final widthFactor = progress.clamp(0.0, 1.0).toDouble();
-    final dailyReserve = DailyBudgetService.dailyGoalContribution(goal);
+    final dailyReserve = goalState.dailyContribution;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -1082,7 +1195,7 @@ class _GoalTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Deadline: ${DateFormat('d/M/y').format(goal.deadline)}',
+                  'Deadline: ${AppDateFormatService.longDate(goal.deadline)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1091,7 +1204,7 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goal.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
+                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goalState.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1127,7 +1240,7 @@ class _GoalTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${goal.getProgressPercent()}%',
+                '${goalState.progressPercent}%',
                 style: GoogleFonts.nunito(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,

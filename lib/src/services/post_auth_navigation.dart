@@ -29,8 +29,34 @@ class AppRedirect {
   }
 }
 
+enum PermissionsIntroStep { welcome, calendar, notifications }
+
 class PostAuthNavigationArgs {
   const PostAuthNavigationArgs({required this.redirect});
 
   final AppRedirect redirect;
+}
+
+class PermissionsIntroArgs {
+  const PermissionsIntroArgs.fullOnboarding({this.redirect})
+    : initialStep = PermissionsIntroStep.welcome,
+      showWelcomeStep = true,
+      showCalendarStep = true,
+      showNotificationStep = true,
+      showLocationStepAfterFlow = true;
+
+  const PermissionsIntroArgs.review({
+    required this.initialStep,
+    required this.showCalendarStep,
+    required this.showNotificationStep,
+    this.redirect,
+  }) : showWelcomeStep = false,
+       showLocationStepAfterFlow = false;
+
+  final AppRedirect? redirect;
+  final PermissionsIntroStep initialStep;
+  final bool showWelcomeStep;
+  final bool showCalendarStep;
+  final bool showNotificationStep;
+  final bool showLocationStepAfterFlow;
 }

@@ -100,12 +100,15 @@ abstract final class NotificationReaderService {
     return enabled ?? false;
   }
 
-  static Future<void> openAccessSettings() async {
+  static Future<bool> openAccessSettings() async {
     if (!isSupportedPlatform) {
-      return;
+      return false;
     }
 
-    await _methodChannel.invokeMethod<void>('openNotificationListenerSettings');
+    final opened = await _methodChannel.invokeMethod<bool>(
+      'openNotificationListenerSettings',
+    );
+    return opened ?? false;
   }
 
   static Future<List<NotificationReaderEvent>> drainPendingEvents() async {

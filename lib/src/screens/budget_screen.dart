@@ -7,11 +7,12 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/income_model.dart';
-import '../services/app_notification_service.dart';
+import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/auth_chrome.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import '../widgets/spendant_delete_dialog.dart';
 import '../../app.dart';
@@ -24,6 +25,8 @@ class BudgetScreen extends StatelessWidget {
   const BudgetScreen({super.key});
 
   static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
+  static const double _bottomDockButtonOffset = 40;
+  static const double _bottomDockButtonClearance = 112;
 
   static const List<Color> _cardColors = [
     Color(0xFFF9D5C5),
@@ -105,68 +108,75 @@ class BudgetScreen extends StatelessWidget {
         children: [
           _BudgetHeader(onClose: () => _goToHome(context)),
           Expanded(
-            child: ValueListenableBuilder<Box<IncomeModel>>(
-              valueListenable: LocalStorageService.incomesListenable,
-              builder: (context, box, _) {
-                final incomes =
-                    box.values.where((i) => i.userId == _currentUserId).toList()
-                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            child: Stack(
+              children: [
+                ValueListenableBuilder<Box<IncomeModel>>(
+                  valueListenable: LocalStorageService.incomesListenable,
+                  builder: (context, box, _) {
+                    final incomes =
+                        box.values
+                            .where((i) => i.userId == _currentUserId)
+                            .toList()
+                          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                  children: [
-                    if (incomes.isEmpty)
-                      const _EmptyIncomesCard()
-                    else
-                      for (var i = 0; i < incomes.length; i++) ...[
-                        _IncomeCard(
-                          income: incomes[i],
-                          color: _cardColors[i % _cardColors.length],
-                          recurrenceLabel: _recurrenceLabel(incomes[i]),
-                          currencyFormat: _currencyFormat,
-                          onDelete: () =>
-                              _confirmDeleteIncome(context, incomes[i]),
-                          onEdit: () async {
-                            await Navigator.of(context).push<bool>(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    NewIncomeScreen(editingIncome: incomes[i]),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    const SizedBox(height: 40),
-                    Center(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (_) => const NewIncomeScreen(),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppPalette.ink,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(180, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: Text(
-                          'New Income',
-                          style: GoogleFonts.nunito(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        20,
+                        24,
+                        20,
+                        _bottomDockButtonClearance,
                       ),
+                      children: [
+                        if (incomes.isEmpty)
+                          const _EmptyIncomesCard()
+                        else
+                          for (var i = 0; i < incomes.length; i++) ...[
+                            _IncomeCard(
+                              income: incomes[i],
+                              color: _cardColors[i % _cardColors.length],
+                              recurrenceLabel: _recurrenceLabel(incomes[i]),
+                              currencyFormat: _currencyFormat,
+                              onDelete: () =>
+                                  _confirmDeleteIncome(context, incomes[i]),
+                              onEdit: () async {
+                                await Navigator.of(context).push<bool>(
+                                  MaterialPageRoute(
+                                    builder: (_) => NewIncomeScreen(
+                                      editingIncome: incomes[i],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                      ],
+                    );
+                  },
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: _bottomDockButtonOffset,
+                  child: Center(
+                    child: BlackPrimaryButton(
+                      label: 'New Income',
+                      width: null,
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      borderRadius: BorderRadius.circular(12),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onPressed: () async {
+                        await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => const NewIncomeScreen(),
+                          ),
+                        );
+                      },
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+              ],
             ),
           ),
           const SpendAntBottomNav(currentItem: SpendAntNavItem.cards),
@@ -186,7 +196,7 @@ class _BudgetHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(8, 52, 8, 14),
+      padding: AppHeaderMetrics.padding(horizontal: 8),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -275,7 +285,7 @@ class _IncomeCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Starts ${DateFormat('d/M/y').format(income.startDate)}',
+                  'Starts ${AppDateFormatService.longDate(income.startDate)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -475,7 +485,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       _isSavingIncome = true;
     });
 
-    IncomeModel? createdIncome;
     try {
       final editingIncome = widget.editingIncome;
       if (editingIncome == null) {
@@ -490,7 +499,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
           ..createdAt = DateTime.now()
           ..isSynced = false;
         await LocalStorageService().saveIncome(income);
-        createdIncome = income;
       } else {
         editingIncome
           ..userId = _currentUserId
@@ -519,9 +527,6 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       return;
     }
 
-    if (createdIncome != null) {
-      unawaited(AppNotificationService.notifyIncomeCreated(createdIncome));
-    }
     final navigator = Navigator.of(context);
     navigator.pop(true);
     _syncPendingDataInBackground();
@@ -564,6 +569,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _NewIncomeHeader(
@@ -667,7 +673,7 @@ class _NewIncomeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      padding: AppHeaderMetrics.padding(),
       child: Row(
         children: [
           IconButton(
@@ -901,7 +907,7 @@ class _DateRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Text(
-              DateFormat('d/MM/yyyy').format(date),
+              AppDateFormatService.longDate(date),
               style: GoogleFonts.nunito(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,

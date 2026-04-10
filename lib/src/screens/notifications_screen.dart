@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
-import '../models/goal_model.dart';
 import '../services/app_navigation_service.dart';
 import '../services/app_notification_service.dart';
 import '../services/auto_categorization_service.dart';
@@ -20,7 +20,6 @@ import '../services/notifications_store.dart';
 import '../services/post_auth_navigation.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
-import 'new_expense_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -31,7 +30,6 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
-  late final ValueListenable<Box<GoalModel>> _goalsListenable;
   late final ValueListenable<Box<AppNotificationModel>>
   _notificationsListenable;
   late final int _notificationColorStartIndex;
@@ -44,13 +42,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void initState() {
     super.initState();
     _expensesListenable = LocalStorageService.expensesListenable;
-    _goalsListenable = LocalStorageService.goalsListenable;
     _notificationsListenable = LocalStorageService.notificationsListenable;
     _notificationColorStartIndex = math.Random().nextInt(
       ExpenseVisuals.rotatingColors.length,
     );
     _expensesListenable.addListener(_handleStorageChanged);
-    _goalsListenable.addListener(_handleStorageChanged);
     _notificationsListenable.addListener(_handleStorageChanged);
     _refreshNotifications();
   }
@@ -58,7 +54,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void dispose() {
     _expensesListenable.removeListener(_handleStorageChanged);
-    _goalsListenable.removeListener(_handleStorageChanged);
     _notificationsListenable.removeListener(_handleStorageChanged);
     super.dispose();
   }
@@ -75,8 +70,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
 
     final notifications = NotificationFeedService.buildFeed(
-      expenses: LocalStorageService.expenseBox.values,
-      goals: LocalStorageService.goalBox.values,
       appNotifications: LocalStorageService.notificationBox.values,
       userId: _currentUserId,
     );
@@ -114,102 +107,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() {
       _isSimulatingGooglePay = false;
     });
-
-    final parsedExpense = result.expense;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    switch (result.status) {
-      case GooglePayImportStatus.imported:
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              parsedExpense == null
-                  ? 'Simulated Google Pay expense imported.'
-                  : 'Imported ${parsedExpense.name} for ${NotificationFeedService.formatAmount(parsedExpense.amount)}.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.duplicate:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'That simulated Google Pay expense already exists nearby.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.ignored:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'The simulated Google Pay notification could not be parsed.',
-            ),
-          ),
-        );
-        return;
-      case GooglePayImportStatus.unavailable:
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Sign in first to import a simulated Google Pay expense.',
-            ),
-          ),
-        );
-        return;
-    }
-  }
-
-  Future<void> _openExpenseEditor(NotificationFeedItem notification) async {
-    final expense = notification.expense;
-    if (expense == null) {
-      return;
-    }
-
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => NewExpenseScreen(
-          headerTitle: 'Edit Expense',
-          editingExpense: expense,
-        ),
-      ),
-    );
-
-    await _refreshNotifications();
   }
 
   Future<void> _openNotificationDetail(
     NotificationFeedItem notification,
   ) async {
-    switch (notification.type) {
-      case NotificationFeedType.expense:
-        await _openExpenseEditor(notification);
-        return;
-      case NotificationFeedType.warning:
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => _WarningDetailScreen(notification: notification),
-          ),
-        );
-        return;
-      case NotificationFeedType.goalCreated:
-      case NotificationFeedType.goalHalfway:
-      case NotificationFeedType.goalAchieved:
-      case NotificationFeedType.incomeCreated:
-      case NotificationFeedType.incomeDue:
-      case NotificationFeedType.budgetWarning:
-        final routeName = notification.routeName;
-        if (routeName == null) {
-          return;
-        }
-        await AppNavigationService.openRedirect(
-          AppRedirect(
-            routeName: routeName,
-            routeArgumentInt: notification.routeArgumentInt,
-          ),
-        );
-        return;
-    }
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (_) => _NotificationDetailDialog(notification: notification),
+    );
   }
 
   @override
@@ -225,6 +132,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             _NotificationsHeader(
@@ -330,7 +238,7 @@ class _NotificationsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(12, 50, 12, 16),
+      padding: AppHeaderMetrics.padding(bottom: 16),
       child: Row(
         children: [
           IconButton(
@@ -474,168 +382,140 @@ class _NotificationCard extends StatelessWidget {
   }
 }
 
-class _WarningDetailScreen extends StatelessWidget {
-  const _WarningDetailScreen({required this.notification});
+class _NotificationDetailDialog extends StatelessWidget {
+  const _NotificationDetailDialog({required this.notification});
 
   final NotificationFeedItem notification;
 
+  bool get _canOpenRoute =>
+      notification.type != NotificationFeedType.warning &&
+      notification.routeName != null &&
+      notification.routeName!.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
-    final category = notification.category ?? 'Other';
-    final headline =
-        notification.expense?.name ??
-        notification.subtitle ??
-        notification.title;
-    final secondaryLabel = notification.expense != null
-        ? category
-        : (notification.category ?? notification.subtitle);
+    final visuals = _NotificationVisuals.fromItem(
+      notification,
+      colorIndex: 0,
+      colorStartIndex: 0,
+      reservedCategoryAccents: const <String, ExpenseAccentVisual>{},
+    );
 
-    return _NotificationDetailShell(
-      backgroundColor: const Color(0xFFFF632D),
-      assetPath: 'web/ant/ant_suprised.svg',
-      title: notification.detailTitle,
-      body: notification.detailMessage,
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        constraints: const BoxConstraints(maxWidth: 380),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 18),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFE5DD),
-          borderRadius: BorderRadius.circular(4),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(32),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: _NotificationVisuals.warningIconBackground,
-              child: notification.category != null
-                  ? SvgPicture.asset(
-                      ExpenseVisuals.iconAssetPathFor(category),
-                      width: 22,
-                      height: 22,
-                    )
-                  : const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppPalette.ink,
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    headline,
-                    style: GoogleFonts.nunito(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: AppPalette.ink,
-                    ),
-                  ),
-                  if (secondaryLabel != null)
-                    Text(
-                      secondaryLabel,
-                      style: GoogleFonts.nunito(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black54,
-                      ),
-                    ),
-                ],
+            Align(
+              alignment: Alignment.topCenter,
+              child: CircleAvatar(
+                radius: 26,
+                backgroundColor: visuals.iconBackgroundColor,
+                child: visuals.iconAssetPath != null
+                    ? SvgPicture.asset(
+                        visuals.iconAssetPath!,
+                        width: 24,
+                        height: 24,
+                      )
+                    : Icon(visuals.icon, color: AppPalette.ink, size: 24),
               ),
             ),
-            if (notification.amount != null)
+            const SizedBox(height: 18),
+            Text(
+              notification.detailTitle,
+              style: GoogleFonts.nunito(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: AppPalette.ink,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _dialogTimestamp(notification.createdAt),
+              style: GoogleFonts.nunito(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.fieldHint.withValues(alpha: 0.75),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              notification.detailMessage,
+              style: GoogleFonts.nunito(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.fieldHint,
+                height: 1.28,
+              ),
+            ),
+            if (notification.amount != null) ...[
+              const SizedBox(height: 14),
               Text(
                 NotificationFeedService.formatAmount(notification.amount!),
                 style: GoogleFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
-                  color: Colors.black54,
+                  color: AppPalette.ink,
                 ),
               ),
+            ],
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_canOpenRoute) ...[
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await AppNavigationService.openRedirect(
+                        AppRedirect(
+                          routeName: notification.routeName!,
+                          routeArgumentInt: notification.routeArgumentInt,
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Open',
+                      style: GoogleFonts.nunito(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Close',
+                    style: GoogleFonts.nunito(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.fieldHint,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
-}
 
-class _NotificationDetailShell extends StatelessWidget {
-  const _NotificationDetailShell({
-    required this.backgroundColor,
-    required this.assetPath,
-    required this.title,
-    required this.body,
-    this.child,
-  });
-
-  final Color backgroundColor;
-  final String assetPath;
-  final String title;
-  final String body;
-  final Widget? child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(26, 10, 26, 28),
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppPalette.ink),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
-                        height: 1.05,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      body,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppPalette.ink,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    SvgPicture.asset(
-                      assetPath,
-                      height: 240,
-                      fit: BoxFit.contain,
-                    ),
-                    if (child != null) ...[const SizedBox(height: 22), child!],
-                  ],
-                ),
-              ),
-              SizedBox(
-                width: 118,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Continue'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  String _dialogTimestamp(DateTime value) {
+    return DateFormat('MMM d, y h:mm a', 'en_US').format(value);
   }
 }
 
@@ -663,7 +543,7 @@ class _EmptyNotificationsState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Create expenses or complete goals and updates will appear here.',
+              'Automatic alerts about goals, budgets, imports, and spending patterns will appear here.',
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 14,
@@ -693,8 +573,6 @@ class _NotificationVisuals {
     this.iconAssetPath,
   });
 
-  static const Color warningIconBackground = Color(0xFF5AD070);
-
   final Color backgroundColor;
   final Color iconBackgroundColor;
   final IconData icon;
@@ -714,15 +592,6 @@ class _NotificationVisuals {
         );
 
     switch (item.type) {
-      case NotificationFeedType.expense:
-        return _NotificationVisuals(
-          backgroundColor: accentVisual.backgroundColor,
-          iconBackgroundColor: accentVisual.accentColor,
-          icon: Icons.edit_outlined,
-          iconAssetPath: ExpenseVisuals.iconAssetPathFor(
-            item.category ?? 'Other',
-          ),
-        );
       case NotificationFeedType.warning:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -731,6 +600,12 @@ class _NotificationVisuals {
           iconAssetPath: item.category == null
               ? null
               : ExpenseVisuals.iconAssetPathFor(item.category!),
+        );
+      case NotificationFeedType.welcome:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.waving_hand_outlined,
         );
       case NotificationFeedType.goalCreated:
         return _NotificationVisuals(
@@ -750,6 +625,12 @@ class _NotificationVisuals {
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.flag_outlined,
         );
+      case NotificationFeedType.goalAdjustment:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.track_changes_outlined,
+        );
       case NotificationFeedType.incomeCreated:
         return _NotificationVisuals(
           backgroundColor: accentVisual.backgroundColor,
@@ -767,6 +648,27 @@ class _NotificationVisuals {
           backgroundColor: accentVisual.backgroundColor,
           iconBackgroundColor: accentVisual.accentColor,
           icon: Icons.account_balance_wallet_outlined,
+        );
+      case NotificationFeedType.spendingAnomaly:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.query_stats_outlined,
+        );
+      case NotificationFeedType.expenseImported:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.receipt_long_outlined,
+          iconAssetPath: item.category == null
+              ? null
+              : ExpenseVisuals.iconAssetPathFor(item.category!),
+        );
+      case NotificationFeedType.expenseImportedNeedsCategory:
+        return _NotificationVisuals(
+          backgroundColor: accentVisual.backgroundColor,
+          iconBackgroundColor: accentVisual.accentColor,
+          icon: Icons.sell_outlined,
         );
     }
   }

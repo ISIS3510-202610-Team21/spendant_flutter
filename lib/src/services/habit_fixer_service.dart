@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:intl/intl.dart';
 
 import '../models/expense_model.dart';
+import 'app_time_format_service.dart';
 import 'spending_advice_service.dart';
 
 class RegretHotspot {
@@ -257,10 +258,8 @@ abstract final class HabitFixerService {
   static double _degreesToRadians(double value) => value * math.pi / 180;
 
   static int _minutesOfDayForExpense(ExpenseModel expense) {
-    final parts = expense.time.split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    return hour.clamp(0, 23) * 60 + minute.clamp(0, 59);
+    final parsedTime = AppTimeFormatService.parseHourMinute(expense.time);
+    return parsedTime.hour.clamp(0, 23) * 60 + parsedTime.minute.clamp(0, 59);
   }
 
   static int _minutesDifferenceOnClock(int left, int right) {

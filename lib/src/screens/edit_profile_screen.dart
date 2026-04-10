@@ -116,11 +116,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             Container(
               color: AppPalette.green,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+              padding: AppHeaderMetrics.padding(),
               child: Row(
                 children: [
                   IconButton(
@@ -129,7 +130,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   Expanded(
                     child: Text(
-                      'Profile',
+                      'Edit Profile',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.nunito(
                         fontSize: 19,

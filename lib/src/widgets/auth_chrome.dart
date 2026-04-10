@@ -36,11 +36,7 @@ class SpendAntWordmark extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'SpendAnt',
-          textAlign: TextAlign.center,
-          style: titleStyle,
-        ),
+        Text('SpendAnt', textAlign: TextAlign.center, style: titleStyle),
         const SizedBox(height: 2),
         Text(
           'Your Finance Pal',
@@ -86,19 +82,47 @@ class BlackPrimaryButton extends StatelessWidget {
     required this.onPressed,
     this.width = 206,
     this.height = 46,
+    this.isLoading = false,
+    this.padding,
+    this.borderRadius,
+    this.tapTargetSize,
   });
 
   final String label;
-  final VoidCallback onPressed;
-  final double width;
+  final VoidCallback? onPressed;
+  final double? width;
   final double height;
+  final bool isLoading;
+  final EdgeInsetsGeometry? padding;
+  final BorderRadiusGeometry? borderRadius;
+  final MaterialTapTargetSize? tapTargetSize;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
       height: height,
-      child: ElevatedButton(onPressed: onPressed, child: Text(label)),
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          minimumSize: Size(0, height),
+          padding: padding,
+          tapTargetSize: tapTargetSize,
+          shape: RoundedRectangleBorder(
+            borderRadius: borderRadius ?? BorderRadius.circular(14),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppPalette.white),
+                ),
+              )
+            : Text(label),
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -22,6 +23,7 @@ object NotificationReaderBridge {
     private const val PREFS_NAME = "spendant_notification_reader"
     private const val PENDING_EVENTS_KEY = "pending_events_v1"
     private const val MAX_PENDING_EVENTS = 40
+    private const val MAX_TEXT_LENGTH = 900
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
@@ -56,6 +58,9 @@ object NotificationReaderBridge {
     ) {
         val payload = buildPayload(context, statusBarNotification) ?: return
         storePendingEvent(context, payload)
+        if (eventSink == null) {
+            BackgroundTaskScheduler.enqueueNotificationImport(context, payload)
+        }
         emit(payload)
     }
 
@@ -71,11 +76,7 @@ object NotificationReaderBridge {
 
             "openNotificationListenerSettings" -> {
                 try {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    activity.startActivity(intent)
-                    result.success(true)
+                    result.success(openNotificationListenerSettings(activity))
                 } catch (error: Exception) {
                     result.error(
                         "open_settings_failed",
@@ -101,15 +102,23 @@ object NotificationReaderBridge {
         val packageName = statusBarNotification.packageName ?: return null
         val appName = resolveApplicationName(context, packageName)
 
-        if (!isGooglePayCandidate(packageName, appName)) {
+        if (!isSupportedExpenseCandidate(packageName, appName)) {
             return null
         }
 
         val extras = notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
-        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
-        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim().orEmpty()
+        val title = truncateText(
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+        )
+        val text = truncateText(
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        )
+        val bigText = truncateText(
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
+        )
+        val subText = truncateText(
+            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim().orEmpty()
+        )
 
         if (title.isBlank() && text.isBlank() && bigText.isBlank() && subText.isBlank()) {
             return null
@@ -140,6 +149,15 @@ object NotificationReaderBridge {
         }
     }
 
+    private fun isSupportedExpenseCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        return isGooglePayCandidate(packageName, appName) ||
+            isGmailCandidate(packageName, appName) ||
+            isNequiCandidate(packageName, appName)
+    }
+
     private fun isGooglePayCandidate(
         packageName: String,
         appName: String,
@@ -152,6 +170,31 @@ object NotificationReaderBridge {
         return isGooglePackage ||
             normalizedAppName.contains("google pay") ||
             normalizedAppName.contains("google wallet")
+    }
+
+    private fun isGmailCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        val normalizedSource = "$packageName $appName".lowercase()
+        return normalizedSource.contains("gmail") ||
+            normalizedSource.contains("com.google.android.gm")
+    }
+
+    private fun isNequiCandidate(
+        packageName: String,
+        appName: String,
+    ): Boolean {
+        val normalizedSource = "$packageName $appName".lowercase()
+        return normalizedSource.contains("nequi")
+    }
+
+    private fun truncateText(value: String): String {
+        if (value.length <= MAX_TEXT_LENGTH) {
+            return value
+        }
+
+        return value.take(MAX_TEXT_LENGTH)
     }
 
     private fun isNotificationListenerEnabled(context: Context): Boolean {
@@ -168,6 +211,36 @@ object NotificationReaderBridge {
                 component.packageName == expectedComponent.packageName &&
                     component.className == expectedComponent.className
             }
+    }
+
+    private fun openNotificationListenerSettings(activity: Activity): Boolean {
+        val expectedComponent = ComponentName(activity, SpendAntNotificationListenerService::class.java)
+        val intents = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                add(
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
+                        putExtra(
+                            Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                            expectedComponent.flattenToString(),
+                        )
+                    }
+                )
+            }
+
+            add(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
+        val packageManager = activity.packageManager
+        val intent = intents.firstOrNull { candidate ->
+            candidate.resolveActivity(packageManager) != null
+        } ?: return false
+
+        activity.startActivity(
+            intent.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+        return true
     }
 
     private fun emit(payload: Map<String, Any?>) {

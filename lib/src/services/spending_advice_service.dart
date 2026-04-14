@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:intl/intl.dart';
-
 import '../models/expense_model.dart';
+import '../theme/expense_visuals.dart';
+import 'app_currency_format_service.dart';
 import 'app_time_format_service.dart';
 
 enum SpendingAdviceKind {
@@ -39,29 +39,6 @@ class SpendingAdvice {
 }
 
 abstract final class SpendingAdviceService {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
-
-  static const Map<String, String> _detailLabelPrimaryCategories =
-      <String, String>{
-        'Food': 'Food',
-        'Food Delivery': 'Food',
-        'Groceries': 'Food',
-        'Commute': 'Transport',
-        'Transport': 'Transport',
-        'Learning Materials': 'Services',
-        'University Fees': 'Services',
-        'Personal Care': 'Services',
-        'Rent': 'Services',
-        'Services': 'Services',
-        'Utilities': 'Services',
-        'Entertainment': 'Other',
-        'Gifts': 'Other',
-        'Group Hangouts': 'Other',
-        'Subscriptions': 'Other',
-        'Emergency': 'Other',
-        'Impulse': 'Other',
-        'Owed': 'Other',
-      };
 
   static const Map<String, String> _habitTitles = <String, String>{
     'Impulse': 'Impulse purchases are stacking up',
@@ -381,7 +358,7 @@ abstract final class SpendingAdviceService {
     }
 
     for (final label in expense.detailLabels) {
-      final derivedCategory = _detailLabelPrimaryCategories[label.trim()];
+      final derivedCategory = ExpenseVisuals.detailLabelPrimaryCategories[label.trim()];
       if (derivedCategory != null) {
         return derivedCategory;
       }
@@ -404,11 +381,11 @@ abstract final class SpendingAdviceService {
   }
 
   static String _primaryCategoryForLabel(String label) {
-    return _detailLabelPrimaryCategories[label.trim()] ?? 'Other';
+    return ExpenseVisuals.detailLabelPrimaryCategories[label.trim()] ?? 'Other';
   }
 
   static String _formatMoney(double amount) {
-    return 'COP ${_currencyFormat.format(amount.round())}';
+    return AppCurrencyFormatService.formatCOP(amount);
   }
 
   static double _median(List<double> sortedValues) {

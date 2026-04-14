@@ -5,9 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hive/hive.dart';
-import 'package:intl/intl.dart';
-
 import '../models/income_model.dart';
+import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
@@ -25,7 +24,6 @@ import '../../app.dart';
 class BudgetScreen extends StatelessWidget {
   const BudgetScreen({super.key});
 
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static const double _bottomDockButtonOffset = 40;
   static const double _bottomDockButtonClearance = 112;
 
@@ -136,7 +134,6 @@ class BudgetScreen extends StatelessWidget {
                               income: incomes[i],
                               color: _cardColors[i % _cardColors.length],
                               recurrenceLabel: _recurrenceLabel(incomes[i]),
-                              currencyFormat: _currencyFormat,
                               onDelete: () =>
                                   _confirmDeleteIncome(context, incomes[i]),
                               onEdit: () async {
@@ -165,7 +162,7 @@ class BudgetScreen extends StatelessWidget {
                       width: null,
                       height: 48,
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppRadius.input,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       onPressed: () async {
                         await Navigator.of(context).push<bool>(
@@ -227,7 +224,6 @@ class _IncomeCard extends StatelessWidget {
     required this.income,
     required this.color,
     required this.recurrenceLabel,
-    required this.currencyFormat,
     required this.onDelete,
     required this.onEdit,
   });
@@ -235,7 +231,6 @@ class _IncomeCard extends StatelessWidget {
   final IncomeModel income;
   final Color color;
   final String recurrenceLabel;
-  final NumberFormat currencyFormat;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
 
@@ -245,9 +240,9 @@ class _IncomeCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: AppRadius.cardTile,
         border: const Border(
-          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+          bottom: BorderSide(color: AppPalette.cardBorderGray, width: 2),
         ),
       ),
       child: Row(
@@ -301,7 +296,7 @@ class _IncomeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                'COP ${currencyFormat.format(income.amount.round())}',
+                AppCurrencyFormatService.formatCOP(income.amount),
                 style: GoogleFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
@@ -325,7 +320,7 @@ class _IncomeCard extends StatelessWidget {
                       minWidth: 24,
                       minHeight: 24,
                     ),
-                    splashRadius: 18,
+
                   ),
                   const SizedBox(width: 2),
                   IconButton(
@@ -336,7 +331,7 @@ class _IncomeCard extends StatelessWidget {
                     ),
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
+
                     constraints: const BoxConstraints(
                       minWidth: 24,
                       minHeight: 24,
@@ -425,10 +420,9 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
     }
 
     _nameController.text = editingIncome.name;
-    _amountController.text = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(editingIncome.amount.round());
+    _amountController.text = AppCurrencyFormatService.formatAmount(
+      editingIncome.amount,
+    );
     _type = editingIncome.type;
     _recurrenceUnit = editingIncome.recurrenceUnit ?? 'WEEKS';
     _intervalController.text = '${editingIncome.recurrenceInterval ?? 1}';
@@ -576,7 +570,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -780,14 +774,14 @@ class _TypeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: AppRadius.pill,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? AppPalette.green : const Color(0xFFE4E4E4),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: AppRadius.pill,
           border: selected
               ? Border.all(color: AppPalette.green, width: 1.5)
               : null,
@@ -836,7 +830,7 @@ class _RecurrenceRow extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppRadius.chip,
             ),
             child: TextField(
               controller: intervalController,
@@ -861,7 +855,7 @@ class _RecurrenceRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppRadius.chip,
             ),
             child: DropdownButton<String>(
               value: selectedUnit,
@@ -871,7 +865,7 @@ class _RecurrenceRow extends StatelessWidget {
                 color: AppPalette.ink,
               ),
               dropdownColor: AppPalette.field,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppRadius.input,
               items: _units
                   .map(
                     (u) => DropdownMenuItem(
@@ -907,7 +901,7 @@ class _DateRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: AppRadius.chip,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
@@ -945,10 +939,9 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digitsOnly.isEmpty) return const TextEditingValue();
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = AppCurrencyFormatService.currency.format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(dart analyze:*)",
-      "Bash(find /d/Proyectos/Moviles/spendant_flutter/android -type f -name \"*.kt\" -exec grep -l -i \"anomaly\\\\|anomalia\" {} \\\\;)"
+      "Bash(find /d/Proyectos/Moviles/spendant_flutter/android -type f -name \"*.kt\" -exec grep -l -i \"anomaly\\\\|anomalia\" {} \\\\;)",
+      "Bash(Remove-Item \"d:/Proyectos/Moviles/spendant_flutter/lib/src/screens/debug_storage_screen.dart\" -Force)",
+      "Bash(Remove-Item \"d:/Proyectos/Moviles/spendant_flutter/web/ant/SpendAnt_logo.svg\" -Force)",
+      "Bash(flutter build:*)"
     ]
   }
 }

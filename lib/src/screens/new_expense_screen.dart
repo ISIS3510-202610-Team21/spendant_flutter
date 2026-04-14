@@ -16,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/app_analytics_service.dart';
+import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
@@ -26,6 +27,7 @@ import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
+import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
@@ -69,26 +71,6 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   ),
 ];
 
-const Map<String, String> _detailLabelPrimaryCategories = <String, String>{
-  'Food': 'Food',
-  'Food Delivery': 'Food',
-  'Groceries': 'Food',
-  'Commute': 'Transport',
-  'Transport': 'Transport',
-  'Learning Materials': 'Services',
-  'University Fees': 'Services',
-  'Personal Care': 'Services',
-  'Rent': 'Services',
-  'Services': 'Services',
-  'Utilities': 'Services',
-  'Entertainment': 'Other',
-  'Gifts': 'Other',
-  'Group Hangouts': 'Other',
-  'Subscriptions': 'Other',
-  'Emergency': 'Other',
-  'Impulse': 'Other',
-  'Owed': 'Other',
-};
 
 enum _ReceiptSourceOption { camera, gallery, file }
 
@@ -226,7 +208,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return '';
     }
 
-    return NumberFormat('#,###', 'en_US').format(amount.round());
+    return AppCurrencyFormatService.formatAmount(amount);
   }
 
   List<String> _normalizedLabels(Iterable<String> labels) {
@@ -301,7 +283,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   String? _derivePrimaryCategory(List<String> labels) {
     for (final label in labels) {
-      final category = _detailLabelPrimaryCategories[label];
+      final category = ExpenseVisuals.detailLabelPrimaryCategories[label];
       if (category != null) {
         return category;
       }
@@ -1135,7 +1117,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final formBottomPadding = 116.0 + keyboardInset;
 
     return Scaffold(
@@ -1749,7 +1731,7 @@ class _ReceiptSourceSheet extends StatelessWidget {
               height: 5,
               decoration: BoxDecoration(
                 color: const Color(0xFF6D6D6D),
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: AppRadius.pill,
               ),
             ),
             const SizedBox(height: 32),
@@ -2100,7 +2082,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         fillColor: Colors.white,
                         filled: true,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: AppRadius.pill,
                           borderSide: BorderSide.none,
                         ),
                       ),
@@ -2781,7 +2763,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = 132.0 + MediaQuery.of(context).padding.bottom;
+    final bottomPadding = 132.0 + MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -2886,10 +2868,9 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = AppCurrencyFormatService.currency.format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,
@@ -3061,14 +3042,14 @@ class _SublabelChip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: AnimatedContainer(
           duration: _animationDuration,
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           decoration: BoxDecoration(
             color: selected ? AppPalette.green : Colors.white,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
             border: Border.all(
               color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
             ),
@@ -3118,13 +3099,13 @@ class _SelectedExpenseLabelChip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: Container(
           height: _MiniActionButton.buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -3166,13 +3147,13 @@ class _MiniActionButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: Container(
           height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
           ),
           child: Center(
             widthFactor: 1,

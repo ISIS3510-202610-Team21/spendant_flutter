@@ -107,7 +107,7 @@ class SpendAntBottomNav extends StatelessWidget {
             top: 0,
             child: InkWell(
               onTap: () => Navigator.of(context).pushNamed(AppRoutes.newExpense),
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: AppRadius.pill,
               child: Container(
                 width: addButtonSize,
                 height: addButtonSize,
@@ -136,6 +136,17 @@ class _NavIconButton extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  static const _selectedDecoration = BoxDecoration(
+    color: Color(0xFF41B864),
+    borderRadius: AppRadius.chip,
+    boxShadow: [BoxShadow(color: Color(0xFF41B864), blurRadius: 0, spreadRadius: 2)],
+  );
+
+  static const _unselectedDecoration = BoxDecoration(
+    color: Colors.transparent,
+    borderRadius: AppRadius.chip,
+  );
+
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
@@ -143,23 +154,10 @@ class _NavIconButton extends StatelessWidget {
       curve: Curves.easeOut,
       width: 38,
       height: 28,
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFF41B864) : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: selected
-            ? const [
-                BoxShadow(
-                  color: Color(0xFF41B864),
-                  blurRadius: 0,
-                  spreadRadius: 2,
-                ),
-              ]
-            : null,
-      ),
+      decoration: selected ? _selectedDecoration : _unselectedDecoration,
       child: IconButton(
         onPressed: onTap,
         padding: EdgeInsets.zero,
-        splashRadius: 18,
         icon: SvgPicture.asset(
           assetPath,
           width: 20,

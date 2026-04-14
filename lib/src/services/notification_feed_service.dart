@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 
 import '../models/app_notification_model.dart';
+import 'app_currency_format_service.dart';
 import 'app_date_format_service.dart';
 import 'auth_memory_store.dart';
 
@@ -48,8 +49,6 @@ class NotificationFeedItem {
 }
 
 abstract final class NotificationFeedService {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
-
   static bool isVisibleInFeedType(String type) {
     switch (type) {
       case AppNotificationTypes.goalCreated:
@@ -99,7 +98,7 @@ abstract final class NotificationFeedService {
   }
 
   static String formatAmount(double amount) {
-    return 'COP ${_currencyFormat.format(amount.round())}';
+    return AppCurrencyFormatService.formatCOP(amount);
   }
 
   static String formatTimestamp(DateTime timestamp, {DateTime? now}) {

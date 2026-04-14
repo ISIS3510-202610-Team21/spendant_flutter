@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
+import 'app_currency_format_service.dart';
 import 'app_date_format_service.dart';
 import 'auth_memory_store.dart';
 import 'daily_budget_service.dart';
@@ -29,7 +29,6 @@ abstract final class AppNotificationService {
   static const String _notificationsRouteName = '/notifications';
   static const String _newExpenseRouteName = '/new-expense';
 
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
   static String get _bootstrapKey => '$_bootstrapKeyPrefix-$_currentUserId';
   static String get _trackedSignalIdsKey =>
@@ -512,7 +511,7 @@ abstract final class AppNotificationService {
       ..amount = goal.targetAmount
       ..detailTitle = 'Goal created'
       ..detailMessage =
-          'Your goal ${goal.name} was created for COP ${_currencyFormat.format(goal.targetAmount.round())}. Open Goals to track it and keep saving.'
+          'Your goal ${goal.name} was created for ${AppCurrencyFormatService.formatCOP(goal.targetAmount)}. Open Goals to track it and keep saving.'
       ..routeName = _goalRouteName
       ..routeArgumentInt = 1;
   }
@@ -532,7 +531,7 @@ abstract final class AppNotificationService {
       ..amount = goalState.currentAmount
       ..detailTitle = 'Halfway there'
       ..detailMessage =
-          'Your goal ${goal.name} already reached 50%. You have saved COP ${_currencyFormat.format(goalState.currentAmount.round())} out of COP ${_currencyFormat.format(goal.targetAmount.round())}.'
+          'Your goal ${goal.name} already reached 50%. You have saved ${AppCurrencyFormatService.formatCOP(goalState.currentAmount)} out of ${AppCurrencyFormatService.formatCOP(goal.targetAmount)}.'
       ..routeName = _goalRouteName
       ..routeArgumentInt = 1;
   }
@@ -552,7 +551,7 @@ abstract final class AppNotificationService {
       ..amount = goal.targetAmount
       ..detailTitle = 'Goal completed'
       ..detailMessage =
-          'You hit COP ${_currencyFormat.format(goal.targetAmount.round())} for ${goal.name}. Review the goal screen to decide your next move.'
+          'You hit ${AppCurrencyFormatService.formatCOP(goal.targetAmount)} for ${goal.name}. Review the goal screen to decide your next move.'
       ..routeName = _goalRouteName
       ..routeArgumentInt = 1;
   }
@@ -571,7 +570,7 @@ abstract final class AppNotificationService {
       ..amount = income.amount
       ..detailTitle = 'Income created'
       ..detailMessage =
-          'Your income ${income.name} was added for COP ${_currencyFormat.format(income.amount.round())}. Open Budget and Income to review it.'
+          'Your income ${income.name} was added for ${AppCurrencyFormatService.formatCOP(income.amount)}. Open Budget and Income to review it.'
       ..routeName = _budgetRouteName;
   }
 
@@ -598,7 +597,7 @@ abstract final class AppNotificationService {
     required double shortfall,
     required DateTime now,
   }) {
-    final shortfallLabel = 'COP ${_currencyFormat.format(shortfall.round())}';
+    final shortfallLabel = AppCurrencyFormatService.formatCOP(shortfall);
     return AppNotificationModel()
       ..id = _goalAdjustmentNotificationId(now)
       ..type = AppNotificationTypes.goalAdjustment
@@ -624,10 +623,8 @@ abstract final class AppNotificationService {
     final goalImpactAmount = overspentAmount > summary.totalGoalDailyCommitment
         ? summary.totalGoalDailyCommitment
         : overspentAmount;
-    final overspentLabel =
-        'COP ${_currencyFormat.format(overspentAmount.round())}';
-    final goalImpactLabel =
-        'COP ${_currencyFormat.format(goalImpactAmount.round())}';
+    final overspentLabel = AppCurrencyFormatService.formatCOP(overspentAmount);
+    final goalImpactLabel = AppCurrencyFormatService.formatCOP(goalImpactAmount);
     final detailMessage = goalImpactAmount > 0
         ? 'You already passed today\'s spendable budget by $overspentLabel. That overspend can reduce the money reserved for your goals by up to $goalImpactLabel today.'
         : 'You already passed today\'s spendable budget by $overspentLabel. Open your budget screen and rebalance today\'s spending.';
@@ -686,10 +683,8 @@ abstract final class AppNotificationService {
     SpendingAnomalyInsight insight, {
     required DateTime now,
   }) {
-    final spentLabel =
-        'COP ${_currencyFormat.format(insight.anomalousAmount.round())}';
-    final baselineLabel =
-        'COP ${_currencyFormat.format(insight.baselineMean.round())}';
+    final spentLabel = AppCurrencyFormatService.formatCOP(insight.anomalousAmount);
+    final baselineLabel = AppCurrencyFormatService.formatCOP(insight.baselineMean);
     return AppNotificationModel()
       ..id = insight.notificationId
       ..type = AppNotificationTypes.spendingAnomaly

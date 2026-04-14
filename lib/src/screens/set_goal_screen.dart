@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
+import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
@@ -34,7 +35,6 @@ class SetGoalScreen extends StatefulWidget {
 }
 
 class _SetGoalScreenState extends State<SetGoalScreen> {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static const double _bottomDockButtonOffset = 40;
   static const double _bottomDockButtonClearance = 112;
 
@@ -226,10 +226,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     } else {
       _editingGoal = goal;
       _nameController.text = goal.name;
-      _amountController.text = NumberFormat(
-        '#,###',
-        'en_US',
-      ).format(goal.targetAmount.round());
+      _amountController.text = AppCurrencyFormatService.formatAmount(
+        goal.targetAmount,
+      );
       _goalDeadline = goal.deadline;
     }
     setState(() {
@@ -316,7 +315,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   String _formatCop(double amount) {
-    return 'COP ${_currencyFormat.format(amount.round())}';
+    return AppCurrencyFormatService.formatCOP(amount);
   }
 
   void _showGoalBudgetBlockedScreen(GoalBudgetValidationResult validation) {
@@ -922,7 +921,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                         width: null,
                         height: 48,
                         padding: const EdgeInsets.symmetric(horizontal: 24),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppRadius.input,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         onPressed: canCreateGoal
                             ? _startGoalSetup
@@ -1044,7 +1043,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
+              'To save ${AppCurrencyFormatService.formatCOP(amount)} for ${_nameController.text.trim()}, start today and aim for about ${AppCurrencyFormatService.formatCOP(suggestedDailySaving)} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 16,
@@ -1173,7 +1172,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         fillColor: Colors.white,
         filled: true,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.chip,
           borderSide: BorderSide.none,
         ),
       ),
@@ -1197,7 +1196,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.chip,
         ),
         child: Text(
           AppDateFormatService.longDate(_goalDeadline),
@@ -1230,7 +1229,6 @@ class _GoalTile extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onToggleActive;
 
-  static final NumberFormat _fmt = NumberFormat('#,###', 'en_US');
 
   @override
   Widget build(BuildContext context) {
@@ -1246,9 +1244,9 @@ class _GoalTile extends StatelessWidget {
         color: isActive
             ? AppPalette.green.withValues(alpha: 0.08)
             : AppPalette.field,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: AppRadius.cardTile,
         border: Border(
-          bottom: const BorderSide(color: Color(0xFFD0D0D0), width: 2),
+          bottom: const BorderSide(color: AppPalette.cardBorderGray, width: 2),
           left: isActive
               ? const BorderSide(color: AppPalette.green, width: 3)
               : BorderSide.none,
@@ -1299,7 +1297,7 @@ class _GoalTile extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: AppPalette.green,
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: AppRadius.pill,
                         ),
                         child: Text(
                           'Active',
@@ -1323,7 +1321,7 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Saved: COP ${_fmt.format(goalState.currentAmount.round())} / ${_fmt.format(goal.targetAmount.round())}',
+                  'Saved: ${AppCurrencyFormatService.formatCOP(goalState.currentAmount)} / ${AppCurrencyFormatService.formatCOP(goal.targetAmount)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1332,7 +1330,7 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Daily reserve: COP ${_fmt.format(dailyReserve.round())}',
+                  'Daily reserve: ${AppCurrencyFormatService.formatCOP(dailyReserve)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1342,7 +1340,7 @@ class _GoalTile extends StatelessWidget {
                 if (todayImpact > 0) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Today\'s spending impact: -COP ${_fmt.format(todayImpact.round())}',
+                    'Today\'s spending impact: -${AppCurrencyFormatService.formatCOP(todayImpact)}',
                     style: GoogleFonts.nunito(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1352,7 +1350,7 @@ class _GoalTile extends StatelessWidget {
                 ],
                 const SizedBox(height: 10),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: AppRadius.pill,
                   child: LinearProgressIndicator(
                     value: widthFactor,
                     minHeight: 8,
@@ -1390,7 +1388,7 @@ class _GoalTile extends StatelessWidget {
                     tooltip: 'Delete goal',
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
+
                     constraints: const BoxConstraints(
                       minWidth: 24,
                       minHeight: 24,
@@ -1405,7 +1403,7 @@ class _GoalTile extends StatelessWidget {
                     ),
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
+
                     constraints: const BoxConstraints(
                       minWidth: 24,
                       minHeight: 24,
@@ -1508,10 +1506,9 @@ class _GoalAmountFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = AppCurrencyFormatService.currency.format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,

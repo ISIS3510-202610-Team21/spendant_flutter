@@ -15,6 +15,22 @@ abstract final class AppPalette {
   static const services = Color(0xFFF3BE28);
   static const other = Color(0xFFFD8D8C);
   static const expenseRed = Color(0xFFF04C4C);
+  static const cardBorderGray = Color(0xFFD0D0D0);
+  static const notificationBadge = Color(0xFFFF7A2F);
+}
+
+/// Pre-computed const [BorderRadius] values for use across the UI.
+/// Using these constants instead of [BorderRadius.circular] inside [build]
+/// methods avoids allocating a new object on every rebuild.
+abstract final class AppRadius {
+  static const pill = BorderRadius.all(Radius.circular(999));
+  static const card = BorderRadius.all(Radius.circular(14));
+  static const dialog = BorderRadius.all(Radius.circular(24));
+  static const large = BorderRadius.all(Radius.circular(32));
+  static const input = BorderRadius.all(Radius.circular(12));
+  static const chip = BorderRadius.all(Radius.circular(10));
+  static const small = BorderRadius.all(Radius.circular(3));
+  static const cardTile = BorderRadius.all(Radius.circular(2));
 }
 
 abstract final class AppHeaderMetrics {
@@ -100,15 +116,15 @@ abstract final class SpendAntTheme {
           vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: const BorderSide(color: AppPalette.ink, width: 1),
         ),
       ),
@@ -119,7 +135,7 @@ abstract final class SpendAntTheme {
           foregroundColor: AppPalette.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: AppRadius.card,
           ),
           textStyle: GoogleFonts.nunito(
             fontSize: 15,

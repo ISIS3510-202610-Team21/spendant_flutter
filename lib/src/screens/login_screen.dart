@@ -383,7 +383,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       resizeToAvoidBottomInset: false,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final mediaQuery = MediaQuery.of(context);
+          final viewPadding = MediaQuery.viewPaddingOf(context);
           final isLandscape = constraints.maxWidth > constraints.maxHeight;
           final antHeight = isLandscape
               ? (constraints.maxHeight * 0.62).clamp(220.0, widget.antHeight)
@@ -408,7 +408,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                     horizontalPadding,
                     0,
                     horizontalPadding +
-                        (isLandscape ? mediaQuery.viewPadding.right : 0),
+                        (isLandscape ? viewPadding.right : 0),
                     0,
                   ),
                   child: ConstrainedBox(

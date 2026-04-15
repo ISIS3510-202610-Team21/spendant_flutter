@@ -15,6 +15,7 @@ import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
@@ -366,8 +367,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     FocusScope.of(context).unfocus();
 
     if (_currentStep == 0) {
-      if (_nameController.text.trim().isEmpty) {
+      final name = _nameController.text.trim();
+      if (name.isEmpty) {
         _showMessage('Please enter a goal name');
+        return;
+      }
+      if (AppInputValidationService.isOnlyEmoji(name)) {
+        _showMessage('Goal name must contain some text, not only emojis');
         return;
       }
     } else if (_currentStep == 1) {
@@ -1182,9 +1188,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   Widget _setupDatePicker() {
     return GestureDetector(
       onTap: () async {
+        final today = DateUtils.dateOnly(DateTime.now());
         final selected = await Navigator.of(context).push<DateTime>(
           MaterialPageRoute(
-            builder: (_) => DateSelectionScreen(initialDate: _goalDeadline),
+            builder: (_) => DateSelectionScreen(
+              initialDate: _goalDeadline,
+              minDate: today,
+            ),
           ),
         );
         if (selected != null) {

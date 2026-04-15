@@ -17,6 +17,7 @@ import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
 import '../services/app_analytics_service.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
@@ -942,6 +943,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _showScanMessage('Please enter an expense name');
       return;
     }
+    if (AppInputValidationService.isOnlyEmoji(expenseName)) {
+      _showScanMessage('Expense name must contain some text, not only emojis');
+      return;
+    }
 
     final amountText = _expenseValueController.text.replaceAll(',', '').trim();
     final parsedAmount = double.tryParse(amountText);
@@ -1818,9 +1823,17 @@ class _ReceiptSourceTile extends StatelessWidget {
 }
 
 class DateSelectionScreen extends StatefulWidget {
-  const DateSelectionScreen({super.key, required this.initialDate});
+  const DateSelectionScreen({
+    super.key,
+    required this.initialDate,
+    this.minDate,
+  });
 
   final DateTime initialDate;
+
+  /// When set, the calendar will not allow selecting a date before this day.
+  /// Defaults to 2020-01-01 (allows past dates, used for expense editing).
+  final DateTime? minDate;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
@@ -1832,7 +1845,14 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateUtils.dateOnly(widget.initialDate);
+    final today = DateUtils.dateOnly(widget.initialDate);
+    final effectiveMin = widget.minDate != null
+        ? DateUtils.dateOnly(widget.minDate!)
+        : null;
+    // Clamp initialDate to minDate so the calendar never starts in a blocked range.
+    _selectedDate = effectiveMin != null && today.isBefore(effectiveMin)
+        ? effectiveMin
+        : today;
   }
 
   @override
@@ -1887,7 +1907,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                       Expanded(
                         child: CalendarDatePicker(
                           initialDate: _selectedDate,
-                          firstDate: DateTime(2020),
+                          firstDate: widget.minDate != null
+                              ? DateUtils.dateOnly(widget.minDate!)
+                              : DateTime(2020),
                           lastDate: DateTime(2040),
                           currentDate: DateTime.now(),
                           onDateChanged: (value) {

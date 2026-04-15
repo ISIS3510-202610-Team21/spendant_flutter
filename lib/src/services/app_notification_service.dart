@@ -634,10 +634,8 @@ abstract final class AppNotificationService {
       ..type = AppNotificationTypes.budgetWarning
       ..createdAt = now
       ..userId = _currentUserId
-      ..title = 'Daily budget exhausted'
-      ..subtitle = goalImpactAmount > 0
-          ? 'Goals at risk: $goalImpactLabel'
-          : 'Review your daily budget'
+      ..title = 'Daily budget exceeded'
+      ..subtitle = 'You exceeded your daily budget by $overspentLabel'
       ..amount = overspentAmount
       ..detailTitle = 'Daily budget warning'
       ..detailMessage = detailMessage

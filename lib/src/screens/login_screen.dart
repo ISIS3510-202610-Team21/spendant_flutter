@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../app.dart';
 import '../models/user_model.dart';
 import '../services/app_analytics_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/app_notification_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/auth_service.dart';
@@ -267,14 +268,23 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
           : 'Incorrect username or password. Try again.';
     }
 
-    if (_isRegisterMode && email.isEmpty) {
-      return 'Email is required.';
+    if (_isRegisterMode) {
+      if (email.isEmpty) {
+        return 'Email is required.';
+      }
+      if (!AppInputValidationService.isValidEmail(email)) {
+        return 'Please enter a valid email address.';
+      }
+    } else {
+      // Login mode: if the identifier looks like an email, validate its format.
+      if (username.contains('@') &&
+          !AppInputValidationService.isValidEmail(username)) {
+        return 'Please enter a valid email address.';
+      }
     }
 
     if (password.trim().isEmpty) {
-      return _isRegisterMode
-          ? 'Password is required.'
-          : 'Incorrect username or password. Try again.';
+      return 'Password cannot be empty.';
     }
 
     if (_isRegisterMode && password.length < 6) {
@@ -433,6 +443,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
+                            inputFormatters: [
+                              AppInputValidationService.emojiBlockFormatter,
+                            ],
                             decoration: _fieldDecoration('Email'),
                           ),
                         ],
@@ -442,6 +455,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                           obscureText: _isPasswordHidden,
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _submit(),
+                          inputFormatters: [
+                            AppInputValidationService.emojiBlockFormatter,
+                          ],
                           decoration: _fieldDecoration(
                             'Password',
                             suffixIcon: IconButton(

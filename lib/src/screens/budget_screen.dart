@@ -8,6 +8,7 @@ import 'package:hive/hive.dart';
 import '../models/income_model.dart';
 import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
@@ -467,8 +468,13 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
 
     FocusScope.of(context).unfocus();
 
-    if (_nameController.text.trim().isEmpty) {
+    final incomeName = _nameController.text.trim();
+    if (incomeName.isEmpty) {
       _showMessage('Please enter an income name');
+      return;
+    }
+    if (AppInputValidationService.isOnlyEmoji(incomeName)) {
+      _showMessage('Income name must contain some text, not only emojis');
       return;
     }
 

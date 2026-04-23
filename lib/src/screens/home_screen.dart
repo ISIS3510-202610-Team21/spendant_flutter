@@ -252,11 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           'Your Budget for today',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppPalette.ink,
-                          ),
+                          style: AppTextStyles.sectionLabel,
                         ),
                         const SizedBox(height: 6),
                         _AmountHeadline(
@@ -266,11 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 20),
                         Text(
                           'This month you have spent',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppPalette.ink,
-                          ),
+                          style: AppTextStyles.sectionLabel,
                         ),
                         const SizedBox(height: 6),
                         _AmountHeadline(
@@ -325,11 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         for (final group in expenseGroups) ...[
                           Text(
                             group.title,
-                            style: GoogleFonts.nunito(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                              color: AppPalette.ink,
-                            ),
+                            style: AppTextStyles.dateGroupHeader,
                           ),
                           const SizedBox(height: 10),
                           for (final entry in group.entries) ...[
@@ -602,11 +590,7 @@ class _HomeHeader extends StatelessWidget {
           ),
           Text(
             'Home',
-            style: GoogleFonts.nunito(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
+            style: AppTextStyles.screenTitle,
           ),
         ],
       ),
@@ -642,11 +626,7 @@ class _AmountHeadline extends StatelessWidget {
           ),
           TextSpan(
             text: 'COP',
-            style: GoogleFonts.nunito(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
+            style: AppTextStyles.amountCOP,
           ),
         ],
       ),
@@ -690,12 +670,7 @@ class _CategoryBarCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: AppPalette.ink,
-                    height: 1,
-                  ),
+                  style: AppTextStyles.categoryBarLabel,
                 ),
               ),
             ],
@@ -745,20 +720,12 @@ class _ExpenseListTile extends StatelessWidget {
                   children: [
                     Text(
                       entry.name,
-                      style: GoogleFonts.nunito(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
-                      ),
+                      style: AppTextStyles.expenseName,
                     ),
                     const SizedBox(height: 2),
                     Text(
                       entry.category,
-                      style: GoogleFonts.nunito(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black54,
-                      ),
+                      style: AppTextStyles.expenseCategory,
                     ),
                   ],
                 ),
@@ -766,11 +733,7 @@ class _ExpenseListTile extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 entry.amount,
-                style: GoogleFonts.nunito(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black54,
-                ),
+                style: AppTextStyles.expenseAmount,
               ),
             ],
           ),
@@ -791,12 +754,7 @@ class _EmptyExpensesCard extends StatelessWidget {
         child: Text(
           'No expenses yet.\nTap + to add one.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.fieldHint,
-            height: 1.5,
-          ),
+          style: AppTextStyles.emptyState,
         ),
       ),
     );

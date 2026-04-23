@@ -33,6 +33,12 @@ abstract final class GooglePayExpenseImportService {
     '#,##0.00',
     'es_CO',
   );
+  // Static RegExp instances to avoid re-compiling the patterns on every
+  // call to _normalizeMerchantName (micro-opt: avoid objects in loops).
+  static final RegExp _merchantStopWordsRegExp = RegExp(
+    r'\b(?:compra|pagaste|pago|transaccion|transacción|aprobada|aprobado|bold|nequi|gmail|google|pay|wallet)\b',
+  );
+  static final RegExp _merchantNonAlphanumericRegExp = RegExp(r'[^a-z0-9]+');
   static int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
   static final AutoCategorizationService _autoCategorizationService =
       AutoCategorizationService.instance;
@@ -285,13 +291,8 @@ abstract final class GooglePayExpenseImportService {
   static String _normalizeMerchantName(String value) {
     return value
         .toLowerCase()
-        .replaceAll(
-          RegExp(
-            r'\b(?:compra|pagaste|pago|transaccion|transacción|aprobada|aprobado|bold|nequi|gmail|google|pay|wallet)\b',
-          ),
-          ' ',
-        )
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(_merchantStopWordsRegExp, ' ')
+        .replaceAll(_merchantNonAlphanumericRegExp, ' ')
         .trim();
   }
 

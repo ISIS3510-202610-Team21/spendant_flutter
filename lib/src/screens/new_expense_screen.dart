@@ -106,6 +106,13 @@ class NewExpenseScreen extends StatefulWidget {
 }
 
 class _NewExpenseScreenState extends State<NewExpenseScreen> {
+  // Cached once per app session — defaultTargetPlatform never changes at
+  // runtime, so re-creating this on every build() or _pickTime() call is
+  // wasteful (micro-opt: avoid unnecessary objects in build/lifecycle methods).
+  static final _materialTextTheme = Typography.material2021(
+    platform: defaultTargetPlatform,
+  ).black;
+
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
@@ -328,9 +335,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
-    final materialTextTheme = Typography.material2021(
-      platform: defaultTargetPlatform,
-    ).black;
+    final materialTextTheme = _materialTextTheme;
     const timeDisplayHeight = 64 / 57;
     const timeInputHeight = 54 / 48;
     final timePickerTextTheme = Theme.of(context).textTheme.copyWith(
@@ -1840,6 +1845,10 @@ class DateSelectionScreen extends StatefulWidget {
 }
 
 class _DateSelectionScreenState extends State<DateSelectionScreen> {
+  static final _materialTextTheme = Typography.material2021(
+    platform: defaultTargetPlatform,
+  ).black;
+
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -1857,9 +1866,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final materialTextTheme = Typography.material2021(
-      platform: defaultTargetPlatform,
-    ).black;
+    final materialTextTheme = _materialTextTheme;
 
     return Scaffold(
       backgroundColor: Colors.white,

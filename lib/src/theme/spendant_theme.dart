@@ -45,6 +45,60 @@ abstract final class AppHeaderMetrics {
   }
 }
 
+/// Pre-computed static [TextStyle] constants for use across the UI.
+/// Using these instead of calling [GoogleFonts.nunito] inside [build] methods
+/// avoids allocating a new [TextStyle] object on every rebuild (micro-opt #1).
+abstract final class AppTextStyles {
+  // --- Home screen ---
+  static final screenTitle = GoogleFonts.nunito(
+    fontSize: 20,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final amountCOP = GoogleFonts.nunito(
+    fontSize: 24,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final categoryBarLabel = GoogleFonts.nunito(
+    fontSize: 12,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+    height: 1,
+  );
+  static final expenseName = GoogleFonts.nunito(
+    fontSize: 18,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final expenseCategory = GoogleFonts.nunito(
+    fontSize: 15,
+    fontWeight: FontWeight.w700,
+    color: Colors.black54,
+  );
+  static final expenseAmount = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w900,
+    color: Colors.black54,
+  );
+  static final emptyState = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    color: AppPalette.fieldHint,
+    height: 1.5,
+  );
+  static final dateGroupHeader = GoogleFonts.nunito(
+    fontSize: 19,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final sectionLabel = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w800,
+    color: AppPalette.ink,
+  );
+}
+
 abstract final class SpendAntTheme {
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(

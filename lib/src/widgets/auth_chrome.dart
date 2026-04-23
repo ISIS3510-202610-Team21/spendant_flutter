@@ -76,6 +76,8 @@ class GreenScreenScaffold extends StatelessWidget {
 }
 
 class BlackPrimaryButton extends StatelessWidget {
+  static const _defaultBorderRadius = AppRadius.card;
+
   const BlackPrimaryButton({
     super.key,
     required this.label,
@@ -109,7 +111,7 @@ class BlackPrimaryButton extends StatelessWidget {
           padding: padding,
           tapTargetSize: tapTargetSize,
           shape: RoundedRectangleBorder(
-            borderRadius: borderRadius ?? BorderRadius.circular(14),
+            borderRadius: borderRadius ?? _defaultBorderRadius,
           ),
         ),
         child: isLoading

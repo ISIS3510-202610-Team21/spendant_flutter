@@ -19,6 +19,32 @@ class AppAnalyticsService {
 
   final ExpenseAnalyticsRepository _repository;
 
+  Future<void> logModuleCrash(String moduleName, dynamic error) async {
+    if (!_isAnalyticsPlatformSupported) {
+      return;
+    }
+
+    try {
+      final analytics = await _resolveAnalytics();
+      if (analytics == null) {
+        return;
+      }
+
+      final errorMessage = error.toString();
+      await analytics.logEvent(
+        name: 'module_crash',
+        parameters: <String, Object>{
+          'module_name': moduleName,
+          'error_message': errorMessage.length > 100
+              ? errorMessage.substring(0, 100)
+              : errorMessage,
+        },
+      );
+    } catch (_) {
+      // Analytics is best-effort and must not interrupt the app flow.
+    }
+  }
+
   Future<void> logAllBusinessQuestions({required int userId}) async {
     if (userId < 0 || !_isAnalyticsPlatformSupported) {
       return;

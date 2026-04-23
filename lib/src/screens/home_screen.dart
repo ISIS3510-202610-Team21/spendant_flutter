@@ -10,6 +10,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../../app.dart';
+import '../services/app_currency_format_service.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../services/app_date_format_service.dart';
@@ -35,18 +36,22 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
-
   bool _hasUnreadNotifications = true;
   late final ValueListenable<Box<AppNotificationModel>>
   _notificationsListenable;
   late final int _expenseColorStartIndex;
+  late final Listenable _homeDependencies;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
   @override
   void initState() {
     super.initState();
     _notificationsListenable = LocalStorageService.notificationsListenable;
+    _homeDependencies = Listenable.merge(<Listenable>[
+      LocalStorageService.expensesListenable,
+      LocalStorageService.incomesListenable,
+      LocalStorageService.goalsListenable,
+    ]);
     _expenseColorStartIndex = math.Random().nextInt(
       ExpenseVisuals.rotatingColors.length,
     );
@@ -177,12 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final homeDependencies = Listenable.merge(<Listenable>[
-      LocalStorageService.expensesListenable,
-      LocalStorageService.incomesListenable,
-      LocalStorageService.goalsListenable,
-    ]);
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -196,10 +195,14 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.white,
         body: Column(
           children: [
-            _buildHeader(),
+            _HomeHeader(
+              hasUnreadNotifications: _hasUnreadNotifications,
+              onNotificationsTap: _openNotifications,
+              onLogoutTap: _handleLogout,
+            ),
             Expanded(
               child: AnimatedBuilder(
-                animation: homeDependencies,
+                animation: _homeDependencies,
                 builder: (context, _) {
                   final box = LocalStorageService.expenseBox;
                   final expenses =
@@ -249,11 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           'Your Budget for today',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppPalette.ink,
-                          ),
+                          style: AppTextStyles.sectionLabel,
                         ),
                         const SizedBox(height: 6),
                         _AmountHeadline(
@@ -263,11 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 20),
                         Text(
                           'This month you have spent',
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppPalette.ink,
-                          ),
+                          style: AppTextStyles.sectionLabel,
                         ),
                         const SizedBox(height: 6),
                         _AmountHeadline(
@@ -322,11 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         for (final group in expenseGroups) ...[
                           Text(
                             group.title,
-                            style: GoogleFonts.nunito(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                              color: AppPalette.ink,
-                            ),
+                            style: AppTextStyles.dateGroupHeader,
                           ),
                           const SizedBox(height: 10),
                           for (final entry in group.entries) ...[
@@ -346,75 +337,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SpendAntBottomNav(currentItem: SpendAntNavItem.home),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      color: AppPalette.green,
-      padding: const EdgeInsets.fromLTRB(16, 58, 16, 14),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: InkWell(
-              onTap: _openNotifications,
-              borderRadius: BorderRadius.circular(999),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(
-                      Icons.notifications_none_outlined,
-                      color: AppPalette.ink,
-                      size: 28,
-                    ),
-                    if (_hasUnreadNotifications)
-                      Positioned(
-                        right: 1,
-                        top: 2,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFF7A2F),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: _handleLogout,
-              borderRadius: BorderRadius.circular(999),
-              child: const Padding(
-                padding: EdgeInsets.all(6),
-                child: Icon(
-                  Icons.logout_rounded,
-                  color: AppPalette.ink,
-                  size: 26,
-                ),
-              ),
-            ),
-          ),
-          Text(
-            'Home',
-            style: GoogleFonts.nunito(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -506,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
       expense: expense,
       name: expense.name,
       category: detailLabel,
-      amount: 'COP ${_currencyFormat.format(expense.amount.round())}',
+      amount: AppCurrencyFormatService.formatCOP(expense.amount),
       color: accentVisual.backgroundColor,
       iconAssetPath: ExpenseVisuals.iconAssetPathFor(detailLabel),
       iconColor: accentVisual.accentColor,
@@ -591,6 +513,91 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Extracted header for [HomeScreen].
+///
+/// Keeping it as a separate [StatelessWidget] means that only this widget
+/// rebuilds when [hasUnreadNotifications] toggles — the heavy expense list
+/// and category bar cards below are unaffected.
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader({
+    required this.hasUnreadNotifications,
+    required this.onNotificationsTap,
+    required this.onLogoutTap,
+  });
+
+  final bool hasUnreadNotifications;
+  final VoidCallback onNotificationsTap;
+  final VoidCallback onLogoutTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: AppPalette.green,
+      padding: AppHeaderMetrics.padding(horizontal: 16),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              onTap: onNotificationsTap,
+              borderRadius: AppRadius.pill,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(
+                      Icons.notifications_none_outlined,
+                      color: AppPalette.ink,
+                      size: 28,
+                    ),
+                    if (hasUnreadNotifications)
+                      const Positioned(
+                        right: 1,
+                        top: 2,
+                        child: SizedBox(
+                          width: 8,
+                          height: 8,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: AppPalette.notificationBadge,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: InkWell(
+              onTap: onLogoutTap,
+              borderRadius: AppRadius.pill,
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(
+                  Icons.logout_rounded,
+                  color: AppPalette.ink,
+                  size: 26,
+                ),
+              ),
+            ),
+          ),
+          Text(
+            'Home',
+            style: AppTextStyles.screenTitle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AmountHeadline extends StatelessWidget {
   const _AmountHeadline({
     required this.amount,
@@ -604,10 +611,7 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(amount.round());
+    final formattedAmount = AppCurrencyFormatService.formatAmount(amount);
 
     return RichText(
       text: TextSpan(
@@ -622,11 +626,7 @@ class _AmountHeadline extends StatelessWidget {
           ),
           TextSpan(
             text: 'COP',
-            style: GoogleFonts.nunito(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: AppPalette.ink,
-            ),
+            style: AppTextStyles.amountCOP,
           ),
         ],
       ),
@@ -656,7 +656,7 @@ class _CategoryBarCard extends StatelessWidget {
           height: height,
           decoration: BoxDecoration(
             color: stat.color,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: AppRadius.card,
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -670,12 +670,7 @@ class _CategoryBarCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: AppPalette.ink,
-                    height: 1,
-                  ),
+                  style: AppTextStyles.categoryBarLabel,
                 ),
               ),
             ],
@@ -702,9 +697,9 @@ class _ExpenseListTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: entry.color,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: AppRadius.cardTile,
             border: const Border(
-              bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+              bottom: BorderSide(color: AppPalette.cardBorderGray, width: 2),
             ),
           ),
           child: Row(
@@ -725,20 +720,12 @@ class _ExpenseListTile extends StatelessWidget {
                   children: [
                     Text(
                       entry.name,
-                      style: GoogleFonts.nunito(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.ink,
-                      ),
+                      style: AppTextStyles.expenseName,
                     ),
                     const SizedBox(height: 2),
                     Text(
                       entry.category,
-                      style: GoogleFonts.nunito(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black54,
-                      ),
+                      style: AppTextStyles.expenseCategory,
                     ),
                   ],
                 ),
@@ -746,11 +733,7 @@ class _ExpenseListTile extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 entry.amount,
-                style: GoogleFonts.nunito(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black54,
-                ),
+                style: AppTextStyles.expenseAmount,
               ),
             ],
           ),
@@ -771,12 +754,7 @@ class _EmptyExpensesCard extends StatelessWidget {
         child: Text(
           'No expenses yet.\nTap + to add one.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.fieldHint,
-            height: 1.5,
-          ),
+          style: AppTextStyles.emptyState,
         ),
       ),
     );

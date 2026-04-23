@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 
 import '../models/expense_model.dart';
+import '../theme/expense_visuals.dart';
 import '../models/goal_model.dart';
 import '../models/income_model.dart';
 import '../models/label_model.dart';
@@ -99,27 +100,6 @@ class CloudSyncService {
 
   final FirebaseFirestore _firestore;
   final LocalStorageService _localStorage = LocalStorageService();
-  static const Map<String, String> _detailLabelPrimaryCategories =
-      <String, String>{
-        'Food': 'Food',
-        'Food Delivery': 'Food',
-        'Groceries': 'Food',
-        'Commute': 'Transport',
-        'Transport': 'Transport',
-        'Learning Materials': 'Services',
-        'University Fees': 'Services',
-        'Personal Care': 'Services',
-        'Rent': 'Services',
-        'Services': 'Services',
-        'Utilities': 'Services',
-        'Entertainment': 'Other',
-        'Gifts': 'Other',
-        'Group Hangouts': 'Other',
-        'Subscriptions': 'Other',
-        'Emergency': 'Other',
-        'Impulse': 'Other',
-        'Owed': 'Other',
-      };
 
   static bool get isSupportedPlatform {
     if (kIsWeb) {
@@ -1468,7 +1448,7 @@ class CloudSyncService {
         continue;
       }
 
-      final category = _detailLabelPrimaryCategories[normalizedLabel];
+      final category = ExpenseVisuals.detailLabelPrimaryCategories[normalizedLabel];
       if (category != null) {
         return category;
       }

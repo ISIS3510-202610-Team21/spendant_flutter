@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,7 +13,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
+import '../services/app_currency_format_service.dart';
 import '../services/app_date_format_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/daily_budget_service.dart';
@@ -32,7 +36,6 @@ class SetGoalScreen extends StatefulWidget {
 }
 
 class _SetGoalScreenState extends State<SetGoalScreen> {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static const double _bottomDockButtonOffset = 40;
   static const double _bottomDockButtonClearance = 112;
 
@@ -42,7 +45,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
-  DateTime _goalDeadline = DateTime.now().add(const Duration(days: 30));
+  DateTime _goalDeadline = DateTime.now();
   GoalModel? _editingGoal;
   String? _goalBudgetBlockedTitle;
   String? _goalBudgetBlockedMessage;
@@ -52,12 +55,42 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   String _profileHandle = '@johndoe';
   Uint8List? _profileAvatarBytes;
   String? _profileAvatarBase64;
+  String? _activeGoalKey;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
+
+  static String _goalIdentityStr(GoalModel goal) {
+    final serverId = goal.serverId;
+    if (serverId != null && serverId.isNotEmpty) return serverId;
+    final key = goal.key?.toString();
+    if (key != null && key.isNotEmpty) return key;
+    return goal.createdAt.microsecondsSinceEpoch.toString();
+  }
+
+  String get _activeGoalPrefKey => 'active_goal_key_v1_$_currentUserId';
+
+  Future<void> _loadActiveGoalKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getString(_activeGoalPrefKey);
+    if (mounted) setState(() => _activeGoalKey = key);
+  }
+
+  Future<void> _toggleActiveGoal(GoalModel goal) async {
+    final identity = _goalIdentityStr(goal);
+    final newKey = _activeGoalKey == identity ? null : identity;
+    final prefs = await SharedPreferences.getInstance();
+    if (newKey == null) {
+      await prefs.remove(_activeGoalPrefKey);
+    } else {
+      await prefs.setString(_activeGoalPrefKey, newKey);
+    }
+    if (mounted) setState(() => _activeGoalKey = newKey);
+  }
 
   @override
   void initState() {
     super.initState();
     _loadProfileIdentity();
+    _loadActiveGoalKey();
   }
 
   @override
@@ -194,10 +227,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     } else {
       _editingGoal = goal;
       _nameController.text = goal.name;
-      _amountController.text = NumberFormat(
-        '#,###',
-        'en_US',
-      ).format(goal.targetAmount.round());
+      _amountController.text = AppCurrencyFormatService.formatAmount(
+        goal.targetAmount,
+      );
       _goalDeadline = goal.deadline;
     }
     setState(() {
@@ -284,7 +316,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   }
 
   String _formatCop(double amount) {
-    return 'COP ${_currencyFormat.format(amount.round())}';
+    return AppCurrencyFormatService.formatCOP(amount);
   }
 
   void _showGoalBudgetBlockedScreen(GoalBudgetValidationResult validation) {
@@ -335,8 +367,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     FocusScope.of(context).unfocus();
 
     if (_currentStep == 0) {
-      if (_nameController.text.trim().isEmpty) {
+      final name = _nameController.text.trim();
+      if (name.isEmpty) {
         _showMessage('Please enter a goal name');
+        return;
+      }
+      if (AppInputValidationService.isOnlyEmoji(name)) {
+        _showMessage('Goal name must contain some text, not only emojis');
         return;
       }
     } else if (_currentStep == 1) {
@@ -805,6 +842,40 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 );
               final canCreateGoal = summary.hasIncome;
 
+              // Compute today's impact on each goal from overspending the free budget
+              final overspendOverFree = math.max(
+                0.0,
+                summary.todayExpenses - summary.spendableDailyBudget,
+              );
+              final activeGoalState = _activeGoalKey != null
+                  ? goalStates.cast<GoalComputedState?>().firstWhere(
+                      (s) =>
+                          s != null &&
+                          _goalIdentityStr(s.goal) == _activeGoalKey,
+                      orElse: () => null,
+                    )
+                  : null;
+              final activeGoalImpact = activeGoalState != null
+                  ? math.min(
+                      overspendOverFree,
+                      activeGoalState.dailyContribution,
+                    )
+                  : 0.0;
+              final remainingOverspend = math.max(
+                0.0,
+                overspendOverFree - (activeGoalState?.dailyContribution ?? 0),
+              );
+              final otherImpactedGoals = goalStates
+                  .where(
+                    (s) =>
+                        s.dailyContribution > 0 &&
+                        !identical(s, activeGoalState),
+                  )
+                  .toList();
+              final impactPerOtherGoal = otherImpactedGoals.isNotEmpty
+                  ? remainingOverspend / otherImpactedGoals.length
+                  : 0.0;
+
               return Stack(
                 children: [
                   ListView(
@@ -833,8 +904,16 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                       for (final goalState in goalStates)
                         _GoalTile(
                           goalState: goalState,
+                          isActive: identical(goalState, activeGoalState),
+                          todayImpact: identical(goalState, activeGoalState)
+                              ? activeGoalImpact
+                              : (otherImpactedGoals.contains(goalState)
+                                  ? impactPerOtherGoal
+                                  : 0.0),
                           onDelete: () => _confirmDeleteGoal(goalState.goal),
                           onEdit: () => _startGoalSetup(goal: goalState.goal),
+                          onToggleActive: () =>
+                              _toggleActiveGoal(goalState.goal),
                         ),
                     ],
                   ),
@@ -848,7 +927,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                         width: null,
                         height: 48,
                         padding: const EdgeInsets.symmetric(horizontal: 24),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppRadius.input,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         onPressed: canCreateGoal
                             ? _startGoalSetup
@@ -970,7 +1049,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              'To save COP ${_currencyFormat.format(amount.round())} for ${_nameController.text.trim()}, start today and aim for about COP ${_currencyFormat.format(suggestedDailySaving.round())} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
+              'To save ${AppCurrencyFormatService.formatCOP(amount)} for ${_nameController.text.trim()}, start today and aim for about ${AppCurrencyFormatService.formatCOP(suggestedDailySaving)} per day until ${AppDateFormatService.longDate(_goalDeadline)}.',
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 16,
@@ -1099,7 +1178,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         fillColor: Colors.white,
         filled: true,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.chip,
           borderSide: BorderSide.none,
         ),
       ),
@@ -1109,9 +1188,13 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   Widget _setupDatePicker() {
     return GestureDetector(
       onTap: () async {
+        final today = DateUtils.dateOnly(DateTime.now());
         final selected = await Navigator.of(context).push<DateTime>(
           MaterialPageRoute(
-            builder: (_) => DateSelectionScreen(initialDate: _goalDeadline),
+            builder: (_) => DateSelectionScreen(
+              initialDate: _goalDeadline,
+              minDate: today,
+            ),
           ),
         );
         if (selected != null) {
@@ -1123,7 +1206,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.chip,
         ),
         child: Text(
           AppDateFormatService.longDate(_goalDeadline),
@@ -1142,13 +1225,20 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goalState,
+    required this.isActive,
+    required this.todayImpact,
     required this.onDelete,
     required this.onEdit,
+    required this.onToggleActive,
   });
 
   final GoalComputedState goalState;
+  final bool isActive;
+  final double todayImpact;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  final VoidCallback onToggleActive;
+
 
   @override
   Widget build(BuildContext context) {
@@ -1161,22 +1251,32 @@ class _GoalTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 18),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AppPalette.field,
-        borderRadius: BorderRadius.circular(2),
-        border: const Border(
-          bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+        color: isActive
+            ? AppPalette.green.withValues(alpha: 0.08)
+            : AppPalette.field,
+        borderRadius: AppRadius.cardTile,
+        border: Border(
+          bottom: const BorderSide(color: AppPalette.cardBorderGray, width: 2),
+          left: isActive
+              ? const BorderSide(color: AppPalette.green, width: 3)
+              : BorderSide.none,
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: AppPalette.green.withValues(alpha: 0.2),
-            child: const Icon(
-              Icons.flag_outlined,
-              color: AppPalette.ink,
-              size: 22,
+          GestureDetector(
+            onTap: onToggleActive,
+            child: CircleAvatar(
+              radius: 22,
+              backgroundColor: isActive
+                  ? AppPalette.green
+                  : AppPalette.green.withValues(alpha: 0.2),
+              child: Icon(
+                isActive ? Icons.flag : Icons.flag_outlined,
+                color: isActive ? Colors.white : AppPalette.ink,
+                size: 22,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1184,15 +1284,42 @@ class _GoalTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  goal.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: AppPalette.ink,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        goal.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                    ),
+                    if (isActive) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppPalette.green,
+                          borderRadius: AppRadius.pill,
+                        ),
+                        child: Text(
+                          'Active',
+                          style: GoogleFonts.nunito(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   'Deadline: ${AppDateFormatService.longDate(goal.deadline)}',
@@ -1204,7 +1331,7 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Saved: COP ${NumberFormat('#,###', 'en_US').format(goalState.currentAmount.round())} / ${NumberFormat('#,###', 'en_US').format(goal.targetAmount.round())}',
+                  'Saved: ${AppCurrencyFormatService.formatCOP(goalState.currentAmount)} / ${AppCurrencyFormatService.formatCOP(goal.targetAmount)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1213,16 +1340,27 @@ class _GoalTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Daily reserve: COP ${NumberFormat('#,###', 'en_US').format(dailyReserve.round())}',
+                  'Daily reserve: ${AppCurrencyFormatService.formatCOP(dailyReserve)}',
                   style: GoogleFonts.nunito(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: Colors.black54,
                   ),
                 ),
+                if (todayImpact > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Today\'s spending impact: -${AppCurrencyFormatService.formatCOP(todayImpact)}',
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFB25025),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: AppRadius.pill,
                   child: LinearProgressIndicator(
                     value: widthFactor,
                     minHeight: 8,
@@ -1260,7 +1398,7 @@ class _GoalTile extends StatelessWidget {
                     tooltip: 'Delete goal',
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
+
                     constraints: const BoxConstraints(
                       minWidth: 24,
                       minHeight: 24,
@@ -1275,7 +1413,7 @@ class _GoalTile extends StatelessWidget {
                     ),
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
-                    splashRadius: 18,
+
                     constraints: const BoxConstraints(
                       minWidth: 24,
                       minHeight: 24,
@@ -1336,17 +1474,29 @@ class _EmptyGoalsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40),
-      child: Center(
-        child: Text(
-          'No goals yet.\nTap "New Goal" to add one.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.nunito(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.fieldHint,
-            height: 1.5,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset('web/ant/ant_suprised.svg', height: 160),
+          const SizedBox(height: 20),
+          Text(
+            'No goals yet',
+            style: GoogleFonts.nunito(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.ink,
+            ),
           ),
-        ),
+          const SizedBox(height: 6),
+          Text(
+            'Tap "New Goal" to add one',
+            style: GoogleFonts.nunito(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.fieldHint,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1366,10 +1516,9 @@ class _GoalAmountFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = AppCurrencyFormatService.currency.format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,

@@ -42,6 +42,30 @@ abstract final class ExpenseVisuals {
     'Emergency',
   ];
 
+  /// Maps every detail label to its primary category (Food / Transport / Services / Other).
+  /// Single source of truth — used by auto-categorization, cloud sync, advice, and UI.
+  static const Map<String, String> detailLabelPrimaryCategories =
+      <String, String>{
+        'Food': 'Food',
+        'Food Delivery': 'Food',
+        'Groceries': 'Food',
+        'Commute': 'Transport',
+        'Transport': 'Transport',
+        'Learning Materials': 'Services',
+        'University Fees': 'Services',
+        'Personal Care': 'Services',
+        'Rent': 'Services',
+        'Services': 'Services',
+        'Utilities': 'Services',
+        'Entertainment': 'Other',
+        'Gifts': 'Other',
+        'Group Hangouts': 'Other',
+        'Subscriptions': 'Other',
+        'Emergency': 'Other',
+        'Impulse': 'Other',
+        'Owed': 'Other',
+      };
+
   static const List<Color> reservedChartColors = <Color>[
     Color(0xFF297DE7),
     Color(0xFFFF632D),

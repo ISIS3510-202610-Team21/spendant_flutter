@@ -315,10 +315,11 @@ class AuthService {
     switch (error.code) {
       case 'email-already-in-use':
         return 'That email is already registered.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
       case 'invalid-credential':
       case 'wrong-password':
       case 'user-not-found':
-      case 'invalid-email':
         return 'Incorrect username or password. Try again.';
       case 'weak-password':
         return 'Password must be at least 6 characters.';

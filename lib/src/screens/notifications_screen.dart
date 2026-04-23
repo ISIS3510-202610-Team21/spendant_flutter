@@ -144,50 +144,55 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ? const _EmptyNotificationsState()
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
-                      children: [
-                        ...() {
-                          var colorIndex = 0;
-                          final widgets = <Widget>[];
-
-                          for (final section in sections) {
-                            widgets.add(
-                              Text(
-                                section.title,
-                                style: GoogleFonts.nunito(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppPalette.ink,
-                                ),
-                              ),
-                            );
-                            widgets.add(const SizedBox(height: 12));
-
-                            for (final item in section.items) {
-                              widgets.add(
-                                _NotificationCard(
-                                  item: item,
-                                  colorIndex: colorIndex++,
-                                  colorStartIndex: _notificationColorStartIndex,
-                                  reservedCategoryAccents:
-                                      reservedCategoryAccents,
-                                  onTap: () => _openNotificationDetail(item),
-                                ),
-                              );
-                              widgets.add(const SizedBox(height: 12));
-                            }
-
-                            widgets.add(const SizedBox(height: 4));
-                          }
-
-                          return widgets;
-                        }(),
-                      ],
+                      children: _buildNotificationItems(
+                        sections,
+                        reservedCategoryAccents,
+                      ),
                     ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<Widget> _buildNotificationItems(
+    List<_NotificationSection> sections,
+    Map<String, ExpenseAccentVisual> reservedCategoryAccents,
+  ) {
+    var colorIndex = 0;
+    final widgets = <Widget>[];
+
+    for (final section in sections) {
+      widgets.add(
+        Text(
+          section.title,
+          style: GoogleFonts.nunito(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: AppPalette.ink,
+          ),
+        ),
+      );
+      widgets.add(const SizedBox(height: 12));
+
+      for (final item in section.items) {
+        widgets.add(
+          _NotificationCard(
+            item: item,
+            colorIndex: colorIndex++,
+            colorStartIndex: _notificationColorStartIndex,
+            reservedCategoryAccents: reservedCategoryAccents,
+            onTap: () => _openNotificationDetail(item),
+          ),
+        );
+        widgets.add(const SizedBox(height: 12));
+      }
+
+      widgets.add(const SizedBox(height: 4));
+    }
+
+    return widgets;
   }
 
   List<_NotificationSection> _buildSections(
@@ -299,9 +304,9 @@ class _NotificationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
             color: visuals.backgroundColor,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: AppRadius.cardTile,
             border: const Border(
-              bottom: BorderSide(color: Color(0xFFD0D0D0), width: 2),
+              bottom: BorderSide(color: AppPalette.cardBorderGray, width: 2),
             ),
           ),
           child: Row(
@@ -409,7 +414,7 @@ class _NotificationDetailDialog extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: AppRadius.large,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

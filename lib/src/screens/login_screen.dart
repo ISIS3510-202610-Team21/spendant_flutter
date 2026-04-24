@@ -184,6 +184,12 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
         return;
       }
 
+      if (result.isNetworkError) {
+        setState(() => _isSubmitting = false);
+        await _showNetworkErrorRetryDialog(result.errorMessage);
+        return;
+      }
+
       setState(() {
         _isSubmitting = false;
         _errorText = result.errorMessage;
@@ -386,6 +392,25 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     );
 
     return result ?? false;
+  }
+
+  Future<void> _showNetworkErrorRetryDialog(String? message) async {
+    if (!mounted) return;
+    final shouldRetry = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SpendAntAuthDecisionDialog(
+        title: 'Connection lost',
+        message: message?.isNotEmpty == true
+            ? message!
+            : 'Your connection was interrupted. Check your internet and try again.',
+        confirmLabel: 'Try Again',
+        cancelLabel: 'Cancel',
+      ),
+    );
+    if (shouldRetry == true && mounted) {
+      await _submit();
+    }
   }
 
   Future<void> _showInfoDialog({

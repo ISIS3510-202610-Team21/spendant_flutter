@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
@@ -12,10 +13,15 @@ import '../models/user_model.dart';
 import 'local_storage_service.dart';
 
 class AuthResult {
-  const AuthResult({this.user, this.errorMessage});
+  const AuthResult({this.user, this.errorMessage, this.isNetworkError = false});
 
   final UserModel? user;
   final String? errorMessage;
+
+  /// True when the failure was caused by a network problem (no connectivity,
+  /// timeout, Firebase unavailable) rather than an auth or validation error.
+  /// The UI uses this to show a retry dialog instead of an inline error.
+  final bool isNetworkError;
 
   bool get isSuccess => user != null;
 }
@@ -113,7 +119,10 @@ class AuthService {
         return AuthResult(user: offlineUser);
       }
 
-      return AuthResult(errorMessage: _mapFirebaseError(error));
+      return AuthResult(
+        errorMessage: _mapFirebaseError(error),
+        isNetworkError: error.code == 'network-request-failed',
+      );
     } on FirebaseException catch (error) {
       debugPrint(
         'AuthService.login Firebase error: ${error.code} ${error.message}',
@@ -125,7 +134,10 @@ class AuthService {
         return AuthResult(user: offlineUser);
       }
 
-      return AuthResult(errorMessage: _mapFirebaseDataError(error));
+      return AuthResult(
+        errorMessage: _mapFirebaseDataError(error),
+        isNetworkError: error.code == 'unavailable',
+      );
     } catch (error) {
       final offlineUser =
           localUser ??
@@ -134,10 +146,12 @@ class AuthService {
         return AuthResult(user: offlineUser);
       }
 
+      final isNetwork = error is SocketException || error is TimeoutException;
       return AuthResult(
-        errorMessage: error.toString().trim().isEmpty
-            ? 'Incorrect username or password. Try again.'
+        errorMessage: isNetwork
+            ? 'Connection lost. Please try again.'
             : 'Incorrect username or password. Try again.',
+        isNetworkError: isNetwork,
       );
     }
   }
@@ -183,12 +197,28 @@ class AuthService {
       await _saveUserToFirestore(profile);
       return AuthResult(user: user);
     } on FirebaseAuthException catch (error) {
-      return AuthResult(errorMessage: _mapFirebaseError(error));
+      return AuthResult(
+        errorMessage: _mapFirebaseError(error),
+        isNetworkError: error.code == 'network-request-failed',
+      );
     } on FirebaseException catch (error) {
       debugPrint(
         'AuthService.register Firebase error: ${error.code} ${error.message}',
       );
-      return AuthResult(errorMessage: _mapFirebaseDataError(error));
+      return AuthResult(
+        errorMessage: _mapFirebaseDataError(error),
+        isNetworkError: error.code == 'unavailable',
+      );
+    } on SocketException {
+      return const AuthResult(
+        errorMessage: 'Connection lost. Please try again.',
+        isNetworkError: true,
+      );
+    } on TimeoutException {
+      return const AuthResult(
+        errorMessage: 'Connection timed out. Please try again.',
+        isNetworkError: true,
+      );
     } catch (error) {
       return AuthResult(
         errorMessage: error.toString().trim().isEmpty

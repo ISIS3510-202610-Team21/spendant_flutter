@@ -23,6 +23,7 @@ import '../services/local_notification_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
+import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import '../widgets/spendant_delete_dialog.dart';
 import 'edit_profile_screen.dart';
@@ -719,6 +720,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                 ],
               ),
             ),
+            const NoInternetBanner(),
             SizedBox(height: topPadding),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -830,6 +832,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
             ],
           ),
         ),
+        const NoInternetBanner(),
         Expanded(
           child: AnimatedBuilder(
             animation: budgetDependencies,

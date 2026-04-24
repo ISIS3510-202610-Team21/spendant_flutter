@@ -14,9 +14,11 @@ import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
+import '../services/connectivity_monitor.dart';
 import '../services/permissions_review_service.dart';
 import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
+import '../widgets/no_internet_banner.dart';
 import '../theme/spendant_theme.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -104,6 +106,20 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
 
   Future<void> _submit() async {
     if (_isSubmitting) {
+      return;
+    }
+
+    if (!ConnectivityMonitor.isOnline) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _SpendAntAuthDecisionDialog(
+          title: 'No internet connection',
+          message: _isRegisterMode
+              ? 'Registration requires internet. Your input will be kept until you close the app.'
+              : 'Logging in to a new account requires internet. Your input will be kept until you close the app.',
+          confirmLabel: 'OK',
+        ),
+      );
       return;
     }
 
@@ -411,6 +427,12 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                 left: antLeft,
                 bottom: antBottom,
                 child: AntAsset(widget.antAssetPath, height: antHeight),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: const NoInternetBanner(),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(

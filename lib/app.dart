@@ -23,6 +23,7 @@ import 'src/services/app_notification_service.dart';
 import 'src/services/app_runtime_state_service.dart';
 import 'src/services/auto_categorization_service.dart';
 import 'src/services/cloud_sync_service.dart';
+import 'src/services/connectivity_monitor.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
@@ -77,6 +78,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _startContextAwareNotificationLoop();
     _schedulePendingCategoryBackfill();
     _scheduleAppNotificationRefresh();
+    unawaited(ConnectivityMonitor.initialize());
     unawaited(AppRuntimeStateService.markForeground(true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
@@ -86,6 +88,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     unawaited(AppRuntimeStateService.markForeground(false));
+    ConnectivityMonitor.dispose();
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();
     _notificationRefreshTimer?.cancel();

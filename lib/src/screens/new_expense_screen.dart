@@ -28,8 +28,10 @@ import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
+import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
@@ -483,6 +485,25 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickLocation() async {
+    if (!ConnectivityMonitor.isOnline) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('No internet connection'),
+          content: const Text(
+            'The map view requires internet. Please connect to the internet to pick a location.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final selected = await Navigator.of(context).push<ExpenseLocationSelection>(
       MaterialPageRoute(
         builder: (_) => LocationPickerScreen(initialValue: _selectedLocation),
@@ -824,6 +845,20 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
+    if (!ConnectivityMonitor.isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Auto-categorization is not available without internet connection.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
     final result = await _autoCategorizationService.categorizeExpense(
       expenseName,
     );
@@ -1147,6 +1182,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     _handleConfirm();
                   },
                 ),
+                const NoInternetBanner(),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {

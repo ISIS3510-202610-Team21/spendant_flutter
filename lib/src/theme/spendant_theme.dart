@@ -15,6 +15,22 @@ abstract final class AppPalette {
   static const services = Color(0xFFF3BE28);
   static const other = Color(0xFFFD8D8C);
   static const expenseRed = Color(0xFFF04C4C);
+  static const cardBorderGray = Color(0xFFD0D0D0);
+  static const notificationBadge = Color(0xFFFF7A2F);
+}
+
+/// Pre-computed const [BorderRadius] values for use across the UI.
+/// Using these constants instead of [BorderRadius.circular] inside [build]
+/// methods avoids allocating a new object on every rebuild.
+abstract final class AppRadius {
+  static const pill = BorderRadius.all(Radius.circular(999));
+  static const card = BorderRadius.all(Radius.circular(14));
+  static const dialog = BorderRadius.all(Radius.circular(24));
+  static const large = BorderRadius.all(Radius.circular(32));
+  static const input = BorderRadius.all(Radius.circular(12));
+  static const chip = BorderRadius.all(Radius.circular(10));
+  static const small = BorderRadius.all(Radius.circular(3));
+  static const cardTile = BorderRadius.all(Radius.circular(2));
 }
 
 abstract final class AppHeaderMetrics {
@@ -27,6 +43,60 @@ abstract final class AppHeaderMetrics {
   }) {
     return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
   }
+}
+
+/// Pre-computed static [TextStyle] constants for use across the UI.
+/// Using these instead of calling [GoogleFonts.nunito] inside [build] methods
+/// avoids allocating a new [TextStyle] object on every rebuild (micro-opt #1).
+abstract final class AppTextStyles {
+  // --- Home screen ---
+  static final screenTitle = GoogleFonts.nunito(
+    fontSize: 20,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final amountCOP = GoogleFonts.nunito(
+    fontSize: 24,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final categoryBarLabel = GoogleFonts.nunito(
+    fontSize: 12,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+    height: 1,
+  );
+  static final expenseName = GoogleFonts.nunito(
+    fontSize: 18,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final expenseCategory = GoogleFonts.nunito(
+    fontSize: 15,
+    fontWeight: FontWeight.w700,
+    color: Colors.black54,
+  );
+  static final expenseAmount = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w900,
+    color: Colors.black54,
+  );
+  static final emptyState = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    color: AppPalette.fieldHint,
+    height: 1.5,
+  );
+  static final dateGroupHeader = GoogleFonts.nunito(
+    fontSize: 19,
+    fontWeight: FontWeight.w900,
+    color: AppPalette.ink,
+  );
+  static final sectionLabel = GoogleFonts.nunito(
+    fontSize: 16,
+    fontWeight: FontWeight.w800,
+    color: AppPalette.ink,
+  );
 }
 
 abstract final class SpendAntTheme {
@@ -100,15 +170,15 @@ abstract final class SpendAntTheme {
           vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(3),
+          borderRadius: AppRadius.small,
           borderSide: const BorderSide(color: AppPalette.ink, width: 1),
         ),
       ),
@@ -119,7 +189,7 @@ abstract final class SpendAntTheme {
           foregroundColor: AppPalette.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: AppRadius.card,
           ),
           textStyle: GoogleFonts.nunito(
             fontSize: 15,

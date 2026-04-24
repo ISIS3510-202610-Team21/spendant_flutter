@@ -54,7 +54,7 @@ class DailyBudgetSummary {
   double get totalDailyIncome => internalDailyBudget;
   bool get hasIncome => incomes.isNotEmpty && internalDailyBudget > 0;
   bool get hasGoals => goals.isNotEmpty;
-  bool get isSpendableBudgetExhausted => remainingSpendableBudget <= 0;
+  bool get isSpendableBudgetExhausted => remainingSpendableBudget < 0;
   bool get isInternalBudgetExhausted => remainingInternalBudget <= 0;
   double get goalHeadroom => internalDailyBudget - totalGoalDailyCommitment;
 
@@ -225,11 +225,6 @@ abstract final class DailyBudgetService {
   }
 
   static double dailyGoalContribution(GoalModel goal, {DateTime? today}) {
-    final plannedDailyContribution = _plannedGoalDailyContribution(goal);
-    if (plannedDailyContribution <= _epsilon) {
-      return 0;
-    }
-
     final currentDay = DateUtils.dateOnly(today ?? DateTime.now());
     if (DateUtils.dateOnly(goal.createdAt).isAfter(currentDay) ||
         DateUtils.dateOnly(goal.deadline).isBefore(currentDay) ||
@@ -238,7 +233,13 @@ abstract final class DailyBudgetService {
       return 0;
     }
 
-    return plannedDailyContribution;
+    return projectedGoalDailyContribution(
+      targetAmount: goal.targetAmount,
+      currentAmount: _goalBaselineAmount(goal),
+      deadline: goal.deadline,
+      isCompleted: goal.isCompleted,
+      today: currentDay,
+    );
   }
 
   static double projectedGoalDailyContribution({
@@ -413,11 +414,25 @@ abstract final class DailyBudgetService {
               !DateUtils.dateOnly(goal.deadline).isBefore(today) &&
               plannedDailyContribution > _epsilon;
 
+          // Use remaining-days contribution so the displayed daily reserve
+          // reflects how much must be saved per day from TODAY, not from the
+          // original creation date. This prevents stale goals from showing an
+          // artificially low daily saving (e.g. 500 instead of 2,000).
+          final todayDailyContribution = isActiveToday
+              ? projectedGoalDailyContribution(
+                  targetAmount: goal.targetAmount,
+                  currentAmount: currentAmount,
+                  deadline: goal.deadline,
+                  isCompleted: isCompleted,
+                  today: today,
+                )
+              : 0.0;
+
           return GoalComputedState(
             goal: goal,
             baselineAmount: _goalBaselineAmount(goal),
             currentAmount: currentAmount,
-            dailyContribution: isActiveToday ? plannedDailyContribution : 0,
+            dailyContribution: todayDailyContribution,
             isCompleted: isCompleted,
           );
         })

@@ -25,24 +25,36 @@ class SpendingAnomalyInsight {
 abstract final class SpendingAnomalyService {
   static const int _minimumHistoryDays = 5;
 
+  // Total closed days we look back: 1 analyzed (yesterday) + 5 baseline days.
+  static const int _lookbackDays = _minimumHistoryDays + 1;
+
   static SpendingAnomalyInsight? buildInsight({
     required Iterable<ExpenseModel> expenses,
-    DateTime? accountCreatedAt,
     required DateTime now,
   }) {
     final todayStart = DateUtils.dateOnly(now);
-    final accountStart = _resolveAccountStart(
-      accountCreatedAt: accountCreatedAt,
-      expenses: expenses,
-      fallback: todayStart,
-    );
-    final accountAgeInDays = todayStart.difference(accountStart).inDays;
-    if (accountAgeInDays < _minimumHistoryDays) {
+
+    // Count distinct past calendar days that have at least one recorded
+    // expense with a positive amount. Days with $0 provide no statistical
+    // signal and must not count toward the grace period threshold.
+    final distinctPastSpendingDays = expenses
+        .where(
+          (e) =>
+              e.amount > 0 &&
+              DateUtils.dateOnly(e.date).isBefore(todayStart),
+        )
+        .map((e) => DateUtils.dateOnly(e.date))
+        .toSet()
+        .length;
+
+    if (distinctPastSpendingDays < _minimumHistoryDays) {
       return null;
     }
 
+    // Build exactly _lookbackDays closed-day totals (yesterday … 6 days ago).
+    // Today is never included (offset starts at 1).
     final closedDays = <_DailyExpenseTotal>[
-      for (var offset = 1; offset <= 6; offset++)
+      for (var offset = 1; offset <= _lookbackDays; offset++)
         _DailyExpenseTotal(
           dayStart: todayStart.subtract(Duration(days: offset)),
           totalExpense: _sumExpensesForDay(
@@ -51,11 +63,9 @@ abstract final class SpendingAnomalyService {
           ),
         ),
     ];
-    if (closedDays.length < 6) {
-      return null;
-    }
+    assert(closedDays.length == _lookbackDays);
 
-    final analyzedDay = closedDays.first;
+    final analyzedDay = closedDays.first; // yesterday
     final baseline = closedDays.skip(1).take(_minimumHistoryDays).toList();
     if (baseline.length < _minimumHistoryDays) {
       return null;
@@ -80,32 +90,6 @@ abstract final class SpendingAnomalyService {
     );
   }
 
-  static DateTime _resolveAccountStart({
-    required DateTime? accountCreatedAt,
-    required Iterable<ExpenseModel> expenses,
-    required DateTime fallback,
-  }) {
-    DateTime? earliestExpenseDay;
-    for (final expense in expenses) {
-      final day = DateUtils.dateOnly(expense.date);
-      if (earliestExpenseDay == null || day.isBefore(earliestExpenseDay)) {
-        earliestExpenseDay = day;
-      }
-    }
-
-    final createdAtDay = accountCreatedAt == null
-        ? null
-        : DateUtils.dateOnly(accountCreatedAt);
-    if (createdAtDay == null) {
-      return earliestExpenseDay ?? fallback;
-    }
-    if (earliestExpenseDay == null) {
-      return createdAtDay;
-    }
-    return createdAtDay.isBefore(earliestExpenseDay)
-        ? createdAtDay
-        : earliestExpenseDay;
-  }
 
   static double _sumExpensesForDay(
     Iterable<ExpenseModel> expenses,

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
+import '../theme/expense_visuals.dart';
 import 'connectivity_service.dart';
 import 'embedding_service.dart';
 import 'local_storage_service.dart';
@@ -78,27 +79,6 @@ class AutoCategorizationService {
 
   static final AutoCategorizationService instance = AutoCategorizationService();
 
-  static const Map<String, String> _detailLabelPrimaryCategories =
-      <String, String>{
-        'Food': 'Food',
-        'Food Delivery': 'Food',
-        'Groceries': 'Food',
-        'Commute': 'Transport',
-        'Transport': 'Transport',
-        'Learning Materials': 'Services',
-        'University Fees': 'Services',
-        'Personal Care': 'Services',
-        'Rent': 'Services',
-        'Services': 'Services',
-        'Utilities': 'Services',
-        'Entertainment': 'Other',
-        'Gifts': 'Other',
-        'Group Hangouts': 'Other',
-        'Subscriptions': 'Other',
-        'Emergency': 'Other',
-        'Impulse': 'Other',
-        'Owed': 'Other',
-      };
 
   static const Map<String, String> _labelAliases = <String, String>{
     'academic essentials': 'Learning Materials',
@@ -408,7 +388,7 @@ class AutoCategorizationService {
 
   String _primaryCategoryForLabel(String label) {
     final normalizedLabel = _normalizeLabel(label) ?? label.trim();
-    final directMatch = _detailLabelPrimaryCategories[normalizedLabel];
+    final directMatch = ExpenseVisuals.detailLabelPrimaryCategories[normalizedLabel];
     if (directMatch != null) {
       return directMatch;
     }
@@ -435,7 +415,7 @@ class AutoCategorizationService {
       return null;
     }
 
-    for (final knownLabel in _detailLabelPrimaryCategories.keys) {
+    for (final knownLabel in ExpenseVisuals.detailLabelPrimaryCategories.keys) {
       if (knownLabel.toLowerCase() == trimmed.toLowerCase()) {
         return knownLabel;
       }

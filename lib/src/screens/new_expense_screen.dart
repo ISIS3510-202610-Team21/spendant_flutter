@@ -15,6 +15,9 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/expense_draft.dart';
 import '../models/expense_model.dart';
+import '../services/app_analytics_service.dart';
+import '../services/app_currency_format_service.dart';
+import '../services/app_input_validation_service.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auto_categorization_service.dart';
@@ -25,6 +28,7 @@ import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
+import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
@@ -68,26 +72,6 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
   ),
 ];
 
-const Map<String, String> _detailLabelPrimaryCategories = <String, String>{
-  'Food': 'Food',
-  'Food Delivery': 'Food',
-  'Groceries': 'Food',
-  'Commute': 'Transport',
-  'Transport': 'Transport',
-  'Learning Materials': 'Services',
-  'University Fees': 'Services',
-  'Personal Care': 'Services',
-  'Rent': 'Services',
-  'Services': 'Services',
-  'Utilities': 'Services',
-  'Entertainment': 'Other',
-  'Gifts': 'Other',
-  'Group Hangouts': 'Other',
-  'Subscriptions': 'Other',
-  'Emergency': 'Other',
-  'Impulse': 'Other',
-  'Owed': 'Other',
-};
 
 enum _ReceiptSourceOption { camera, gallery, file }
 
@@ -122,6 +106,13 @@ class NewExpenseScreen extends StatefulWidget {
 }
 
 class _NewExpenseScreenState extends State<NewExpenseScreen> {
+  // Cached once per app session — defaultTargetPlatform never changes at
+  // runtime, so re-creating this on every build() or _pickTime() call is
+  // wasteful (micro-opt: avoid unnecessary objects in build/lifecycle methods).
+  static final _materialTextTheme = Typography.material2021(
+    platform: defaultTargetPlatform,
+  ).black;
+
   final TextEditingController _expenseNameController = TextEditingController();
   final TextEditingController _expenseValueController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
@@ -225,7 +216,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return '';
     }
 
-    return NumberFormat('#,###', 'en_US').format(amount.round());
+    return AppCurrencyFormatService.formatAmount(amount);
   }
 
   List<String> _normalizedLabels(Iterable<String> labels) {
@@ -300,7 +291,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   String? _derivePrimaryCategory(List<String> labels) {
     for (final label in labels) {
-      final category = _detailLabelPrimaryCategories[label];
+      final category = ExpenseVisuals.detailLabelPrimaryCategories[label];
       if (category != null) {
         return category;
       }
@@ -344,9 +335,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<void> _pickTime() async {
-    final materialTextTheme = Typography.material2021(
-      platform: defaultTargetPlatform,
-    ).black;
+    final materialTextTheme = _materialTextTheme;
     const timeDisplayHeight = 64 / 57;
     const timeInputHeight = 54 / 48;
     final timePickerTextTheme = Theme.of(context).textTheme.copyWith(
@@ -959,6 +948,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _showScanMessage('Please enter an expense name');
       return;
     }
+    if (AppInputValidationService.isOnlyEmoji(expenseName)) {
+      _showScanMessage('Expense name must contain some text, not only emojis');
+      return;
+    }
 
     final amountText = _expenseValueController.text.replaceAll(',', '').trim();
     final parsedAmount = double.tryParse(amountText);
@@ -1033,7 +1026,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           'The selected expense is no longer attached to local storage.',
         );
       }
-    } catch (_) {
+    } catch (e) {
+      unawaited(AppAnalyticsService.instance.logModuleCrash('expenses', e));
       if (!mounted) {
         return;
       }
@@ -1133,7 +1127,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final formBottomPadding = 116.0 + keyboardInset;
 
     return Scaffold(
@@ -1747,7 +1741,7 @@ class _ReceiptSourceSheet extends StatelessWidget {
               height: 5,
               decoration: BoxDecoration(
                 color: const Color(0xFF6D6D6D),
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: AppRadius.pill,
               ),
             ),
             const SizedBox(height: 32),
@@ -1834,28 +1828,45 @@ class _ReceiptSourceTile extends StatelessWidget {
 }
 
 class DateSelectionScreen extends StatefulWidget {
-  const DateSelectionScreen({super.key, required this.initialDate});
+  const DateSelectionScreen({
+    super.key,
+    required this.initialDate,
+    this.minDate,
+  });
 
   final DateTime initialDate;
+
+  /// When set, the calendar will not allow selecting a date before this day.
+  /// Defaults to 2020-01-01 (allows past dates, used for expense editing).
+  final DateTime? minDate;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
 }
 
 class _DateSelectionScreenState extends State<DateSelectionScreen> {
+  static final _materialTextTheme = Typography.material2021(
+    platform: defaultTargetPlatform,
+  ).black;
+
   DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateUtils.dateOnly(widget.initialDate);
+    final today = DateUtils.dateOnly(widget.initialDate);
+    final effectiveMin = widget.minDate != null
+        ? DateUtils.dateOnly(widget.minDate!)
+        : null;
+    // Clamp initialDate to minDate so the calendar never starts in a blocked range.
+    _selectedDate = effectiveMin != null && today.isBefore(effectiveMin)
+        ? effectiveMin
+        : today;
   }
 
   @override
   Widget build(BuildContext context) {
-    final materialTextTheme = Typography.material2021(
-      platform: defaultTargetPlatform,
-    ).black;
+    final materialTextTheme = _materialTextTheme;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1903,7 +1914,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                       Expanded(
                         child: CalendarDatePicker(
                           initialDate: _selectedDate,
-                          firstDate: DateTime(2020),
+                          firstDate: widget.minDate != null
+                              ? DateUtils.dateOnly(widget.minDate!)
+                              : DateTime(2020),
                           lastDate: DateTime(2040),
                           currentDate: DateTime.now(),
                           onDateChanged: (value) {
@@ -2098,7 +2111,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         fillColor: Colors.white,
                         filled: true,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: AppRadius.pill,
                           borderSide: BorderSide.none,
                         ),
                       ),
@@ -2779,7 +2792,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = 132.0 + MediaQuery.of(context).padding.bottom;
+    final bottomPadding = 132.0 + MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -2884,10 +2897,9 @@ class _CurrencyThousandsFormatter extends TextInputFormatter {
       return const TextEditingValue();
     }
 
-    final formatted = NumberFormat(
-      '#,###',
-      'en_US',
-    ).format(int.parse(digitsOnly));
+    final formatted = AppCurrencyFormatService.currency.format(
+      int.parse(digitsOnly),
+    );
 
     return TextEditingValue(
       text: formatted,
@@ -3059,14 +3071,14 @@ class _SublabelChip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: AnimatedContainer(
           duration: _animationDuration,
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           decoration: BoxDecoration(
             color: selected ? AppPalette.green : Colors.white,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
             border: Border.all(
               color: selected ? AppPalette.green : const Color(0xFFD8D8D8),
             ),
@@ -3074,28 +3086,26 @@ class _SublabelChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              AnimatedSize(
+                duration: _animationDuration,
+                curve: Curves.easeOut,
+                child: selected
+                    ? const Padding(
+                        padding: EdgeInsets.only(right: 6),
+                        child: Icon(
+                          Icons.check,
+                          size: 15,
+                          color: AppPalette.ink,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
               Text(
                 label,
                 style: GoogleFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                   color: AppPalette.ink,
-                ),
-              ),
-              const SizedBox(width: 6),
-              AnimatedOpacity(
-                duration: _animationDuration,
-                curve: Curves.easeOut,
-                opacity: selected ? 1 : 0,
-                child: AnimatedScale(
-                  duration: _animationDuration,
-                  curve: Curves.easeOutBack,
-                  scale: selected ? 1 : 0.85,
-                  child: const SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: Icon(Icons.check, size: 15, color: AppPalette.ink),
-                  ),
                 ),
               ),
             ],
@@ -3118,13 +3128,13 @@ class _SelectedExpenseLabelChip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: Container(
           height: _MiniActionButton.buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -3166,13 +3176,13 @@ class _MiniActionButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: AppRadius.pill,
         child: Container(
           height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: AppPalette.green,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: AppRadius.pill,
           ),
           child: Center(
             widthFactor: 1,

@@ -1,8 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:intl/intl.dart';
-
 import '../models/expense_model.dart';
+import 'app_currency_format_service.dart';
 import 'app_time_format_service.dart';
 
 enum WeeklySmartInsightKind {
@@ -36,7 +35,6 @@ class WeeklySmartInsight {
 }
 
 abstract final class WeeklySmartInsightService {
-  static final NumberFormat _currencyFormat = NumberFormat('#,###', 'en_US');
   static const String _weeklyInsightTitle = 'Weekly spending insight';
   static const String _weeklyInsightDetailTitle = 'Weekly spending insight';
   static const String _defaultTimeRange = '2pm to 3pm';
@@ -223,6 +221,6 @@ abstract final class WeeklySmartInsightService {
   }
 
   static String _formatMoney(double amount) {
-    return 'COP ${_currencyFormat.format(amount.round())}';
+    return AppCurrencyFormatService.formatCOP(amount);
   }
 }

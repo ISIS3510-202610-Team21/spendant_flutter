@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
@@ -19,6 +20,9 @@ import 'src/services/local_storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Fonts are bundled in assets/fonts/ — disable network fetching to guarantee
+  // offline availability and eliminate any latency on first paint.
+  GoogleFonts.config.allowRuntimeFetching = false;
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);

@@ -14,6 +14,11 @@ class MainActivity : FlutterFragmentActivity() {
             this,
         )
 
+        SmsReaderBridge.register(
+            flutterEngine.dartExecutor.binaryMessenger,
+            this,
+        )
+
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "spendant_flutter/platform_config"

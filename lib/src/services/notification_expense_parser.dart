@@ -113,6 +113,29 @@ abstract final class NotificationExpenseParser {
     'sacaste',
   ];
 
+  static const List<String> _smsExpenseSignals = <String>[
+    'pagaste',
+    'compra',
+    'pago aprobado',
+    'transaccion aprobada',
+    'te cobraron',
+    'debito',
+    'cobro aprobado',
+    'retiro aprobado',
+  ];
+
+  static const List<String> _smsIgnoredSignals = <String>[
+    'otp',
+    'codigo de verificacion',
+    'clave dinamica',
+    'password',
+    'contrasena',
+    'recibiste',
+    'te enviaron',
+    'reembolso',
+    'recarga',
+  ];
+
   static const Map<String, _CategorySuggestion> _merchantCategoryMap =
       <String, _CategorySuggestion>{
         'ubereats': _CategorySuggestion(
@@ -220,7 +243,12 @@ abstract final class NotificationExpenseParser {
       return gmailExpense;
     }
 
-    return _parseNequi(event);
+    final nequiExpense = _parseNequi(event);
+    if (nequiExpense != null) {
+      return nequiExpense;
+    }
+
+    return _parseSms(event);
   }
 
   static ParsedNotificationExpense? _parseGooglePay(
@@ -349,6 +377,43 @@ abstract final class NotificationExpenseParser {
     );
   }
 
+  static ParsedNotificationExpense? _parseSms(NotificationReaderEvent event) {
+    if (!_isFromSms(event)) {
+      return null;
+    }
+
+    // For SMS the body is in bigText/text; event.title is the sender's phone number.
+    // Use the body only — never treat a phone number as a merchant name.
+    final body = event.bigText.isNotEmpty ? event.bigText : event.text;
+    final normalizedBody = body.toLowerCase();
+    if (_smsIgnoredSignals.any(normalizedBody.contains)) {
+      return null;
+    }
+    if (!_smsExpenseSignals.any(normalizedBody.contains)) {
+      return null;
+    }
+
+    final amount = _extractAmount(body);
+    if (amount == null || amount <= 0) {
+      return null;
+    }
+
+    final merchant =
+        _extractMerchantFromPurchaseTitle(body) ??
+        _extractMerchant('', body, '') ??
+        'SMS purchase';
+    final category = _categorize(merchant, body);
+
+    return ParsedNotificationExpense(
+      name: merchant,
+      amount: amount,
+      dateTime: _eventDateTime(event),
+      primaryCategory: category.primaryCategory,
+      detailLabels: category.detailLabels,
+      source: 'SMS',
+    );
+  }
+
   static bool _isFromGooglePay(NotificationReaderEvent event) {
     final source = '${event.packageName} ${event.appName}'.toLowerCase();
     final isGooglePackage =
@@ -362,6 +427,11 @@ abstract final class NotificationExpenseParser {
   static bool _isFromGmail(NotificationReaderEvent event) {
     final source = '${event.packageName} ${event.appName}'.toLowerCase();
     return source.contains('gmail') || source.contains('com.google.android.gm');
+  }
+
+  static bool _isFromSms(NotificationReaderEvent event) {
+    return event.packageName == 'sms' ||
+        event.appName.toLowerCase() == 'sms';
   }
 
   static bool _isFromNequi(NotificationReaderEvent event) {

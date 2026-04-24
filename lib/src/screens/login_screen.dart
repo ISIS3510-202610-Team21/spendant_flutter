@@ -303,8 +303,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       return 'Password cannot be empty.';
     }
 
-    if (_isRegisterMode && password.length < 6) {
-      return 'Password must be at least 6 characters.';
+    if (_isRegisterMode) {
+      final passwordErr = AppInputValidationService.passwordError(password);
+      if (passwordErr != null) return passwordErr;
     }
 
     return null;

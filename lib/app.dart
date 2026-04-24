@@ -79,6 +79,9 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _schedulePendingCategoryBackfill();
     _scheduleAppNotificationRefresh();
     unawaited(ConnectivityMonitor.initialize());
+    // Stream-based sync: fires an immediate sync whenever the device regains
+    // connectivity, complementing the 20-second periodic timer.
+    ConnectivityMonitor.isOnlineListenable.addListener(_onConnectivityRestored);
     unawaited(AppRuntimeStateService.markForeground(true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
@@ -88,6 +91,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     unawaited(AppRuntimeStateService.markForeground(false));
+    ConnectivityMonitor.isOnlineListenable.removeListener(_onConnectivityRestored);
     ConnectivityMonitor.dispose();
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();
@@ -136,6 +140,16 @@ class _SpendAntAppState extends State<SpendAntApp> {
   void _syncPendingDataInBackground() {
     unawaited(AppRuntimeStateService.markForeground(true));
     unawaited(_runPendingCloudSync());
+  }
+
+  /// Called by [ConnectivityMonitor.isOnlineListenable] whenever connectivity
+  /// changes. Triggers an immediate sync when the device comes back online so
+  /// pending local data reaches Firestore without waiting for the next
+  /// 20-second timer tick.
+  void _onConnectivityRestored() {
+    if (ConnectivityMonitor.isOnline && CloudSyncService.isSupportedPlatform) {
+      _syncPendingDataInBackground();
+    }
   }
 
   void _schedulePendingCategoryBackfill() {

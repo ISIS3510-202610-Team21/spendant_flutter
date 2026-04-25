@@ -2,6 +2,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 abstract interface class ConnectivityService {
   Future<bool> hasInternetConnection();
+  Stream<bool> get connectivityStream;
 }
 
 class DefaultConnectivityService implements ConnectivityService {
@@ -18,5 +19,12 @@ class DefaultConnectivityService implements ConnectivityService {
     } catch (_) {
       return false;
     }
+  }
+
+  @override
+  Stream<bool> get connectivityStream {
+    return _connectivity.onConnectivityChanged.map(
+      (results) => results.any((value) => value != ConnectivityResult.none),
+    );
   }
 }

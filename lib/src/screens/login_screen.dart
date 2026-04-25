@@ -14,9 +14,11 @@ import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_uid_service.dart';
+import '../services/connectivity_monitor.dart';
 import '../services/permissions_review_service.dart';
 import '../services/post_auth_navigation.dart';
 import '../widgets/auth_chrome.dart';
+import '../widgets/no_internet_banner.dart';
 import '../theme/spendant_theme.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -107,6 +109,20 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       return;
     }
 
+    if (!ConnectivityMonitor.isOnline) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _SpendAntAuthDecisionDialog(
+          title: 'No internet connection',
+          message: _isRegisterMode
+              ? 'Registration requires internet. Your input will be kept until you close the app.'
+              : 'Logging in to a new account requires internet. Your input will be kept until you close the app.',
+          confirmLabel: 'OK',
+        ),
+      );
+      return;
+    }
+
     final username = _usernameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -165,6 +181,12 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     final user = result.user;
     if (user == null) {
       if (!mounted) {
+        return;
+      }
+
+      if (result.isNetworkError) {
+        setState(() => _isSubmitting = false);
+        await _showNetworkErrorRetryDialog(result.errorMessage);
         return;
       }
 
@@ -287,8 +309,9 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       return 'Password cannot be empty.';
     }
 
-    if (_isRegisterMode && password.length < 6) {
-      return 'Password must be at least 6 characters.';
+    if (_isRegisterMode) {
+      final passwordErr = AppInputValidationService.passwordError(password);
+      if (passwordErr != null) return passwordErr;
     }
 
     return null;
@@ -371,6 +394,25 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     return result ?? false;
   }
 
+  Future<void> _showNetworkErrorRetryDialog(String? message) async {
+    if (!mounted) return;
+    final shouldRetry = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SpendAntAuthDecisionDialog(
+        title: 'Connection lost',
+        message: message?.isNotEmpty == true
+            ? message!
+            : 'Your connection was interrupted. Check your internet and try again.',
+        confirmLabel: 'Try Again',
+        cancelLabel: 'Cancel',
+      ),
+    );
+    if (shouldRetry == true && mounted) {
+      await _submit();
+    }
+  }
+
   Future<void> _showInfoDialog({
     required String title,
     required String message,
@@ -411,6 +453,12 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                 left: antLeft,
                 bottom: antBottom,
                 child: AntAsset(widget.antAssetPath, height: antHeight),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: const NoInternetBanner(),
               ),
               Positioned.fill(
                 child: SingleChildScrollView(

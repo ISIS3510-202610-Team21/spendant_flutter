@@ -23,6 +23,7 @@ import 'src/services/app_notification_service.dart';
 import 'src/services/app_runtime_state_service.dart';
 import 'src/services/auto_categorization_service.dart';
 import 'src/services/cloud_sync_service.dart';
+import 'src/services/connectivity_monitor.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
@@ -77,6 +78,10 @@ class _SpendAntAppState extends State<SpendAntApp> {
     _startContextAwareNotificationLoop();
     _schedulePendingCategoryBackfill();
     _scheduleAppNotificationRefresh();
+    unawaited(ConnectivityMonitor.initialize());
+    // Stream-based sync: fires an immediate sync whenever the device regains
+    // connectivity, complementing the 20-second periodic timer.
+    ConnectivityMonitor.isOnlineListenable.addListener(_onConnectivityRestored);
     unawaited(AppRuntimeStateService.markForeground(true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleColdStartNotificationNavigation();
@@ -86,6 +91,8 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     unawaited(AppRuntimeStateService.markForeground(false));
+    ConnectivityMonitor.isOnlineListenable.removeListener(_onConnectivityRestored);
+    ConnectivityMonitor.dispose();
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();
     _notificationRefreshTimer?.cancel();
@@ -133,6 +140,16 @@ class _SpendAntAppState extends State<SpendAntApp> {
   void _syncPendingDataInBackground() {
     unawaited(AppRuntimeStateService.markForeground(true));
     unawaited(_runPendingCloudSync());
+  }
+
+  /// Called by [ConnectivityMonitor.isOnlineListenable] whenever connectivity
+  /// changes. Triggers an immediate sync when the device comes back online so
+  /// pending local data reaches Firestore without waiting for the next
+  /// 20-second timer tick.
+  void _onConnectivityRestored() {
+    if (ConnectivityMonitor.isOnline && CloudSyncService.isSupportedPlatform) {
+      _syncPendingDataInBackground();
+    }
   }
 
   void _schedulePendingCategoryBackfill() {

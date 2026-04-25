@@ -452,6 +452,52 @@ abstract final class LocalNotificationService {
     );
   }
 
+  static Future<void> cancelNotification(int notificationId) async {
+    if (!_isInitialized) {
+      return;
+    }
+    try {
+      await _plugin.cancel(notificationId);
+    } catch (error) {
+      debugPrint('LocalNotificationService.cancelNotification failed: $error');
+    }
+  }
+
+  static Future<LocalNotificationAttemptResult> showRawNotification({
+    required int notificationId,
+    required String title,
+    required String body,
+    required NotificationDetails details,
+    String? payload,
+  }) async {
+    if (!_isInitialized) {
+      try {
+        await initialize();
+      } catch (error, stackTrace) {
+        debugPrint(
+          'LocalNotificationService initialization failed before showRaw: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+        return LocalNotificationAttemptResult(
+          wasShown: false,
+          errorMessage: '$error',
+        );
+      }
+    }
+
+    try {
+      await _plugin.show(notificationId, title, body, details, payload: payload);
+      return const LocalNotificationAttemptResult(wasShown: true);
+    } catch (error, stackTrace) {
+      debugPrint('LocalNotificationService.showRawNotification failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return LocalNotificationAttemptResult(
+        wasShown: false,
+        errorMessage: '$error',
+      );
+    }
+  }
+
   static Future<bool> _ensurePermissionInternal({
     required bool promptIfNeeded,
   }) async {

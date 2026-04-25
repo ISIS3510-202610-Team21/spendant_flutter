@@ -230,7 +230,14 @@ class ReceiptScanService {
         ? _extractPdfText(bytes)
         : await _recognizeImageText(path);
 
-    return _buildResult(text: text, fileName: fileName, metadata: metadata);
+    // OCR/PDF text extraction must run on the main isolate (ML Kit & Syncfusion
+    // use platform channels). The CPU-heavy parsing — regex scoring, date/amount
+    // extraction, address detection — is pure Dart and runs in a background
+    // isolate via compute() so it never blocks the UI thread.
+    return compute(
+      _buildReceiptResult,
+      _ReceiptBuildParams(text: text, fileName: fileName, metadata: metadata),
+    );
   }
 
   void dispose() {
@@ -366,7 +373,7 @@ class ReceiptScanService {
     }
   }
 
-  ReceiptScanResult _buildResult({
+  static ReceiptScanResult _buildResult({
     required String text,
     required String fileName,
     required _ReceiptMetadata metadata,
@@ -390,7 +397,7 @@ class ReceiptScanService {
     );
   }
 
-  String? _extractName(List<String> lines, String fileName) {
+  static String? _extractName(List<String> lines, String fileName) {
     final fallbackName = p.basenameWithoutExtension(fileName).trim();
     final blockedKeywords = <String>{
       'factura',
@@ -1077,7 +1084,7 @@ class ReceiptScanService {
     return parsed?.round();
   }
 
-  DateTime? _extractDate(List<String> lines) {
+  static DateTime? _extractDate(List<String> lines) {
     final dateRegex = RegExp(
       r'(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|(\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2})',
     );
@@ -1097,7 +1104,7 @@ class ReceiptScanService {
     return null;
   }
 
-  DateTime? _normalizeDate(String rawDate) {
+  static DateTime? _normalizeDate(String rawDate) {
     final candidate = rawDate.trim();
     final formats = <String>[
       'dd/MM/yyyy',
@@ -1124,7 +1131,7 @@ class ReceiptScanService {
     return null;
   }
 
-  DateTime? _extractTime(List<String> lines) {
+  static DateTime? _extractTime(List<String> lines) {
     final timeRegex = RegExp(r'(\d{1,2}:\d{2}(?::\d{2})?\s?(?:am|pm|AM|PM)?)');
 
     for (final line in lines) {
@@ -1142,7 +1149,7 @@ class ReceiptScanService {
     return null;
   }
 
-  DateTime? _normalizeTime(String rawTime) {
+  static DateTime? _normalizeTime(String rawTime) {
     final candidate = rawTime.trim().replaceAll(RegExp(r'\s+'), ' ');
     final formats = <String>[
       'hh:mm a',
@@ -1164,7 +1171,7 @@ class ReceiptScanService {
     return null;
   }
 
-  ReceiptScanLocation? _extractLocationFromText(List<String> lines) {
+  static ReceiptScanLocation? _extractLocationFromText(List<String> lines) {
     for (var index = 0; index < lines.length; index++) {
       final labeledAddress = _extractLabeledAddress(lines, index);
       if (labeledAddress != null) {
@@ -1182,7 +1189,7 @@ class ReceiptScanService {
     return null;
   }
 
-  String? _extractLabeledAddress(List<String> lines, int index) {
+  static String? _extractLabeledAddress(List<String> lines, int index) {
     final line = lines[index];
     final lowerLine = line.toLowerCase();
 
@@ -1216,7 +1223,7 @@ class ReceiptScanService {
     return null;
   }
 
-  bool _looksLikeColombianAddressLine(String line) {
+  static bool _looksLikeColombianAddressLine(String line) {
     final normalized = line.toLowerCase();
     return RegExp(
           r'\b(?:carrera|cra|cr|calle|cl|avenida|av|diagonal|diag|transversal|tv)\b',
@@ -1225,7 +1232,7 @@ class ReceiptScanService {
         RegExp(r'\d').hasMatch(normalized);
   }
 
-  String _combineAddressLines(List<String> lines, int startIndex) {
+  static String _combineAddressLines(List<String> lines, int startIndex) {
     final segments = <String>[lines[startIndex]];
 
     if (startIndex + 1 < lines.length) {
@@ -1337,4 +1344,32 @@ class _ReceiptAmountScore {
 
   final int value;
   final List<String> reasons;
+}
+
+// ---------------------------------------------------------------------------
+// compute() infrastructure for Task 1 — isolate-based receipt parsing
+// ---------------------------------------------------------------------------
+
+/// Plain-data carrier sent to the background isolate.
+/// All fields are primitive Dart types so they cross isolate boundaries safely.
+class _ReceiptBuildParams {
+  const _ReceiptBuildParams({
+    required this.text,
+    required this.fileName,
+    required this.metadata,
+  });
+
+  final String text;
+  final String fileName;
+  final _ReceiptMetadata metadata;
+}
+
+/// Top-level entry point required by [compute].
+/// Runs in a background isolate — no platform channels allowed here.
+ReceiptScanResult _buildReceiptResult(_ReceiptBuildParams params) {
+  return ReceiptScanService._buildResult(
+    text: params.text,
+    fileName: params.fileName,
+    metadata: params.metadata,
+  );
 }

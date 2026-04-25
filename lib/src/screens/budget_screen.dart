@@ -14,6 +14,7 @@ import '../services/cloud_sync_service.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
+import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import '../widgets/spendant_delete_dialog.dart';
 import '../../app.dart';
@@ -107,6 +108,7 @@ class BudgetScreen extends StatelessWidget {
       body: Column(
         children: [
           _BudgetHeader(onClose: () => _goToHome(context)),
+          const NoInternetBanner(),
           Expanded(
             child: Stack(
               children: [

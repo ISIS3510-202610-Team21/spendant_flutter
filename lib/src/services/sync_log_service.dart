@@ -15,17 +15,14 @@ abstract final class SyncLogService {
 
   static const _dbFileName = 'sync_logs.db';
   static const _tableName = 'sync_logs';
-  static const _dbVersion = 1;
+  // v2 adds the nullable error_message column for failed operations.
+  static const _dbVersion = 2;
 
   static Database? _db;
 
   static Future<void> init() async {
-    if (kIsWeb) {
-      return;
-    }
-    if (_db != null) {
-      return;
-    }
+    if (kIsWeb) return;
+    if (_db != null) return;
 
     try {
       final dbPath = await getDatabasesPath();
@@ -41,7 +38,8 @@ abstract final class SyncLogService {
               entity_id TEXT,
               action TEXT NOT NULL,
               timestamp INTEGER NOT NULL,
-              success INTEGER NOT NULL
+              success INTEGER NOT NULL,
+              error_message TEXT
             )
           ''');
           await db.execute(
@@ -51,6 +49,14 @@ abstract final class SyncLogService {
             'CREATE INDEX idx_sync_logs_timestamp ON $_tableName(timestamp DESC)',
           );
         },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          // v1 → v2: add optional error message column for failed sync ops.
+          if (oldVersion < 2) {
+            await db.execute(
+              'ALTER TABLE $_tableName ADD COLUMN error_message TEXT',
+            );
+          }
+        },
       );
     } catch (error) {
       debugPrint('SyncLogService.init failed: $error');
@@ -58,17 +64,34 @@ abstract final class SyncLogService {
     }
   }
 
+  /// Attempts a lazy re-initialization when [_db] is null.
+  /// This recovers from transient initialization failures (e.g. disk busy at
+  /// app start) without silently dropping every subsequent log entry.
+  static Future<Database?> _ensureDb() async {
+    if (_db != null) return _db;
+    await init();
+    if (_db == null) {
+      debugPrint('SyncLogService: database still unavailable after re-init attempt.');
+    }
+    return _db;
+  }
+
   static Future<void> logSync({
     required String entityType,
     String? entityId,
     required String action,
     required bool success,
+    // Populated for failed operations to aid debugging via failedLogs().
+    String? errorMessage,
   }) async {
-    if (kIsWeb) {
-      return;
-    }
-    final db = _db;
+    if (kIsWeb) return;
+
+    final db = _db ?? await _ensureDb();
     if (db == null) {
+      debugPrint(
+        'SyncLogService.logSync: database unavailable — '
+        'skipping log for $action $entityType ${entityId ?? '?'}',
+      );
       return;
     }
 
@@ -79,6 +102,8 @@ abstract final class SyncLogService {
         'action': action,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'success': success ? 1 : 0,
+        if (errorMessage != null && errorMessage.isNotEmpty)
+          'error_message': errorMessage,
       });
     } catch (error) {
       debugPrint('SyncLogService.logSync failed: $error');
@@ -86,13 +111,10 @@ abstract final class SyncLogService {
   }
 
   static Future<List<Map<String, Object?>>> recentLogs({int limit = 100}) async {
-    if (kIsWeb) {
-      return const [];
-    }
-    final db = _db;
-    if (db == null) {
-      return const [];
-    }
+    if (kIsWeb) return const [];
+
+    final db = _db ?? await _ensureDb();
+    if (db == null) return const [];
 
     try {
       return await db.query(
@@ -107,13 +129,10 @@ abstract final class SyncLogService {
   }
 
   static Future<List<Map<String, Object?>>> failedLogs({int limit = 100}) async {
-    if (kIsWeb) {
-      return const [];
-    }
-    final db = _db;
-    if (db == null) {
-      return const [];
-    }
+    if (kIsWeb) return const [];
+
+    final db = _db ?? await _ensureDb();
+    if (db == null) return const [];
 
     try {
       return await db.query(

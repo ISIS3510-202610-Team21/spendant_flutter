@@ -17,6 +17,7 @@ import 'src/services/firebase_uid_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
+import 'src/services/sync_log_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,6 +69,13 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       await BackgroundTaskService.initialize();
     } catch (error) {
       debugPrint('Error initializing background tasks: $error');
+    }
+
+    try {
+      await SyncLogService.init();
+      debugPrint('SyncLogService initialized');
+    } catch (error) {
+      debugPrint('Error initializing SyncLogService: $error');
     }
 
     try {

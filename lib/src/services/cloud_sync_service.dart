@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
@@ -12,6 +14,7 @@ import 'app_time_format_service.dart';
 import 'auth_memory_store.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
+import 'sync_log_service.dart';
 
 class CloudSyncSummary {
   const CloudSyncSummary({
@@ -139,6 +142,7 @@ class CloudSyncService {
 
   Future<bool> deleteExpenseRecord(ExpenseModel expense) async {
     return _deleteRecord(
+      entityType: SyncLogService.entityExpense,
       collectionName: 'expenses',
       serverId: expense.serverId,
       fallbackDocumentId: _canonicalExpenseDocumentId(expense),
@@ -148,6 +152,7 @@ class CloudSyncService {
 
   Future<bool> deleteIncomeRecord(IncomeModel income) async {
     return _deleteRecord(
+      entityType: SyncLogService.entityIncome,
       collectionName: 'incomes',
       serverId: income.serverId,
       fallbackDocumentId: _canonicalIncomeDocumentId(income),
@@ -157,6 +162,7 @@ class CloudSyncService {
 
   Future<bool> deleteGoalRecord(GoalModel goal) async {
     return _deleteRecord(
+      entityType: SyncLogService.entityGoal,
       collectionName: 'goals',
       serverId: goal.serverId,
       fallbackDocumentId: _canonicalGoalDocumentId(goal),
@@ -226,8 +232,20 @@ class CloudSyncService {
         );
         await _localStorage.markExpenseAsSynced(index, documentId);
         uploadedExpenses++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityExpense,
+          entityId: documentId,
+          action: SyncLogService.actionUpload,
+          success: true,
+        ));
       } catch (_) {
         failures++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityExpense,
+          entityId: expense.serverId,
+          action: SyncLogService.actionUpload,
+          success: false,
+        ));
       }
     }
 
@@ -263,8 +281,20 @@ class CloudSyncService {
         );
         await _localStorage.markIncomeAsSynced(index, documentId);
         uploadedIncomes++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityIncome,
+          entityId: documentId,
+          action: SyncLogService.actionUpload,
+          success: true,
+        ));
       } catch (_) {
         failures++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityIncome,
+          entityId: income.serverId,
+          action: SyncLogService.actionUpload,
+          success: false,
+        ));
       }
     }
 
@@ -300,8 +330,20 @@ class CloudSyncService {
         );
         await _localStorage.markGoalAsSynced(index, documentId);
         uploadedGoals++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityGoal,
+          entityId: documentId,
+          action: SyncLogService.actionUpload,
+          success: true,
+        ));
       } catch (_) {
         failures++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityGoal,
+          entityId: goal.serverId,
+          action: SyncLogService.actionUpload,
+          success: false,
+        ));
       }
     }
 
@@ -324,8 +366,20 @@ class CloudSyncService {
         );
         await _localStorage.markLabelAsSynced(index, documentId);
         uploadedLabels++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityLabel,
+          entityId: documentId,
+          action: SyncLogService.actionUpload,
+          success: true,
+        ));
       } catch (_) {
         failures++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityLabel,
+          entityId: label.serverId,
+          action: SyncLogService.actionUpload,
+          success: false,
+        ));
       }
     }
 
@@ -357,8 +411,20 @@ class CloudSyncService {
         );
         await _localStorage.markUserAsSynced(index, documentId);
         uploadedUsers++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityUser,
+          entityId: documentId,
+          action: SyncLogService.actionUpload,
+          success: true,
+        ));
       } catch (_) {
         failures++;
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityUser,
+          entityId: user.serverId,
+          action: SyncLogService.actionUpload,
+          success: false,
+        ));
       }
     }
 
@@ -430,28 +496,45 @@ class CloudSyncService {
       return;
     }
 
-    final username = _stringValue(
-      data['username'],
-      fallback: _normalizedUsername(localUser),
-    );
-    localUser
-      ..firebaseUid = _stringValue(data['uid'], fallback: snapshot.id)
-      ..username = username
-      ..email = _stringValue(data['email'], fallback: localUser.email)
-      ..displayName =
-          _stringOrNull(data['displayName'], fallback: localUser.displayName) ??
-          username
-      ..handle =
-          _stringOrNull(data['handle'], fallback: localUser.handle) ??
-          _normalizedHandle(localUser, username)
-      ..createdAt = _dateTimeValue(data['createdAt']) ?? localUser.createdAt
-      ..isSynced = true
-      ..serverId = snapshot.id;
-    await localUser.save();
+    try {
+      final username = _stringValue(
+        data['username'],
+        fallback: _normalizedUsername(localUser),
+      );
+      localUser
+        ..firebaseUid = _stringValue(data['uid'], fallback: snapshot.id)
+        ..username = username
+        ..email = _stringValue(data['email'], fallback: localUser.email)
+        ..displayName =
+            _stringOrNull(data['displayName'], fallback: localUser.displayName) ??
+            username
+        ..handle =
+            _stringOrNull(data['handle'], fallback: localUser.handle) ??
+            _normalizedHandle(localUser, username)
+        ..createdAt = _dateTimeValue(data['createdAt']) ?? localUser.createdAt
+        ..isSynced = true
+        ..serverId = snapshot.id;
+      await localUser.save();
 
-    final currentUsername = AuthMemoryStore.currentState.username?.trim() ?? '';
-    if (currentUsername != username) {
-      await AuthMemoryStore.updateCurrentUsername(username);
+      final currentUsername = AuthMemoryStore.currentState.username?.trim() ?? '';
+      if (currentUsername != username) {
+        await AuthMemoryStore.updateCurrentUsername(username);
+      }
+
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityUser,
+        entityId: snapshot.id,
+        action: SyncLogService.actionMerge,
+        success: true,
+      ));
+    } catch (error) {
+      debugPrint('Cloud sync merge user failed: $error');
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityUser,
+        entityId: snapshot.id,
+        action: SyncLogService.actionMerge,
+        success: false,
+      ));
     }
   }
 
@@ -460,6 +543,7 @@ class CloudSyncService {
     required int localUserId,
   }) async {
     for (final document in snapshot.docs) {
+      try {
       final existingExpense = _findByServerId(
         LocalStorageService.expenseBox.values,
         document.id,
@@ -551,6 +635,22 @@ class CloudSyncService {
       } else {
         await expense.save();
       }
+
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityExpense,
+        entityId: document.id,
+        action: SyncLogService.actionMerge,
+        success: true,
+      ));
+      } catch (error) {
+        debugPrint('Cloud sync merge expense ${document.id} failed: $error');
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityExpense,
+          entityId: document.id,
+          action: SyncLogService.actionMerge,
+          success: false,
+        ));
+      }
     }
   }
 
@@ -559,6 +659,7 @@ class CloudSyncService {
     required int localUserId,
   }) async {
     for (final document in snapshot.docs) {
+      try {
       final existingIncome = _findByServerId(
         LocalStorageService.incomeBox.values,
         document.id,
@@ -599,6 +700,22 @@ class CloudSyncService {
       } else {
         await income.save();
       }
+
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityIncome,
+        entityId: document.id,
+        action: SyncLogService.actionMerge,
+        success: true,
+      ));
+      } catch (error) {
+        debugPrint('Cloud sync merge income ${document.id} failed: $error');
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityIncome,
+          entityId: document.id,
+          action: SyncLogService.actionMerge,
+          success: false,
+        ));
+      }
     }
   }
 
@@ -607,6 +724,7 @@ class CloudSyncService {
     required int localUserId,
   }) async {
     for (final document in snapshot.docs) {
+      try {
       final existingGoal = _findByServerId(
         LocalStorageService.goalBox.values,
         document.id,
@@ -643,6 +761,22 @@ class CloudSyncService {
       } else {
         await goal.save();
       }
+
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityGoal,
+        entityId: document.id,
+        action: SyncLogService.actionMerge,
+        success: true,
+      ));
+      } catch (error) {
+        debugPrint('Cloud sync merge goal ${document.id} failed: $error');
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityGoal,
+          entityId: document.id,
+          action: SyncLogService.actionMerge,
+          success: false,
+        ));
+      }
     }
   }
 
@@ -651,6 +785,7 @@ class CloudSyncService {
     required int localUserId,
   }) async {
     for (final document in snapshot.docs) {
+      try {
       final existingLabel = _findByServerId(
         LocalStorageService.labelBox.values,
         document.id,
@@ -678,6 +813,22 @@ class CloudSyncService {
         await _localStorage.saveLabel(label);
       } else {
         await label.save();
+      }
+
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityLabel,
+        entityId: document.id,
+        action: SyncLogService.actionMerge,
+        success: true,
+      ));
+      } catch (error) {
+        debugPrint('Cloud sync merge label ${document.id} failed: $error');
+        unawaited(SyncLogService.logSync(
+          entityType: SyncLogService.entityLabel,
+          entityId: document.id,
+          action: SyncLogService.actionMerge,
+          success: false,
+        ));
       }
     }
   }
@@ -941,6 +1092,7 @@ class CloudSyncService {
   }
 
   Future<bool> _deleteRecord({
+    required String entityType,
     required String collectionName,
     required String? serverId,
     required String fallbackDocumentId,
@@ -956,7 +1108,25 @@ class CloudSyncService {
       );
     }
 
-    await deleteLocal();
+    try {
+      await deleteLocal();
+    } catch (error) {
+      unawaited(SyncLogService.logSync(
+        entityType: entityType,
+        entityId: serverId ?? fallbackDocumentId,
+        action: SyncLogService.actionDelete,
+        success: false,
+      ));
+      rethrow;
+    }
+
+    unawaited(SyncLogService.logSync(
+      entityType: entityType,
+      entityId: serverId ?? fallbackDocumentId,
+      action: SyncLogService.actionDelete,
+      success: deletedFromCloud,
+    ));
+
     return deletedFromCloud;
   }
 

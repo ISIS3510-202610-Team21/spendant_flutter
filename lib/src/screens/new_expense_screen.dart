@@ -25,6 +25,8 @@ import '../services/auto_categorization_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/sync_log_service.dart';
+import '../utils/url_utils.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
@@ -197,7 +199,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         editingExpense.receiptCloudinaryUrl,
       );
       if (_receiptCloudinaryUrl == null &&
-          _looksLikeRemoteUrl(_receiptImagePath)) {
+          looksLikeRemoteUrl(_receiptImagePath)) {
         _receiptCloudinaryUrl = _receiptImagePath;
         _receiptImagePath = null;
       }
@@ -864,15 +866,20 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   }
 
   Future<String?> _resolveReceiptCloudinaryUrl() async {
-    final payload = _selectedReceiptPayload;
-    if (payload == null) {
+    // Case 1: no new receipt selected — return whatever URL is already stored.
+    // This covers both existing remote URLs and legacy local-path-as-URL records.
+    if (_selectedReceiptPayload == null) {
       return _effectiveReceiptCloudinaryUrl;
     }
 
+    // Case 2: a new receipt was selected but already uploaded during this
+    // editing session — reuse the cached URL to avoid a duplicate upload.
     if (_receiptCloudinaryUrl != null) {
       return _receiptCloudinaryUrl;
     }
 
+    // Case 3: new receipt selected and not yet uploaded — upload now.
+    final payload = _selectedReceiptPayload!;
     try {
       final uploadedUrl = await _cloudinaryReceiptUploadService.uploadReceipt(
         userId: _currentUserId,
@@ -882,8 +889,17 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _receiptCloudinaryUrl = uploadedUrl;
       return uploadedUrl;
     } catch (error) {
+      // Upload failed — the expense is saved without a cloud receipt URL.
+      // The local file path (if any) remains accessible on this device.
       debugPrint('Cloudinary receipt upload failed: $error');
-      return _receiptCloudinaryUrl;
+      unawaited(SyncLogService.logSync(
+        entityType: SyncLogService.entityExpense,
+        entityId: null,
+        action: SyncLogService.actionUpload,
+        success: false,
+        errorMessage: 'Cloudinary receipt upload failed: $error',
+      ));
+      return null;
     }
   }
 
@@ -898,7 +914,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final normalizedReceiptImagePath = _normalizedOptionalText(
       _receiptImagePath,
     );
-    if (_looksLikeRemoteUrl(normalizedReceiptImagePath)) {
+    if (looksLikeRemoteUrl(normalizedReceiptImagePath)) {
       return normalizedReceiptImagePath;
     }
 
@@ -909,7 +925,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     final normalizedReceiptImagePath = _normalizedOptionalText(
       _receiptImagePath,
     );
-    if (_looksLikeRemoteUrl(normalizedReceiptImagePath)) {
+    if (looksLikeRemoteUrl(normalizedReceiptImagePath)) {
       return null;
     }
 
@@ -946,16 +962,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     );
   }
 
-  bool _looksLikeRemoteUrl(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return false;
-    }
-
-    final uri = Uri.tryParse(value.trim());
-    return uri != null &&
-        uri.hasScheme &&
-        (uri.isScheme('http') || uri.isScheme('https'));
-  }
 
   void _showScanMessage(String message) {
     showDialog<void>(

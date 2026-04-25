@@ -15,6 +15,7 @@ import 'auth_memory_store.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
 import 'sync_log_service.dart';
+import '../utils/url_utils.dart';
 
 class CloudSyncSummary {
   const CloudSyncSummary({
@@ -238,13 +239,15 @@ class CloudSyncService {
           action: SyncLogService.actionUpload,
           success: true,
         ));
-      } catch (_) {
+      } catch (error) {
         failures++;
+        debugPrint('Cloud sync upload expense ${expense.serverId} failed: $error');
         unawaited(SyncLogService.logSync(
           entityType: SyncLogService.entityExpense,
           entityId: expense.serverId,
           action: SyncLogService.actionUpload,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -287,13 +290,15 @@ class CloudSyncService {
           action: SyncLogService.actionUpload,
           success: true,
         ));
-      } catch (_) {
+      } catch (error) {
         failures++;
+        debugPrint('Cloud sync upload income ${income.serverId} failed: $error');
         unawaited(SyncLogService.logSync(
           entityType: SyncLogService.entityIncome,
           entityId: income.serverId,
           action: SyncLogService.actionUpload,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -336,13 +341,15 @@ class CloudSyncService {
           action: SyncLogService.actionUpload,
           success: true,
         ));
-      } catch (_) {
+      } catch (error) {
         failures++;
+        debugPrint('Cloud sync upload goal ${goal.serverId} failed: $error');
         unawaited(SyncLogService.logSync(
           entityType: SyncLogService.entityGoal,
           entityId: goal.serverId,
           action: SyncLogService.actionUpload,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -372,13 +379,15 @@ class CloudSyncService {
           action: SyncLogService.actionUpload,
           success: true,
         ));
-      } catch (_) {
+      } catch (error) {
         failures++;
+        debugPrint('Cloud sync upload label ${label.serverId} failed: $error');
         unawaited(SyncLogService.logSync(
           entityType: SyncLogService.entityLabel,
           entityId: label.serverId,
           action: SyncLogService.actionUpload,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -417,13 +426,15 @@ class CloudSyncService {
           action: SyncLogService.actionUpload,
           success: true,
         ));
-      } catch (_) {
+      } catch (error) {
         failures++;
+        debugPrint('Cloud sync upload user ${user.serverId} failed: $error');
         unawaited(SyncLogService.logSync(
           entityType: SyncLogService.entityUser,
           entityId: user.serverId,
           action: SyncLogService.actionUpload,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -534,6 +545,7 @@ class CloudSyncService {
         entityId: snapshot.id,
         action: SyncLogService.actionMerge,
         success: false,
+        errorMessage: error.toString(),
       ));
     }
   }
@@ -568,12 +580,15 @@ class CloudSyncService {
         data['receiptImagePath'],
         fallback: expense.receiptImagePath,
       );
+      // Legacy records stored the Cloudinary URL directly in receiptImagePath.
+      // receiptCloudinaryUrl is the canonical field going forward; we fall back
+      // to receiptImagePath only when it contains an http/https URL.
       final mergedReceiptCloudinaryUrl =
           _stringOrNull(
             data['receiptCloudinaryUrl'],
             fallback: expense.receiptCloudinaryUrl,
           ) ??
-          (_looksLikeRemoteUrl(mergedReceiptImagePath)
+          (looksLikeRemoteUrl(mergedReceiptImagePath)
               ? mergedReceiptImagePath
               : null);
       expense
@@ -601,7 +616,8 @@ class CloudSyncService {
           data['source'],
           fallback: expense.source.isNotEmpty ? expense.source : 'MANUAL',
         )
-        ..receiptImagePath = _looksLikeRemoteUrl(mergedReceiptImagePath)
+        // Store local paths only; remote URLs are promoted to receiptCloudinaryUrl.
+        ..receiptImagePath = looksLikeRemoteUrl(mergedReceiptImagePath)
             ? null
             : mergedReceiptImagePath
         ..receiptCloudinaryUrl = mergedReceiptCloudinaryUrl
@@ -661,6 +677,7 @@ class CloudSyncService {
           entityId: document.id,
           action: SyncLogService.actionMerge,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -726,6 +743,7 @@ class CloudSyncService {
           entityId: document.id,
           action: SyncLogService.actionMerge,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -787,6 +805,7 @@ class CloudSyncService {
           entityId: document.id,
           action: SyncLogService.actionMerge,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -840,6 +859,7 @@ class CloudSyncService {
           entityId: document.id,
           action: SyncLogService.actionMerge,
           success: false,
+          errorMessage: error.toString(),
         ));
       }
     }
@@ -1622,18 +1642,6 @@ class CloudSyncService {
     }
 
     return DateTime.tryParse(normalized);
-  }
-
-  bool _looksLikeRemoteUrl(String? value) {
-    final normalized = value?.trim() ?? '';
-    if (normalized.isEmpty) {
-      return false;
-    }
-
-    final uri = Uri.tryParse(normalized);
-    return uri != null &&
-        uri.hasScheme &&
-        (uri.isScheme('http') || uri.isScheme('https'));
   }
 
   String? _derivePrimaryCategoryFromLabels(Iterable<String> labels) {

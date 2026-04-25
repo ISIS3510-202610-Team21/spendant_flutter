@@ -37,14 +37,15 @@ class ExpenseModelAdapter extends TypeAdapter<ExpenseModel> {
       ..serverId = fields[17] as String?
       ..primaryCategory = fields[18] as String?
       ..detailLabels = (fields[19] as List).cast<String>()
-      ..isRegretted = fields[20] as bool? ?? false
-      ..wasAutoCategorized = fields[21] as bool? ?? false;
+      ..isRegretted = fields[20] as bool
+      ..wasAutoCategorized = fields[21] as bool
+      ..receiptCloudinaryUrl = fields[22] as String?;
   }
 
   @override
   void write(BinaryWriter writer, ExpenseModel obj) {
     writer
-      ..writeByte(22)
+      ..writeByte(23)
       ..writeByte(0)
       ..write(obj.userId)
       ..writeByte(1)
@@ -88,7 +89,9 @@ class ExpenseModelAdapter extends TypeAdapter<ExpenseModel> {
       ..writeByte(20)
       ..write(obj.isRegretted)
       ..writeByte(21)
-      ..write(obj.wasAutoCategorized);
+      ..write(obj.wasAutoCategorized)
+      ..writeByte(22)
+      ..write(obj.receiptCloudinaryUrl);
   }
 
   @override

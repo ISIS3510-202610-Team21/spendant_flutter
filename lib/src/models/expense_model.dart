@@ -69,4 +69,7 @@ class ExpenseModel extends HiveObject {
 
   @HiveField(21)
   bool wasAutoCategorized = false;
+
+  @HiveField(22)
+  String? receiptCloudinaryUrl;
 }

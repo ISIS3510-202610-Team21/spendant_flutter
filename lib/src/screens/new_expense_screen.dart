@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ import '../services/receipt_scan_service.dart';
 import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/local_receipt_image.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
@@ -73,7 +75,6 @@ const List<_ExpenseLabelGroup> _expenseLabelGroups = <_ExpenseLabelGroup>[
     sublabels: <String>['Emergency', 'Impulse', 'Owed'],
   ),
 ];
-
 
 enum _ReceiptSourceOption { camera, gallery, file }
 
@@ -131,6 +132,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   ExpenseLocationSelection? _selectedLocation;
   _ReceiptImportPayload? _selectedReceiptPayload;
   String? _receiptImagePath;
+  String? _receiptCloudinaryUrl;
   bool _isScanningReceipt = false;
   bool _isSavingExpense = false;
   bool _isDeletingExpense = false;
@@ -191,6 +193,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       _receiptImagePath = _normalizedOptionalText(
         editingExpense.receiptImagePath,
       );
+      _receiptCloudinaryUrl = _normalizedOptionalText(
+        editingExpense.receiptCloudinaryUrl,
+      );
+      if (_receiptCloudinaryUrl == null &&
+          _looksLikeRemoteUrl(_receiptImagePath)) {
+        _receiptCloudinaryUrl = _receiptImagePath;
+        _receiptImagePath = null;
+      }
       _isExpenseRegretted = editingExpense.isRegretted;
     } catch (error, stackTrace) {
       debugPrint('Failed to hydrate expense editor: $error');
@@ -613,6 +623,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     setState(() {
       _selectedReceiptPayload = payload;
       _receiptImagePath = payload.path;
+      _receiptCloudinaryUrl = null;
       _isScanningReceipt = true;
     });
 
@@ -852,10 +863,14 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
-  Future<String?> _resolveReceiptImagePath() async {
+  Future<String?> _resolveReceiptCloudinaryUrl() async {
     final payload = _selectedReceiptPayload;
-    if (payload == null || _looksLikeRemoteUrl(_receiptImagePath)) {
-      return _receiptImagePath;
+    if (payload == null) {
+      return _effectiveReceiptCloudinaryUrl;
+    }
+
+    if (_receiptCloudinaryUrl != null) {
+      return _receiptCloudinaryUrl;
     }
 
     try {
@@ -864,12 +879,71 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         fileName: payload.fileName,
         bytes: payload.bytes,
       );
-      _receiptImagePath = uploadedUrl;
+      _receiptCloudinaryUrl = uploadedUrl;
       return uploadedUrl;
     } catch (error) {
       debugPrint('Cloudinary receipt upload failed: $error');
-      return _receiptImagePath;
+      return _receiptCloudinaryUrl;
     }
+  }
+
+  String? get _effectiveReceiptCloudinaryUrl {
+    final normalizedCloudinaryUrl = _normalizedOptionalText(
+      _receiptCloudinaryUrl,
+    );
+    if (normalizedCloudinaryUrl != null) {
+      return normalizedCloudinaryUrl;
+    }
+
+    final normalizedReceiptImagePath = _normalizedOptionalText(
+      _receiptImagePath,
+    );
+    if (_looksLikeRemoteUrl(normalizedReceiptImagePath)) {
+      return normalizedReceiptImagePath;
+    }
+
+    return null;
+  }
+
+  String? get _effectiveLocalReceiptImagePath {
+    final normalizedReceiptImagePath = _normalizedOptionalText(
+      _receiptImagePath,
+    );
+    if (_looksLikeRemoteUrl(normalizedReceiptImagePath)) {
+      return null;
+    }
+
+    return normalizedReceiptImagePath;
+  }
+
+  bool get _hasReceiptPreview {
+    return _effectiveReceiptCloudinaryUrl != null ||
+        _effectiveLocalReceiptImagePath != null ||
+        _selectedReceiptPayload != null;
+  }
+
+  Widget _buildReceiptPreviewContent() {
+    final receiptCloudinaryUrl = _effectiveReceiptCloudinaryUrl;
+    final localReceiptPreview = buildLocalReceiptImage(
+      imagePath: _effectiveLocalReceiptImagePath,
+      imageBytes: _selectedReceiptPayload?.bytes,
+      fit: BoxFit.cover,
+    );
+
+    if (receiptCloudinaryUrl == null) {
+      return localReceiptPreview;
+    }
+
+    return CachedNetworkImage(
+      imageUrl: receiptCloudinaryUrl,
+      fit: BoxFit.cover,
+      placeholder: (context, url) {
+        return _ReceiptPreviewPlaceholder(
+          child: const CircularProgressIndicator(strokeWidth: 2),
+        );
+      },
+      errorWidget: (context, url, error) => localReceiptPreview,
+    );
   }
 
   bool _looksLikeRemoteUrl(String? value) {
@@ -1076,7 +1150,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         _selectedLabelsWereAutoAssigned ||
         (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
-    final receiptImagePath = await _resolveReceiptImagePath();
+    final receiptCloudinaryUrl = await _resolveReceiptCloudinaryUrl();
+    final receiptImagePath = _effectiveLocalReceiptImagePath;
     final normalizedLocationLabel = _normalizedOptionalText(
       _selectedLocation?.label,
     );
@@ -1095,6 +1170,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           ? editingExpense!.source
           : (_lastReceiptScanResult != null ? 'OCR' : 'MANUAL')
       ..receiptImagePath = receiptImagePath
+      ..receiptCloudinaryUrl = receiptCloudinaryUrl
       ..isRegretted = _isExpenseRegretted
       ..isPendingCategory = false
       ..isRecurring = editingExpense?.isRecurring ?? false
@@ -1437,6 +1513,44 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                             ),
                                     ),
                                   ),
+                                  if (_hasReceiptPreview) ...[
+                                    const SizedBox(height: 18),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF7F4EA),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: const Color(0xFFE1D8C3),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Receipt preview',
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppPalette.ink,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                            child: AspectRatio(
+                                              aspectRatio: 4 / 3,
+                                              child:
+                                                  _buildReceiptPreviewContent(),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -1750,6 +1864,20 @@ class _MockReceiptRow extends StatelessWidget {
           Text(value, style: style),
         ],
       ),
+    );
+  }
+}
+
+class _ReceiptPreviewPlaceholder extends StatelessWidget {
+  const _ReceiptPreviewPlaceholder({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFFF1EADB)),
+      child: Center(child: child),
     );
   }
 }

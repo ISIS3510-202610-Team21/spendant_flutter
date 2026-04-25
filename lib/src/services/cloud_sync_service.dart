@@ -564,6 +564,18 @@ class CloudSyncService {
         labelNames: data['labelNames'],
         fallback: expense.detailLabels,
       );
+      final mergedReceiptImagePath = _stringOrNull(
+        data['receiptImagePath'],
+        fallback: expense.receiptImagePath,
+      );
+      final mergedReceiptCloudinaryUrl =
+          _stringOrNull(
+            data['receiptCloudinaryUrl'],
+            fallback: expense.receiptCloudinaryUrl,
+          ) ??
+          (_looksLikeRemoteUrl(mergedReceiptImagePath)
+              ? mergedReceiptImagePath
+              : null);
       expense
         ..userId = localUserId
         ..name = _stringValue(data['name'], fallback: expense.name)
@@ -589,10 +601,10 @@ class CloudSyncService {
           data['source'],
           fallback: expense.source.isNotEmpty ? expense.source : 'MANUAL',
         )
-        ..receiptImagePath = _stringOrNull(
-          data['receiptImagePath'],
-          fallback: expense.receiptImagePath,
-        )
+        ..receiptImagePath = _looksLikeRemoteUrl(mergedReceiptImagePath)
+            ? null
+            : mergedReceiptImagePath
+        ..receiptCloudinaryUrl = mergedReceiptCloudinaryUrl
         ..isPendingCategory = _boolValue(
           data['isPendingCategory'],
           fallback: expense.isPendingCategory,
@@ -1174,6 +1186,7 @@ class CloudSyncService {
       'locationName': expense.locationName,
       'source': expense.source,
       'receiptImagePath': expense.receiptImagePath,
+      'receiptCloudinaryUrl': expense.receiptCloudinaryUrl,
       'isPendingCategory': expense.isPendingCategory,
       'isRecurring': expense.isRecurring || expense.isRegretted,
       'recurrenceInterval': expense.recurrenceInterval,
@@ -1611,6 +1624,18 @@ class CloudSyncService {
     return DateTime.tryParse(normalized);
   }
 
+  bool _looksLikeRemoteUrl(String? value) {
+    final normalized = value?.trim() ?? '';
+    if (normalized.isEmpty) {
+      return false;
+    }
+
+    final uri = Uri.tryParse(normalized);
+    return uri != null &&
+        uri.hasScheme &&
+        (uri.isScheme('http') || uri.isScheme('https'));
+  }
+
   String? _derivePrimaryCategoryFromLabels(Iterable<String> labels) {
     for (final label in labels) {
       final normalizedLabel = label.trim();
@@ -1618,7 +1643,8 @@ class CloudSyncService {
         continue;
       }
 
-      final category = ExpenseVisuals.detailLabelPrimaryCategories[normalizedLabel];
+      final category =
+          ExpenseVisuals.detailLabelPrimaryCategories[normalizedLabel];
       if (category != null) {
         return category;
       }

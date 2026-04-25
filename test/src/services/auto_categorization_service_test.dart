@@ -203,6 +203,9 @@ class _FakeConnectivityService implements ConnectivityService {
 
   @override
   Future<bool> hasInternetConnection() async => hasInternet;
+
+  @override
+  Stream<bool> get connectivityStream => Stream<bool>.value(hasInternet);
 }
 
 class _FakeEmbeddingService implements EmbeddingService {

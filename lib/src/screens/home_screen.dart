@@ -25,6 +25,7 @@ import '../services/notification_feed_service.dart';
 import '../services/notifications_store.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import 'new_expense_screen.dart';
 
@@ -200,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onNotificationsTap: _openNotifications,
               onLogoutTap: _handleLogout,
             ),
+            const NoInternetBanner(),
             Expanded(
               child: AnimatedBuilder(
                 animation: _homeDependencies,

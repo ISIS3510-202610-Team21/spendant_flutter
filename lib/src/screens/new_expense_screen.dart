@@ -29,9 +29,11 @@ import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
 import '../services/receipt_scan_service.dart';
+import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/local_receipt_image.dart';
+import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
@@ -492,7 +494,86 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
   }
 
+  Future<void> _showNoInternetDialog({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(
+              color: AppPalette.field,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.fieldHint,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'OK',
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickLocation() async {
+    if (!ConnectivityMonitor.isOnline) {
+      await _showNoInternetDialog(
+        title: 'No internet connection',
+        message:
+            'The map view requires internet. Please connect to the internet to pick a location.',
+      );
+      return;
+    }
+
     final selected = await Navigator.of(context).push<ExpenseLocationSelection>(
       MaterialPageRoute(
         builder: (_) => LocationPickerScreen(initialValue: _selectedLocation),
@@ -898,6 +979,17 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
       return;
     }
 
+    if (!ConnectivityMonitor.isOnline) {
+      if (mounted) {
+        await _showNoInternetDialog(
+          title: 'No internet connection',
+          message:
+              'Auto-categorization requires internet. Connect to the internet to use this feature.',
+        );
+      }
+      return;
+    }
+
     final result = await _autoCategorizationService.categorizeExpense(
       expenseName,
     );
@@ -1223,6 +1315,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                     _handleConfirm();
                   },
                 ),
+                const NoInternetBanner(),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {

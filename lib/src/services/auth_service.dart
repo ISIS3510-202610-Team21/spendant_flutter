@@ -35,6 +35,8 @@ class AuthService {
        _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance;
 
+  static const Duration _networkTimeout = Duration(seconds: 10);
+
   final LocalStorageService _localStorage;
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
@@ -61,10 +63,12 @@ class AuthService {
           );
         }
 
-        final authResult = await _firebaseAuth.signInWithEmailAndPassword(
-          email: resolvedEmail,
-          password: password,
-        );
+        final authResult = await _firebaseAuth
+            .signInWithEmailAndPassword(
+              email: resolvedEmail,
+              password: password,
+            )
+            .timeout(_networkTimeout);
         final firebaseUid = authResult.user?.uid.trim();
         if (firebaseUid == null || firebaseUid.isEmpty) {
           return const AuthResult(
@@ -90,10 +94,12 @@ class AuthService {
         return AuthResult(user: cachedUser);
       }
 
-      final authResult = await _firebaseAuth.signInWithEmailAndPassword(
-        email: localUser.email.trim(),
-        password: password,
-      );
+      final authResult = await _firebaseAuth
+          .signInWithEmailAndPassword(
+            email: localUser.email.trim(),
+            password: password,
+          )
+          .timeout(_networkTimeout);
       final firebaseUid = authResult.user?.uid.trim();
       if (firebaseUid == null || firebaseUid.isEmpty) {
         return const AuthResult(
@@ -149,7 +155,7 @@ class AuthService {
       final isNetwork = error is SocketException || error is TimeoutException;
       return AuthResult(
         errorMessage: isNetwork
-            ? 'Connection lost. Please try again.'
+            ? 'Connection lost while signing in. Please try again.'
             : 'Incorrect username or password. Try again.',
         isNetworkError: isNetwork,
       );
@@ -172,10 +178,12 @@ class AuthService {
     try {
       await _ensureFirebaseReady();
 
-      final authResult = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: normalizedEmail,
-        password: password,
-      );
+      final authResult = await _firebaseAuth
+          .createUserWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          )
+          .timeout(_networkTimeout);
 
       final firebaseUid = authResult.user?.uid.trim();
       if (firebaseUid == null || firebaseUid.isEmpty) {
@@ -220,10 +228,9 @@ class AuthService {
         isNetworkError: true,
       );
     } catch (error) {
-      return AuthResult(
-        errorMessage: error.toString().trim().isEmpty
-            ? 'This account could not be created right now.'
-            : 'This account could not be created right now.',
+      debugPrint('AuthService.register unexpected error: $error');
+      return const AuthResult(
+        errorMessage: 'This account could not be created right now.',
       );
     }
   }
@@ -251,7 +258,8 @@ class AuthService {
       await _firestore
           .collection('users')
           .doc(profile.uid)
-          .set(profile.toMap());
+          .set(profile.toMap())
+          .timeout(_networkTimeout);
     } catch (error) {
       debugPrint('AuthService.saveUserToFirestore failed: $error');
     }
@@ -263,9 +271,14 @@ class AuthService {
           .collection('users')
           .where('username', isEqualTo: username.trim())
           .limit(1)
-          .get();
+          .get()
+          .timeout(_networkTimeout);
 
       return result.docs.firstOrNull?.data()['email'] as String?;
+    } on TimeoutException {
+      // Propagate so the caller treats this as a network error, not a
+      // "user not found" — otherwise the user would see "wrong password".
+      rethrow;
     } catch (error) {
       debugPrint('AuthService.findEmailByUsernameInFirestore failed: $error');
       return null;
@@ -279,7 +292,8 @@ class AuthService {
       final snapshot = await _firestore
           .collection('users')
           .doc(firebaseUid)
-          .get();
+          .get()
+          .timeout(_networkTimeout);
       if (!snapshot.exists) {
         return null;
       }
@@ -354,7 +368,7 @@ class AuthService {
       case 'weak-password':
         return 'Password must be at least 6 characters.';
       case 'network-request-failed':
-        return 'No internet connection.';
+        return 'No internet connection. Please try again.';
       case 'operation-not-allowed':
         return 'Email/password login is not enabled in Firebase Auth.';
       default:
@@ -369,7 +383,7 @@ class AuthService {
       case 'permission-denied':
         return 'Firebase blocked access to user profiles. Check Firestore rules.';
       case 'unavailable':
-        return 'No internet connection.';
+        return 'No internet connection. Please try again.';
       default:
         return error.message?.trim().isNotEmpty == true
             ? error.message!.trim()

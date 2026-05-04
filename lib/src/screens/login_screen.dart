@@ -212,7 +212,13 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     final savedAccess = await _resolveSavedAccessFor(user, localUserId);
     user.isFingerprintEnabled = savedAccess.fingerprintEnabled;
     await user.save();
-    await FirebaseUidService.bindFirebaseUidToUser(user);
+
+    // Non-critical: bind Firebase UID for cross-device sync. If the network
+    // drops between auth success and this call, skip it — CloudSyncService
+    // will repair the binding on the next sync cycle.
+    try {
+      await FirebaseUidService.bindFirebaseUidToUser(user);
+    } catch (_) {}
 
     await AuthMemoryStore.saveSession(
       userId: localUserId,
@@ -225,8 +231,13 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
     } catch (_) {
       // Keep the local login flow responsive even if cloud sync fails.
     }
-    await AppNotificationService.initialize();
-    await AppNotificationService.refresh();
+
+    // Non-critical: notification setup runs after auth. Network failures here
+    // must not surface as auth errors — the user is already signed in.
+    try {
+      await AppNotificationService.initialize();
+      await AppNotificationService.refresh();
+    } catch (_) {}
 
     if (!mounted) {
       return;

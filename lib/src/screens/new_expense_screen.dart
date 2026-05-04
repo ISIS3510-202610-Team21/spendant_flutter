@@ -2278,7 +2278,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   void onConnectivityChanged({required bool isOnline}) {
     setState(() => _isOffline = !isOnline);
     if (!isOnline) {
-      unawaited(_showOfflineMapDialog());
+      unawaited(_showOfflineAndExit());
+    }
+  }
+
+  Future<void> _showOfflineAndExit() async {
+    await _showOfflineMapDialog();
+    if (mounted) {
+      Navigator.of(context).pop();
     }
   }
 
@@ -2393,6 +2400,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
               onClose: () => Navigator.of(context).pop(),
               onConfirm: _submitSelection,
             ),
+            const NoInternetBanner(),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),

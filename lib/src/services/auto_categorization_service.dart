@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -116,11 +117,17 @@ class AutoCategorizationService {
     'utility': 'Utilities',
   };
 
+  static const int _cacheCapacity = 100;
+
   final PineconeConfiguration? _configuration;
   final PineconeRepository _repository;
   final EmbeddingService _embeddingService;
   final ConnectivityService _connectivityService;
+  final LinkedHashMap<String, AutoCategorizationResult> _cache =
+      LinkedHashMap<String, AutoCategorizationResult>();
   Future<int>? _activeBackfill;
+
+  String _cacheKey(String expenseName) => expenseName.trim().toLowerCase();
 
   bool get isConfigured =>
       _configuration != null &&
@@ -184,6 +191,14 @@ class AutoCategorizationService {
   Future<AutoCategorizationResult> _categorizeNormalizedMerchant(
     String normalizedMerchant,
   ) async {
+    final key = _cacheKey(normalizedMerchant);
+    final cached = _cache[key];
+    if (cached != null) {
+      _cache.remove(key);
+      _cache[key] = cached;
+      return cached;
+    }
+
     final hasInternet = await _connectivityService.hasInternetConnection();
     if (!hasInternet) {
       return const AutoCategorizationResult.manualRequired(
@@ -194,35 +209,43 @@ class AutoCategorizationService {
     try {
       final embedding = await _embeddingService.embedQuery(normalizedMerchant);
       final match = await _repository.queryNearest(vector: embedding);
+
+      final AutoCategorizationResult result;
       if (match == null) {
-        return const AutoCategorizationResult.manualRequired(
+        result = const AutoCategorizationResult.manualRequired(
           fallbackReason: AutoCategorizationFallbackReason.noMatch,
         );
+      } else {
+        final rawLabel = match.metadata['label']?.toString().trim();
+        if (rawLabel == null || rawLabel.isEmpty) {
+          result = AutoCategorizationResult.manualRequired(
+            fallbackReason:
+                AutoCategorizationFallbackReason.missingLabelMetadata,
+            score: match.score,
+          );
+        } else {
+          final label = _normalizeLabel(rawLabel) ?? rawLabel;
+          if (match.score < _similarityThreshold) {
+            result = AutoCategorizationResult.manualRequired(
+              fallbackReason: AutoCategorizationFallbackReason.lowConfidence,
+              score: match.score,
+            );
+          } else {
+            result = AutoCategorizationResult.autoAssigned(
+              label: label,
+              detailLabels: _detailLabelsFor(label),
+              primaryCategory: _primaryCategoryForLabel(label),
+              score: match.score,
+            );
+          }
+        }
       }
 
-      final rawLabel = match.metadata['label']?.toString().trim();
-      if (rawLabel == null || rawLabel.isEmpty) {
-        return AutoCategorizationResult.manualRequired(
-          fallbackReason: AutoCategorizationFallbackReason.missingLabelMetadata,
-          score: match.score,
-        );
+      if (_cache.length >= _cacheCapacity) {
+        _cache.remove(_cache.keys.first);
       }
-
-      final label = _normalizeLabel(rawLabel) ?? rawLabel;
-      if (match.score < _similarityThreshold) {
-        return AutoCategorizationResult.manualRequired(
-          fallbackReason: AutoCategorizationFallbackReason.lowConfidence,
-          score: match.score,
-        );
-      }
-
-      final detailLabels = _detailLabelsFor(label);
-      return AutoCategorizationResult.autoAssigned(
-        label: label,
-        detailLabels: detailLabels,
-        primaryCategory: _primaryCategoryForLabel(label),
-        score: match.score,
-      );
+      _cache[key] = result;
+      return result;
     } catch (_) {
       return const AutoCategorizationResult.manualRequired(
         fallbackReason: AutoCategorizationFallbackReason.requestFailed,

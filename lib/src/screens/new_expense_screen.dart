@@ -34,6 +34,8 @@ import '../services/receipt_scan_service.dart';
 import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../mixins/connectivity_aware_mixin.dart';
+import '../widgets/connectivity_status_banner.dart';
 import '../widgets/local_receipt_image.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
@@ -2223,7 +2225,8 @@ class LocationPickerScreen extends StatefulWidget {
   State<LocationPickerScreen> createState() => _LocationPickerScreenState();
 }
 
-class _LocationPickerScreenState extends State<LocationPickerScreen> {
+class _LocationPickerScreenState extends State<LocationPickerScreen>
+    with ConnectivityAwareStateMixin<LocationPickerScreen> {
   static const LatLng _defaultCenter = LatLng(4.60971, -74.08175);
 
   final ExpenseLocationService _locationService =
@@ -2240,6 +2243,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   bool _isResolvingLocation = false;
   String? _statusMessage;
   int _selectionRequestId = 0;
+  bool _isOffline = !ConnectivityMonitor.isOnline;
 
   bool get _canSave {
     return _selectedPoint != null ||
@@ -2270,6 +2274,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   LatLng get _cameraTarget => _selectedPoint ?? _defaultCenter;
+
+  @override
+  void onConnectivityChanged({required bool isOnline}) {
+    setState(() => _isOffline = !isOnline);
+  }
 
   @override
   void initState() {
@@ -2314,6 +2323,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               title: 'Pick Location',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: _submitSelection,
+            ),
+            const ConnectivityStatusBanner(
+              offlineMessage: 'You lost internet connection.',
+              impact: 'Map quality may be degraded.',
             ),
             Expanded(
               child: Padding(
@@ -2551,6 +2564,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
       _showLocationMessage('Type a place or address first.');
+      return;
+    }
+
+    // Fast-path: skip the network call and save the typed name immediately.
+    if (_isOffline) {
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _resolvedLabel = query;
+        _statusMessage =
+            'Location search needs internet. Your place name has been saved.';
+      });
       return;
     }
 

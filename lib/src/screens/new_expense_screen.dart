@@ -35,7 +35,6 @@ import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../mixins/connectivity_aware_mixin.dart';
-import '../widgets/connectivity_status_banner.dart';
 import '../widgets/local_receipt_image.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
@@ -2278,6 +2277,76 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   @override
   void onConnectivityChanged({required bool isOnline}) {
     setState(() => _isOffline = !isOnline);
+    if (!isOnline) {
+      unawaited(_showOfflineMapDialog());
+    }
+  }
+
+  Future<void> _showOfflineMapDialog() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(
+              color: AppPalette.field,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No internet connection',
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Map functionality has been disabled because there is no internet connection available.',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.fieldHint,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'OK',
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -2319,14 +2388,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         child: Column(
           children: [
             _ExpenseHeader(
-              isSubmitting: false,
+              isSubmitting: _isOffline,
               title: 'Pick Location',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: _submitSelection,
-            ),
-            const ConnectivityStatusBanner(
-              offlineMessage: 'You lost internet connection.',
-              impact: 'Map quality may be degraded.',
             ),
             Expanded(
               child: Padding(

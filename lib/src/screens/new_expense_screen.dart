@@ -34,6 +34,7 @@ import '../services/receipt_scan_service.dart';
 import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
+import '../mixins/connectivity_aware_mixin.dart';
 import '../widgets/local_receipt_image.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
@@ -899,6 +900,16 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         success: false,
         errorMessage: 'Cloudinary receipt upload failed: $error',
       ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Receipt saved locally. Cloud backup unavailable right now.',
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
       return null;
     }
   }
@@ -986,13 +997,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     if (!ConnectivityMonitor.isOnline) {
-      if (mounted) {
-        await _showNoInternetDialog(
-          title: 'No internet connection',
-          message:
-              'Auto-categorization requires internet. Connect to the internet to use this feature.',
-        );
-      }
+      // Offline: fall through to _showMissingLabelWarning so the user gets
+      // a single, actionable prompt instead of two sequential dialogs.
       return;
     }
 
@@ -1157,6 +1163,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
     final receiptCloudinaryUrl = await _resolveReceiptCloudinaryUrl();
+
+    // Guard: user may have closed the screen while the receipt upload was running.
+    if (!mounted) {
+      return;
+    }
+
     final receiptImagePath = _effectiveLocalReceiptImagePath;
     final normalizedLocationLabel = _normalizedOptionalText(
       _selectedLocation?.label,
@@ -1268,7 +1280,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "I don't recognize this expense yet. Give it a label so I can learn for next time.",
+                  ConnectivityMonitor.isOnline
+                      ? "I don't recognize this expense yet. Give it a label so I can learn for next time."
+                      : "Auto-categorization needs internet. Select a label manually to save.",
                   style: GoogleFonts.nunito(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -2210,7 +2224,8 @@ class LocationPickerScreen extends StatefulWidget {
   State<LocationPickerScreen> createState() => _LocationPickerScreenState();
 }
 
-class _LocationPickerScreenState extends State<LocationPickerScreen> {
+class _LocationPickerScreenState extends State<LocationPickerScreen>
+    with ConnectivityAwareStateMixin<LocationPickerScreen> {
   static const LatLng _defaultCenter = LatLng(4.60971, -74.08175);
 
   final ExpenseLocationService _locationService =
@@ -2227,6 +2242,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   bool _isResolvingLocation = false;
   String? _statusMessage;
   int _selectionRequestId = 0;
+  bool _isOffline = !ConnectivityMonitor.isOnline;
 
   bool get _canSave {
     return _selectedPoint != null ||
@@ -2257,6 +2273,81 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   LatLng get _cameraTarget => _selectedPoint ?? _defaultCenter;
+
+  @override
+  void onConnectivityChanged({required bool isOnline}) {
+    setState(() => _isOffline = !isOnline);
+    if (!isOnline) {
+      unawaited(_showOfflineMapDialog());
+    }
+  }
+
+  Future<void> _showOfflineMapDialog() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(
+              color: AppPalette.field,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No internet connection',
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Map functionality has been disabled because there is no internet connection available.',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.fieldHint,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'OK',
+                      style: GoogleFonts.nunito(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -2297,7 +2388,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         child: Column(
           children: [
             _ExpenseHeader(
-              isSubmitting: false,
+              isSubmitting: _isOffline,
               title: 'Pick Location',
               onClose: () => Navigator.of(context).pop(),
               onConfirm: _submitSelection,
@@ -2538,6 +2629,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
       _showLocationMessage('Type a place or address first.');
+      return;
+    }
+
+    // Fast-path: skip the network call and save the typed name immediately.
+    if (_isOffline) {
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _resolvedLabel = query;
+        _statusMessage =
+            'Location search needs internet. Your place name has been saved.';
+      });
       return;
     }
 
@@ -3158,7 +3260,7 @@ class _ExpenseHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: isSubmitting ? null : onClose,
+            onPressed: onClose,
             icon: const Icon(Icons.close, color: AppPalette.ink),
           ),
           Expanded(

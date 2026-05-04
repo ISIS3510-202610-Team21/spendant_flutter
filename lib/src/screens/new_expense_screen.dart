@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +34,6 @@ import '../services/connectivity_monitor.dart';
 import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../mixins/connectivity_aware_mixin.dart';
-import '../widgets/local_receipt_image.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
@@ -943,37 +941,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     return normalizedReceiptImagePath;
   }
 
-  bool get _hasReceiptPreview {
-    return _effectiveReceiptCloudinaryUrl != null ||
-        _effectiveLocalReceiptImagePath != null ||
-        _selectedReceiptPayload != null;
-  }
-
-  Widget _buildReceiptPreviewContent() {
-    final receiptCloudinaryUrl = _effectiveReceiptCloudinaryUrl;
-    final localReceiptPreview = buildLocalReceiptImage(
-      imagePath: _effectiveLocalReceiptImagePath,
-      imageBytes: _selectedReceiptPayload?.bytes,
-      fit: BoxFit.cover,
-    );
-
-    if (receiptCloudinaryUrl == null) {
-      return localReceiptPreview;
-    }
-
-    return CachedNetworkImage(
-      imageUrl: receiptCloudinaryUrl,
-      fit: BoxFit.cover,
-      placeholder: (context, url) {
-        return _ReceiptPreviewPlaceholder(
-          child: const CircularProgressIndicator(strokeWidth: 2),
-        );
-      },
-      errorWidget: (context, url, error) => localReceiptPreview,
-    );
-  }
-
-
   void _showScanMessage(String message) {
     showDialog<void>(
       context: context,
@@ -1533,44 +1500,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                             ),
                                     ),
                                   ),
-                                  if (_hasReceiptPreview) ...[
-                                    const SizedBox(height: 18),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF7F4EA),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: const Color(0xFFE1D8C3),
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Receipt preview',
-                                            style: GoogleFonts.nunito(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppPalette.ink,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 10),
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            child: AspectRatio(
-                                              aspectRatio: 4 / 3,
-                                              child:
-                                                  _buildReceiptPreviewContent(),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),
@@ -1884,20 +1813,6 @@ class _MockReceiptRow extends StatelessWidget {
           Text(value, style: style),
         ],
       ),
-    );
-  }
-}
-
-class _ReceiptPreviewPlaceholder extends StatelessWidget {
-  const _ReceiptPreviewPlaceholder({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFF1EADB)),
-      child: Center(child: child),
     );
   }
 }

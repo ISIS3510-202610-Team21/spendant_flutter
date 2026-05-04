@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub *)",
+      "Bash(flutter clean *)",
+      "Bash(dart analyze *)",
+      "Bash(./gradlew --stop)"
+    ]
+  }
+}

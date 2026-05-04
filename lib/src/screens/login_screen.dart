@@ -109,14 +109,13 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
       return;
     }
 
-    if (!ConnectivityMonitor.isOnline) {
+    if (!ConnectivityMonitor.isOnline && _isRegisterMode) {
       await showDialog<void>(
         context: context,
-        builder: (_) => _SpendAntAuthDecisionDialog(
+        builder: (_) => const _SpendAntAuthDecisionDialog(
           title: 'No internet connection',
-          message: _isRegisterMode
-              ? 'Registration requires internet. Your input will be kept until you close the app.'
-              : 'Logging in to a new account requires internet. Your input will be kept until you close the app.',
+          message:
+              'Registration requires internet. Your input will be kept until you close the app.',
           confirmLabel: 'OK',
         ),
       );

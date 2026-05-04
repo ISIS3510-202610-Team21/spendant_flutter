@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'cloud_sync_service.dart';
 import 'connectivity_service.dart';
 import 'local_notification_service.dart';
 
@@ -51,7 +52,12 @@ abstract final class ConnectivityMonitor {
       _showOfflineNotification();
     } else {
       _cancelOfflineNotification();
+      _syncOnReconnect();
     }
+  }
+
+  static void _syncOnReconnect() {
+    unawaited(CloudSyncService().syncAllPendingData());
   }
 
   static void _showOfflineNotification() {

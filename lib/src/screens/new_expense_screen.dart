@@ -899,6 +899,16 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         success: false,
         errorMessage: 'Cloudinary receipt upload failed: $error',
       ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Receipt saved locally. Cloud backup unavailable right now.',
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
       return null;
     }
   }
@@ -986,13 +996,8 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     }
 
     if (!ConnectivityMonitor.isOnline) {
-      if (mounted) {
-        await _showNoInternetDialog(
-          title: 'No internet connection',
-          message:
-              'Auto-categorization requires internet. Connect to the internet to use this feature.',
-        );
-      }
+      // Offline: fall through to _showMissingLabelWarning so the user gets
+      // a single, actionable prompt instead of two sequential dialogs.
       return;
     }
 
@@ -1157,6 +1162,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         (editingExpense?.wasAutoCategorized ?? false);
     final expense = editingExpense ?? ExpenseModel();
     final receiptCloudinaryUrl = await _resolveReceiptCloudinaryUrl();
+
+    // Guard: user may have closed the screen while the receipt upload was running.
+    if (!mounted) {
+      return;
+    }
+
     final receiptImagePath = _effectiveLocalReceiptImagePath;
     final normalizedLocationLabel = _normalizedOptionalText(
       _selectedLocation?.label,
@@ -1268,7 +1279,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "I don't recognize this expense yet. Give it a label so I can learn for next time.",
+                  ConnectivityMonitor.isOnline
+                      ? "I don't recognize this expense yet. Give it a label so I can learn for next time."
+                      : "Auto-categorization needs internet. Select a label manually to save.",
                   style: GoogleFonts.nunito(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -3158,7 +3171,7 @@ class _ExpenseHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: isSubmitting ? null : onClose,
+            onPressed: onClose,
             icon: const Icon(Icons.close, color: AppPalette.ink),
           ),
           Expanded(

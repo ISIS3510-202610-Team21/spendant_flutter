@@ -622,7 +622,7 @@ class _AmountHeadline extends StatelessWidget {
             text: '\$$formattedAmount ',
             style: GoogleFonts.nunito(
               fontSize: fontSize,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: amountColor,
             ),
           ),

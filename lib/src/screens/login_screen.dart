@@ -577,7 +577,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 textStyle: GoogleFonts.nunito(
                                   fontSize: 15,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                               child: Text(widget.footerActionLabel),
@@ -662,7 +662,7 @@ class _SpendAntAuthDecisionDialog extends StatelessWidget {
               title,
               style: GoogleFonts.nunito(
                 fontSize: 18,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -700,7 +700,7 @@ class _SpendAntAuthDecisionDialog extends StatelessWidget {
                     confirmLabel,
                     style: GoogleFonts.nunito(
                       fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: AppPalette.ink,
                     ),
                   ),

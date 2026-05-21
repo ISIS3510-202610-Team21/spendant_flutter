@@ -212,7 +212,7 @@ class _BudgetHeader extends StatelessWidget {
             'Budget and Income',
             style: GoogleFonts.nunito(
               fontSize: 20,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: AppPalette.ink,
             ),
           ),
@@ -269,7 +269,7 @@ class _IncomeCard extends StatelessWidget {
                   income.name,
                   style: GoogleFonts.nunito(
                     fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),
@@ -302,7 +302,7 @@ class _IncomeCard extends StatelessWidget {
                 AppCurrencyFormatService.formatCOP(income.amount),
                 style: GoogleFonts.nunito(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -366,7 +366,7 @@ class _EmptyIncomesCard extends StatelessWidget {
             'No incomes yet',
             style: GoogleFonts.nunito(
               fontSize: 18,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: AppPalette.ink,
             ),
           ),
@@ -701,7 +701,7 @@ class _NewIncomeHeader extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 19,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),

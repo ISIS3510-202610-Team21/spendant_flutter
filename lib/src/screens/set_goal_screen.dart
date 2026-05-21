@@ -673,7 +673,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
                             fontSize: 22,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             color: AppPalette.ink,
                           ),
                         ),
@@ -707,7 +707,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                     _profileName,
                     style: GoogleFonts.nunito(
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
@@ -816,7 +816,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                     textAlign: TextAlign.center,
                     style: GoogleFonts.nunito(
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: AppPalette.ink,
                     ),
                   ),
@@ -997,7 +997,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 24,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 30),
@@ -1047,7 +1047,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               '"We have a plan"',
               style: GoogleFonts.nunito(
                 fontSize: 28,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 20),
@@ -1113,7 +1113,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 28,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -1296,7 +1296,7 @@ class _GoalTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.nunito(
                           fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           color: AppPalette.ink,
                         ),
                       ),
@@ -1316,7 +1316,7 @@ class _GoalTile extends StatelessWidget {
                           'Active',
                           style: GoogleFonts.nunito(
                             fontSize: 11,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),
                         ),
@@ -1384,7 +1384,7 @@ class _GoalTile extends StatelessWidget {
                 '${goalState.progressPercent}%',
                 style: GoogleFonts.nunito(
                   fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -1486,7 +1486,7 @@ class _EmptyGoalsCard extends StatelessWidget {
             'No goals yet',
             style: GoogleFonts.nunito(
               fontSize: 18,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: AppPalette.ink,
             ),
           ),

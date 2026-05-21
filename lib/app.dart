@@ -8,6 +8,7 @@ import 'src/models/expense_model.dart';
 import 'src/models/goal_model.dart';
 import 'src/models/income_model.dart';
 import 'src/screens/budget_screen.dart';
+import 'src/screens/expense_watch_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
@@ -41,6 +42,7 @@ abstract final class AppRoutes {
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
   static const budget = '/budget';
+  static const expenseWatch = '/watch-expenses';
 }
 
 class SpendAntApp extends StatefulWidget {
@@ -91,7 +93,9 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     unawaited(AppRuntimeStateService.markForeground(false));
-    ConnectivityMonitor.isOnlineListenable.removeListener(_onConnectivityRestored);
+    ConnectivityMonitor.isOnlineListenable.removeListener(
+      _onConnectivityRestored,
+    );
     ConnectivityMonitor.dispose();
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();
@@ -232,6 +236,7 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
         AppRoutes.budget: (_) => const BudgetScreen(),
+        AppRoutes.expenseWatch: (_) => const ExpenseWatchScreen(),
       },
     );
   }

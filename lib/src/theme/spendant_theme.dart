@@ -52,23 +52,23 @@ abstract final class AppTextStyles {
   // --- Home screen ---
   static final screenTitle = GoogleFonts.nunito(
     fontSize: 20,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: AppPalette.ink,
   );
   static final amountCOP = GoogleFonts.nunito(
     fontSize: 24,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: AppPalette.ink,
   );
   static final categoryBarLabel = GoogleFonts.nunito(
     fontSize: 12,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: AppPalette.ink,
     height: 1,
   );
   static final expenseName = GoogleFonts.nunito(
     fontSize: 18,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: AppPalette.ink,
   );
   static final expenseCategory = GoogleFonts.nunito(
@@ -78,7 +78,7 @@ abstract final class AppTextStyles {
   );
   static final expenseAmount = GoogleFonts.nunito(
     fontSize: 16,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: Colors.black54,
   );
   static final emptyState = GoogleFonts.nunito(
@@ -89,7 +89,7 @@ abstract final class AppTextStyles {
   );
   static final dateGroupHeader = GoogleFonts.nunito(
     fontSize: 19,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w800,
     color: AppPalette.ink,
   );
   static final sectionLabel = GoogleFonts.nunito(

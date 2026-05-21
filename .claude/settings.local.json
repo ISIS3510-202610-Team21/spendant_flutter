@@ -4,7 +4,10 @@
       "Bash(flutter pub *)",
       "Bash(flutter clean *)",
       "Bash(dart analyze *)",
-      "Bash(./gradlew --stop)"
+      "Bash(./gradlew --stop)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Proyectos\\\\Moviles\\\\spendant_flutter\" -Force)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Proyectos\\\\Moviles\\\\spendant_flutter\" -Force | Select-Object Name, @{Name='Type'; Expression={if\\($_.PSIsContainer\\) {'Dir'} else {'File'}}})",
+      "Bash(grep -E \"\\\\.dart$\")"
     ]
   }
 }

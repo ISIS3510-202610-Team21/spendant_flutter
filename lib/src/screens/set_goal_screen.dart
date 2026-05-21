@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -26,7 +25,6 @@ import '../widgets/auth_chrome.dart';
 import '../widgets/no_internet_banner.dart';
 import '../widgets/spendant_bottom_nav.dart';
 import '../widgets/spendant_delete_dialog.dart';
-import 'edit_profile_screen.dart';
 import 'new_expense_screen.dart';
 
 class SetGoalScreen extends StatefulWidget {
@@ -41,8 +39,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   static const double _bottomDockButtonClearance = 112;
 
   int _currentStep = -1;
-  int _viewState = 0;
-  bool _didLoadInitialView = false;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
@@ -52,10 +48,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   String? _goalBudgetBlockedMessage;
   bool _isSavingGoal = false;
   bool _isSendingTestNotification = false;
-  String _profileName = 'John Doe';
-  String _profileHandle = '@johndoe';
-  Uint8List? _profileAvatarBytes;
-  String? _profileAvatarBase64;
   String? _activeGoalKey;
   int get _currentUserId => AuthMemoryStore.currentUserIdOrGuest;
 
@@ -78,35 +70,29 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
   Future<void> _toggleActiveGoal(GoalModel goal) async {
     final identity = _goalIdentityStr(goal);
     final newKey = _activeGoalKey == identity ? null : identity;
-    final prefs = await SharedPreferences.getInstance();
-    if (newKey == null) {
-      await prefs.remove(_activeGoalPrefKey);
-    } else {
-      await prefs.setString(_activeGoalPrefKey, newKey);
-    }
+
+    // Optimistic update: visual feedback is immediate on tap, persistence
+    // happens in the background.  No second setState needed after the await.
     if (mounted) setState(() => _activeGoalKey = newKey);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (newKey == null) {
+        await prefs.remove(_activeGoalPrefKey);
+      } else {
+        await prefs.setString(_activeGoalPrefKey, newKey);
+      }
+    } catch (error) {
+      // Revert optimistic update if persistence failed.
+      debugPrint('_toggleActiveGoal: failed to persist — $error');
+      if (mounted) setState(() => _activeGoalKey = _activeGoalKey == newKey ? null : newKey);
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _loadProfileIdentity();
     _loadActiveGoalKey();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    if (_didLoadInitialView) {
-      return;
-    }
-
-    final initialView = ModalRoute.of(context)?.settings.arguments as int?;
-    if (initialView != null) {
-      _viewState = initialView;
-    }
-    _didLoadInitialView = true;
   }
 
   @override
@@ -114,98 +100,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     _nameController.dispose();
     _amountController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadProfileIdentity() async {
-    final authState = await AuthMemoryStore.loadGreetingState();
-    final currentUser = LocalStorageService().getUserById(_currentUserId);
-    final rawName = currentUser?.displayName?.trim().isNotEmpty == true
-        ? currentUser!.displayName!.trim()
-        : authState.username?.trim();
-    final avatarBase64 = currentUser?.avatarPath?.trim().isNotEmpty == true
-        ? currentUser!.avatarPath!.trim()
-        : authState.avatarBase64;
-    final displayName = rawName == null || rawName.isEmpty
-        ? 'John Doe'
-        : rawName;
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _profileName = displayName;
-      _profileHandle = _buildHandle(displayName);
-      _profileAvatarBase64 = avatarBase64;
-      _profileAvatarBytes = _decodeAvatar(avatarBase64);
-    });
-  }
-
-  Uint8List? _decodeAvatar(String? avatarBase64) {
-    if (avatarBase64 == null || avatarBase64.isEmpty) {
-      return null;
-    }
-
-    try {
-      return base64Decode(avatarBase64);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String _buildHandle(String name) {
-    final normalized = name.trim().toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]+'),
-      '',
-    );
-    final safeValue = normalized.isEmpty ? 'spendant' : normalized;
-    return '@$safeValue';
-  }
-
-  Future<void> _openProfileEditor() async {
-    final updatedProfile = await Navigator.of(context).push<ProfileEditResult>(
-      MaterialPageRoute(
-        builder: (_) => EditProfileScreen(
-          initialName: _profileName,
-          initialAvatarBase64: _profileAvatarBase64,
-        ),
-      ),
-    );
-
-    if (updatedProfile == null || !mounted) {
-      return;
-    }
-
-    final trimmedName = updatedProfile.name.trim();
-    if (trimmedName.isEmpty) {
-      return;
-    }
-
-    final currentUserId = _currentUserId;
-    final currentUser = LocalStorageService().getUserById(currentUserId);
-    if (currentUser != null) {
-      currentUser
-        ..username = trimmedName
-        ..displayName = trimmedName
-        ..handle = _buildHandle(trimmedName)
-        ..avatarPath = updatedProfile.avatarBase64
-        ..isSynced = false;
-      await currentUser.save();
-    }
-    await AuthMemoryStore.saveProfile(
-      username: trimmedName,
-      avatarBase64: updatedProfile.avatarBase64,
-    );
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _profileName = trimmedName;
-      _profileHandle = _buildHandle(trimmedName);
-      _profileAvatarBase64 = updatedProfile.avatarBase64;
-      _profileAvatarBytes = _decodeAvatar(updatedProfile.avatarBase64);
-    });
   }
 
   void _goToHome() {
@@ -360,7 +254,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     _resetGoalForm();
     setState(() {
       _currentStep = -1;
-      _viewState = 1;
     });
   }
 
@@ -483,7 +376,6 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     setState(() {
       _isSavingGoal = false;
       _currentStep = -1;
-      _viewState = 1;
     });
     _resetGoalForm();
     _syncPendingDataInBackground();
@@ -627,164 +519,14 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          Expanded(
-            child: _viewState == 0 ? _buildProfileView() : _buildGoalsView(),
-          ),
+          Expanded(child: _buildGoalsView()),
           SpendAntBottomNav(
-            currentItem: _viewState == 0
-                ? SpendAntNavItem.profile
-                : SpendAntNavItem.goals,
-            onProfileTap: () => setState(() => _viewState = 0),
-            onGoalsTap: () => setState(() => _viewState = 1),
+            currentItem: SpendAntNavItem.goals,
+            onProfileTap: () => Navigator.of(
+              context,
+            ).pushReplacementNamed(AppRoutes.profile),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildProfileView() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompactHeight = constraints.maxHeight < 760;
-        final antHeight = isCompactHeight ? 180.0 : 270.0;
-        final topPadding = isCompactHeight ? 20.0 : 30.0;
-        final antTopSpacing = isCompactHeight ? 64.0 : 112.0;
-
-        final content = Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 58, 20, 34),
-              decoration: const BoxDecoration(
-                color: AppPalette.green,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(30),
-                  bottomRight: Radius.circular(30),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const SizedBox(width: 32, height: 32),
-                      Expanded(
-                        child: Text(
-                          'Profile',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.nunito(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: AppPalette.ink,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _openProfileEditor,
-                        icon: const Icon(
-                          Icons.edit_outlined,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: const Color(0xFFFFCCBB),
-                    backgroundImage: _profileAvatarBytes != null
-                        ? MemoryImage(_profileAvatarBytes!)
-                        : null,
-                    child: _profileAvatarBytes == null
-                        ? const Icon(
-                            Icons.person,
-                            color: Color(0xFFFF9999),
-                            size: 45,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _profileName,
-                    style: GoogleFonts.nunito(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    _profileHandle,
-                    style: GoogleFonts.nunito(
-                      fontSize: 14,
-                      color: Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const NoInternetBanner(),
-            SizedBox(height: topPadding),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _profileActionButton(
-                  'Income',
-                  assetPath: 'web/icons/IncomeWhite.svg',
-                  isIncomeBtn: true,
-                ),
-                const SizedBox(width: 16),
-                _profileActionButton(
-                  'Goals',
-                  icon: Icons.flag_outlined,
-                  isGoalBtn: true,
-                ),
-              ],
-            ),
-            SizedBox(height: antTopSpacing),
-            Center(
-              child: SizedBox(
-                width: isCompactHeight ? 150 : 200,
-                height: antHeight,
-                child: const AntAsset('web/ant/ant_idle.svg'),
-              ),
-            ),
-            SizedBox(height: isCompactHeight ? 28 : 40),
-          ],
-        );
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.zero,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: content,
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _profileActionButton(
-    String label, {
-    IconData? icon,
-    String? assetPath,
-    bool isGoalBtn = false,
-    bool isIncomeBtn = false,
-  }) {
-    return ElevatedButton.icon(
-      onPressed: () {
-        if (isGoalBtn) {
-          setState(() => _viewState = 1);
-        } else if (isIncomeBtn) {
-          Navigator.of(context).pushNamed(AppRoutes.budget);
-        }
-      },
-      icon: assetPath != null
-          ? SvgPicture.asset(assetPath, width: 20, height: 20)
-          : Icon(icon, size: 20, color: Colors.white),
-      label: Text(label, style: const TextStyle(color: Colors.white)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.black,
-        minimumSize: const Size(0, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
     );
   }
@@ -816,7 +558,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
                     textAlign: TextAlign.center,
                     style: GoogleFonts.nunito(
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: AppPalette.ink,
                     ),
                   ),
@@ -997,7 +739,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 24,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 30),
@@ -1047,7 +789,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               '"We have a plan"',
               style: GoogleFonts.nunito(
                 fontSize: 28,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 20),
@@ -1113,7 +855,7 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 28,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -1257,7 +999,9 @@ class _GoalTile extends StatelessWidget {
         color: isActive
             ? AppPalette.green.withValues(alpha: 0.08)
             : AppPalette.field,
-        borderRadius: AppRadius.cardTile,
+        // borderRadius requires uniform border colors — only apply when the
+        // left accent border is absent (inactive state).
+        borderRadius: isActive ? null : AppRadius.cardTile,
         border: Border(
           bottom: const BorderSide(color: AppPalette.cardBorderGray, width: 2),
           left: isActive
@@ -1296,7 +1040,7 @@ class _GoalTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.nunito(
                           fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           color: AppPalette.ink,
                         ),
                       ),
@@ -1316,7 +1060,7 @@ class _GoalTile extends StatelessWidget {
                           'Active',
                           style: GoogleFonts.nunito(
                             fontSize: 11,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),
                         ),
@@ -1384,7 +1128,7 @@ class _GoalTile extends StatelessWidget {
                 '${goalState.progressPercent}%',
                 style: GoogleFonts.nunito(
                   fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -1486,7 +1230,7 @@ class _EmptyGoalsCard extends StatelessWidget {
             'No goals yet',
             style: GoogleFonts.nunito(
               fontSize: 18,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: AppPalette.ink,
             ),
           ),

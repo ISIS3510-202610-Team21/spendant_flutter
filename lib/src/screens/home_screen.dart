@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../../app.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../services/app_date_format_service.dart';
@@ -652,25 +653,40 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = AppCurrencyFormatService.formatAmount(amount);
+    // ListenableBuilder ensures this widget rebuilds whenever the user changes
+    // the active currency in CurrencyConverterScreen — zero extra state needed.
+    return ListenableBuilder(
+      listenable: CurrencyProvider.instance,
+      builder: (context, _) {
+        final provider = CurrencyProvider.instance;
+        final converted = provider.convertToLocal(amount);
+        final iso = provider.activeCurrency;
 
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: '\$$formattedAmount ',
-            style: GoogleFonts.nunito(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w900,
-              color: amountColor,
-            ),
+        // For COP (base currency) keep the existing compact integer format.
+        // For foreign currencies use the provider's locale-aware formatter.
+        final formattedValue = provider.isBaseCurrency
+            ? AppCurrencyFormatService.formatAmount(converted)
+            : provider.formatFromCOP(amount).split(' ').skip(1).join(' ');
+
+        return RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '\$$formattedValue ',
+                style: GoogleFonts.nunito(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w900,
+                  color: amountColor,
+                ),
+              ),
+              TextSpan(
+                text: iso,
+                style: AppTextStyles.amountCOP,
+              ),
+            ],
           ),
-          TextSpan(
-            text: 'COP',
-            style: AppTextStyles.amountCOP,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -772,9 +788,16 @@ class _ExpenseListTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                entry.amount,
-                style: AppTextStyles.expenseAmount,
+              // Rebuild only this leaf widget on currency change — the rest of
+              // the tile (icon, name, category) is unaffected and stays const.
+              ListenableBuilder(
+                listenable: CurrencyProvider.instance,
+                builder: (context, _) => Text(
+                  CurrencyProvider.instance.formatFromCOP(
+                    entry.expense.amount,
+                  ),
+                  style: AppTextStyles.expenseAmount,
+                ),
               ),
             ],
           ),

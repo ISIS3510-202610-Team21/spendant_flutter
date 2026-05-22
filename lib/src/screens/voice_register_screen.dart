@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -30,15 +31,28 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
   VoiceParseResult? _parseResult;
   String? _errorMessage;
 
-  // Pulse animation for mic button while listening.
+  // Normalized RMS amplitude [0.0 – 1.0] streamed from Android SpeechRecognizer.
+  // Smoothed with exponential decay to avoid jitter.
+  double _amplitude = 0.0;
+  StreamSubscription<double>? _rmsSub;
+
+  // Subtle pulse for the mic button circle.
   late final AnimationController _pulseController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
   );
 
+  // Drives the WhatsApp-style waveform bars (20 bars, staggered sin phases).
+  late final AnimationController _waveController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  );
+
   @override
   void dispose() {
+    _rmsSub?.cancel();
     _pulseController.dispose();
+    _waveController.dispose();
     super.dispose();
   }
 
@@ -68,11 +82,26 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
       _errorMessage = null;
     });
     _pulseController.repeat(reverse: true);
+    _waveController.repeat();
+
+    // Subscribe to real-time RMS from Android — drives waveform bar heights.
+    _rmsSub = VoicePipelineService.rmsStream.listen((raw) {
+      if (!mounted) return;
+      setState(() {
+        // Exponential smoothing: fast rise, slow decay for natural feel.
+        _amplitude = _amplitude * 0.55 + raw * 0.45;
+      });
+    });
 
     final rawText = await VoicePipelineService.startListening();
 
     _pulseController.stop();
     _pulseController.reset();
+    _waveController.stop();
+    _waveController.reset();
+    _rmsSub?.cancel();
+    _rmsSub = null;
+    if (mounted) setState(() => _amplitude = 0.0);
 
     if (!mounted) return;
 
@@ -463,51 +492,106 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
   // Mic button
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Mic button + waveform
+  // ---------------------------------------------------------------------------
+
+  static const int _barCount = 22;
+  static const double _barWidth = 4;
+  static const double _barGap = 3;
+  static const double _barMaxHeight = 36;
+  static const double _barMinHeight = 5;
+
   Widget _buildMicButton() {
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.paddingOf(context).bottom + 24,
         top: 16,
       ),
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, child) {
-            final scale = _isListening
-                ? 1.0 + (_pulseController.value * 0.12)
-                : 1.0;
-            return Transform.scale(scale: scale, child: child);
-          },
-          child: GestureDetector(
-            onTap: _onMicTap,
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _isListening
-                    ? AppPalette.green.withValues(alpha: 0.85)
-                    : AppPalette.green,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppPalette.green.withValues(
-                      alpha: _isListening ? 0.5 : 0.25,
-                    ),
-                    blurRadius: _isListening ? 20 : 8,
-                    spreadRadius: _isListening ? 4 : 0,
-                  ),
-                ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Waveform (visible only while recording) ──────────────────────
+          AnimatedOpacity(
+            opacity: _isListening ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            child: SizedBox(
+              height: _barMaxHeight + 8,
+              child: AnimatedBuilder(
+                animation: _waveController,
+                builder: (context, _) {
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: List.generate(_barCount, (i) {
+                      // Stagger each bar with a unique sin phase.
+                      final phase = i * (2 * math.pi / _barCount);
+                      // sin in [0,1]
+                      final sinVal =
+                          (math.sin(_waveController.value * 2 * math.pi + phase) + 1) / 2;
+                      // Height scales with real-time amplitude:
+                      //   silence  → all bars at minHeight
+                      //   loud     → bars reach up to maxHeight
+                      final height = _barMinHeight +
+                          sinVal * _amplitude * (_barMaxHeight - _barMinHeight);
+                      return Container(
+                        width: _barWidth,
+                        height: height.clamp(_barMinHeight, _barMaxHeight),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: _barGap / 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppPalette.green,
+                          borderRadius: AppRadius.pill,
+                        ),
+                      );
+                    }),
+                  );
+                },
               ),
-              child: Center(
-                child: SvgPicture.asset(
-                  'web/icons/BlackMic.svg',
-                  width: 32,
-                  height: 32,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── Mic circle button ─────────────────────────────────────────────
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              final scale = _isListening
+                  ? 1.0 + (_pulseController.value * 0.08)
+                  : 1.0;
+              return Transform.scale(scale: scale, child: child);
+            },
+            child: GestureDetector(
+              onTap: _onMicTap,
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _isListening
+                      ? AppPalette.green.withValues(alpha: 0.85)
+                      : AppPalette.green,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppPalette.green.withValues(
+                        alpha: _isListening ? 0.5 : 0.25,
+                      ),
+                      blurRadius: _isListening ? 20 : 8,
+                      spreadRadius: _isListening ? 4 : 0,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: SvgPicture.asset(
+                    'web/icons/BlackMic.svg',
+                    width: 32,
+                    height: 32,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

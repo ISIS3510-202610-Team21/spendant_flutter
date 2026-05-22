@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show DateUtils;
 import 'package:flutter/services.dart';
+// EventChannel is in services too — re-exported via flutter/services.
 
 import '../models/voice_parse_result.dart';
 import '../services/currency_provider.dart';
@@ -27,7 +28,16 @@ import '../services/voice_pattern_cache_service.dart';
 // ---------------------------------------------------------------------------
 
 abstract final class VoicePipelineService {
-  static const _channel = MethodChannel('spendant_flutter/speech');
+  static const _channel    = MethodChannel('spendant_flutter/speech');
+  static const _rmsChannel = EventChannel('spendant_flutter/speech/rms');
+
+  /// Stream of normalized RMS amplitude [0.0 – 1.0] from the Android
+  /// SpeechRecognizer while listening.  Emits ~10 times per second.
+  static Stream<double> get rmsStream => kIsWeb
+      ? const Stream.empty()
+      : _rmsChannel
+            .receiveBroadcastStream()
+            .map((v) => (v as num).toDouble());
 
   // ---------------------------------------------------------------------------
   // Stage 1 + 2 — Android STT via MethodChannel
@@ -73,17 +83,20 @@ abstract final class VoicePipelineService {
   ///   3. Currency conversion applied on main isolate via [CurrencyProvider].
   ///   4. Persist result in cache for future requests.
   static Future<VoiceParseResult?> parseAndCache(String rawText) async {
+    // Capture active currency FIRST — used in both cache key and parsing.
+    final defaultCurrency = CurrencyProvider.instance.activeCurrency;
+
     // ── Cache lookup (bypasses Isolate 3 on hit) ───────────────────────────
-    final cached = await VoicePatternCacheService.lookup(rawText);
+    // Key includes defaultCurrency so "100" cached with JPY active
+    // does NOT wrongly return when COP is active.
+    final cacheKey = '$rawText $defaultCurrency';
+    final cached = await VoicePatternCacheService.lookup(cacheKey);
     if (cached != null) {
       debugPrint('VoicePipeline: cache hit for "${rawText.substring(0, rawText.length.clamp(0, 30))}…"');
       return cached;
     }
 
     // ── Stage 3: background isolate entity parsing ─────────────────────────
-    // Capture active currency on main isolate (CurrencyProvider not available
-    // inside Isolate.run) and pass it as the default when user says no currency.
-    final defaultCurrency = CurrencyProvider.instance.activeCurrency;
     final partial = await Isolate.run(
       () => _parseEntities(rawText, defaultCurrency: defaultCurrency),
     );
@@ -112,7 +125,7 @@ abstract final class VoicePipelineService {
     );
 
     // ── Persist in cache ───────────────────────────────────────────────────
-    await VoicePatternCacheService.store(rawText, result);
+    await VoicePatternCacheService.store(cacheKey, result);
 
     return result;
   }
@@ -178,21 +191,23 @@ _PartialParseResult? _parseEntities(String raw, {String defaultCurrency = 'COP'}
   if (amount == null || amount <= 0) return null;
 
   // ── Currency extraction ──────────────────────────────────────────────────
+  // \b word boundaries prevent false matches (e.g. "pen" inside "open").
+  // Currency symbols cover STT transcriptions that use glyphs instead of words.
   final currencyMap = {
-    r'dollar[s]?|usd': 'USD',
-    r'euro[s]?|eur': 'EUR',
-    r'peso[s]?|cop': 'COP',
-    r'pound[s]?|sterling|gbp': 'GBP',
-    r'yen[s]?|jpy': 'JPY',
-    r'real[is]?|reais|brl': 'BRL',
-    r'cad|canadian': 'CAD',
-    r'aud|australian': 'AUD',
-    r'chf|franc[s]?': 'CHF',
-    r'mxn|mexican': 'MXN',
-    r'cny|yuan': 'CNY',
-    r'clp|chilean': 'CLP',
-    r'pen|sol[es]?': 'PEN',
-    r'ars|argentine': 'ARS',
+    r'\bdollar[s]?\b|\busd\b|\bbucks?\b|\$':        'USD',
+    r'\beuro[s]?\b|\beur\b|€':                      'EUR',
+    r'\bpeso[s]?\b|\bcop\b':                        'COP',
+    r'\bpound[s]?\b|\bsterling\b|\bgbp\b|\bquid\b|£': 'GBP',
+    r'\byen[s]?\b|\bjpy\b|¥':                       'JPY',
+    r'\breais?\b|\breal[is]?\b|\bbrl\b':             'BRL',
+    r'\bcad\b|\bcanadian\b':                        'CAD',
+    r'\baud\b|\baustralian\b':                      'AUD',
+    r'\bchf\b|\bswiss\b|\bfranc[s]?\b':             'CHF',
+    r'\bmxn\b|\bmexican\b':                         'MXN',
+    r'\bcny\b|\byuan[s]?\b|\brenminbi\b|\brmb\b':   'CNY',
+    r'\bclp\b|\bchilean\b':                         'CLP',
+    r'\bsoles?\b|\bperuvian\b':                     'PEN', // "pen" alone removed: too ambiguous
+    r'\bars\b|\bargentin[ae]\b':                    'ARS',
   };
 
   String detectedCurrency = defaultCurrency; // falls back to user's active currency

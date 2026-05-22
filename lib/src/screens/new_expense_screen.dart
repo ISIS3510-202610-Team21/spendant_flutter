@@ -888,9 +888,11 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     setState(() {
       _expenseNameController.text = result.productName;
 
-      // Use COP-converted amount for the value field (Firebase always stores COP).
-      _expenseValueController.text =
-          result.convertedAmountCop.round().toString();
+      // Fill field in the active currency so the user sees their own unit.
+      // The save path already calls convertToCOP(parsedAmount) → Firebase gets COP.
+      _expenseValueController.text = _formatAmountForInput(
+        CurrencyProvider.instance.convertToLocal(result.convertedAmountCop),
+      );
 
       _selectedDate = DateUtils.dateOnly(result.date);
 

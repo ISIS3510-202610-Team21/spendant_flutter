@@ -7,6 +7,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 /**
@@ -23,10 +24,12 @@ import io.flutter.plugin.common.MethodChannel
 class SpeechRecognizerBridge(private val activity: Activity) : RecognitionListener {
 
     companion object {
-        private const val CHANNEL = "spendant_flutter/speech"
+        private const val CHANNEL     = "spendant_flutter/speech"
+        private const val RMS_CHANNEL = "spendant_flutter/speech/rms"
 
         fun register(messenger: BinaryMessenger, activity: Activity) {
             val bridge = SpeechRecognizerBridge(activity)
+
             MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
                 when (call.method) {
                     "startListening" -> bridge.startListening(result)
@@ -34,11 +37,25 @@ class SpeechRecognizerBridge(private val activity: Activity) : RecognitionListen
                     else             -> result.notImplemented()
                 }
             }
+
+            // EventChannel streams real-time RMS amplitude to Flutter so the
+            // waveform UI can respond to actual microphone input levels.
+            EventChannel(messenger, RMS_CHANNEL).setStreamHandler(
+                object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        bridge.eventSink = events
+                    }
+                    override fun onCancel(arguments: Any?) {
+                        bridge.eventSink = null
+                    }
+                }
+            )
         }
     }
 
     private var recognizer: SpeechRecognizer? = null
     private var pendingResult: MethodChannel.Result? = null
+    var eventSink: EventChannel.EventSink? = null
 
     // -------------------------------------------------------------------------
     // Public API
@@ -112,7 +129,11 @@ class SpeechRecognizerBridge(private val activity: Activity) : RecognitionListen
     // Unused callbacks — required by the interface.
     override fun onReadyForSpeech(params: Bundle?) {}
     override fun onBeginningOfSpeech() {}
-    override fun onRmsChanged(rmsdB: Float) {}
+    override fun onRmsChanged(rmsdB: Float) {
+        // Normalize [-2, 10] dBFS → [0.0, 1.0] and stream to Flutter.
+        val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+        eventSink?.success(normalized.toDouble())
+    }
     override fun onBufferReceived(buffer: ByteArray?) {}
     override fun onEndOfSpeech() {}
     override fun onPartialResults(partialResults: Bundle?) {}

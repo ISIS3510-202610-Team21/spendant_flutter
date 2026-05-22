@@ -26,6 +26,7 @@ import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/sync_log_service.dart';
 import '../utils/url_utils.dart';
+import '../services/currency_provider.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
@@ -174,8 +175,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _hydrateFromEditingExpense(ExpenseModel editingExpense) {
     try {
       _expenseNameController.text = editingExpense.name.trim();
+      // Pre-fill in active currency (stored as COP → convert to local).
       _expenseValueController.text = _formatAmountForInput(
-        editingExpense.amount,
+        CurrencyProvider.instance.convertToLocal(editingExpense.amount),
       );
       _selectedCategory = _normalizedOptionalText(
         editingExpense.primaryCategory,
@@ -1144,7 +1146,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
       ..name = expenseName
-      ..amount = parsedAmount
+      ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
       ..date = _selectedDate
       ..time =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}'

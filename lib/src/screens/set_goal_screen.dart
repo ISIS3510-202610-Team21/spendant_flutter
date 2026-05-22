@@ -123,8 +123,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     } else {
       _editingGoal = goal;
       _nameController.text = goal.name;
+      // Pre-fill in active currency (goal stores COP → convert to local).
       _amountController.text = AppCurrencyFormatService.formatAmount(
-        goal.targetAmount,
+        CurrencyProvider.instance.convertToLocal(goal.targetAmount),
       );
       _goalDeadline = goal.deadline;
     }
@@ -152,7 +153,10 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   double? _parsedGoalAmount() {
     final amountText = _amountController.text.replaceAll(',', '').trim();
-    return double.tryParse(amountText);
+    final local = double.tryParse(amountText);
+    if (local == null) return null;
+    // User types in active currency → convert to COP before budget math.
+    return CurrencyProvider.instance.convertToCOP(local);
   }
 
   DailyBudgetSummary _budgetSummary() {

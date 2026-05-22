@@ -427,8 +427,9 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
     }
 
     _nameController.text = editingIncome.name;
+    // Pre-fill in the user's active currency (stored as COP → convert to local).
     _amountController.text = AppCurrencyFormatService.formatAmount(
-      editingIncome.amount,
+      CurrencyProvider.instance.convertToLocal(editingIncome.amount),
     );
     _type = editingIncome.type;
     _recurrenceUnit = editingIncome.recurrenceUnit ?? 'WEEKS';
@@ -510,7 +511,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         final income = IncomeModel()
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
-          ..amount = parsedAmount
+          ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
           ..type = _type
           ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
           ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
@@ -522,7 +523,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         editingIncome
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
-          ..amount = parsedAmount
+          ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
           ..type = _type
           ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
           ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
@@ -614,7 +615,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                       const SizedBox(height: 20),
                       _IncomeField(
                         controller: _amountController,
-                        hintText: r'$ 0',
+                        hintText: '${CurrencyProvider.instance.activeCurrency} 0',
                         keyboardType: TextInputType.number,
                         inputFormatters: [const _CurrencyThousandsFormatter()],
                       ),

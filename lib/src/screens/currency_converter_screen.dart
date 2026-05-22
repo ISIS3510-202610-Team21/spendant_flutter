@@ -30,6 +30,12 @@ const List<Color> _kCurrencyColors = [
   Color(0xFFD1A039), // gold
 ];
 
+/// Currencies that operate in large numbers — displaying < 1,000 units
+/// of these gives no meaningful financial context to the user.
+/// When any of these appear as the LIST currency in Case 2, we scale up
+/// the displayed amounts until the list side shows ≥ 1,000 units.
+const Set<String> _kLargeNumberCurrencies = {'COP', 'ARS', 'CLP', 'JPY'};
+
 /// Economic category label for each supported ISO code.
 const Map<String, String> _kCurrencyCategory = {
   'USD': 'Global Reserve',
@@ -127,15 +133,28 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
     final listFor1Selected = rateList / rateSel;
 
     if (selectedFor1List >= 1000) {
-      // Case 1: selected is "cheap" → show big integer on left
+      // Case 1: selected is "cheap" → big integer on left.
       // e.g. "3,788 COP = 1 USD"
       return '${_fmtInt(selectedFor1List.round())} $_selectedIso = 1 $listIso';
     } else if (listFor1Selected >= 1) {
-      // Case 2: selected is "expensive" or same tier → "1 selected = X list"
+      // Case 2: selected is more valuable → "N selected = X list"
       // e.g. "1 USD = 3,788 COP" / "1 EUR = 1.16 USD"
+      //
+      // Large-number scale: for currencies like COP, ARS, CLP, JPY showing
+      // < 1,000 units gives no useful context ("1 MXN = 217 COP" is meaningless).
+      // Scale by powers of 10 until the list amount reaches ≥ 1,000.
+      if (_kLargeNumberCurrencies.contains(listIso) && listFor1Selected < 1000) {
+        int scale = 1;
+        while (listFor1Selected * scale < 1000 && scale <= 1000) {
+          scale *= 10;
+        }
+        final scaled = listFor1Selected * scale;
+        final scaleLabel = scale == 1 ? '1' : _fmtInt(scale);
+        return '$scaleLabel $_selectedIso = ${_fmtValue(scaled)} $listIso';
+      }
       return '1 $_selectedIso = ${_fmtValue(listFor1Selected)} $listIso';
     } else {
-      // Case 3: 1000-base on selected side
+      // Case 3: 1000-base on selected side.
       // e.g. "1,000 COP = 4.59 MXN"
       final val = 1000.0 * listFor1Selected;
       return '1,000 $_selectedIso = ${_fmtValue(val)} $listIso';

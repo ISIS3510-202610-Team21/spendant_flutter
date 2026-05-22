@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/expense_model.dart';
-import 'app_currency_format_service.dart';
+import 'currency_provider.dart';
 import 'app_time_format_service.dart';
 
 enum WeeklySmartInsightKind {
@@ -221,6 +221,6 @@ abstract final class WeeklySmartInsightService {
   }
 
   static String _formatMoney(double amount) {
-    return AppCurrencyFormatService.formatCOP(amount);
+    return CurrencyProvider.instance.formatFromCOP(amount);
   }
 }

@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hive/hive.dart';
 import '../models/income_model.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
@@ -298,12 +299,15 @@ class _IncomeCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                AppCurrencyFormatService.formatCOP(income.amount),
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: AppPalette.ink,
+              ListenableBuilder(
+                listenable: CurrencyProvider.instance,
+                builder: (context, _) => Text(
+                  CurrencyProvider.instance.formatFromCOP(income.amount),
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -423,8 +427,9 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
     }
 
     _nameController.text = editingIncome.name;
+    // Pre-fill in the user's active currency (stored as COP → convert to local).
     _amountController.text = AppCurrencyFormatService.formatAmount(
-      editingIncome.amount,
+      CurrencyProvider.instance.convertToLocal(editingIncome.amount),
     );
     _type = editingIncome.type;
     _recurrenceUnit = editingIncome.recurrenceUnit ?? 'WEEKS';
@@ -506,7 +511,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         final income = IncomeModel()
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
-          ..amount = parsedAmount
+          ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
           ..type = _type
           ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
           ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
@@ -518,7 +523,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
         editingIncome
           ..userId = _currentUserId
           ..name = _nameController.text.trim()
-          ..amount = parsedAmount
+          ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
           ..type = _type
           ..recurrenceInterval = _type == 'FREQUENTLY' ? interval : null
           ..recurrenceUnit = _type == 'FREQUENTLY' ? _recurrenceUnit : null
@@ -610,7 +615,7 @@ class _NewIncomeScreenState extends State<NewIncomeScreen> {
                       const SizedBox(height: 20),
                       _IncomeField(
                         controller: _amountController,
-                        hintText: r'$ 0',
+                        hintText: '${CurrencyProvider.instance.activeCurrency} 0',
                         keyboardType: TextInputType.number,
                         inputFormatters: [const _CurrencyThousandsFormatter()],
                       ),

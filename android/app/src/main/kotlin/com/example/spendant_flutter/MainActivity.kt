@@ -14,6 +14,11 @@ class MainActivity : FlutterFragmentActivity() {
             this,
         )
 
+        SpeechRecognizerBridge.register(
+            flutterEngine.dartExecutor.binaryMessenger,
+            this,
+        )
+
         SmsReaderBridge.register(
             flutterEngine.dartExecutor.binaryMessenger,
             this,

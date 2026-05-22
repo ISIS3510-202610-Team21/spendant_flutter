@@ -30,6 +30,24 @@ const List<Color> _kCurrencyColors = [
   Color(0xFFD1A039), // gold
 ];
 
+/// Economic category label for each supported ISO code.
+const Map<String, String> _kCurrencyCategory = {
+  'USD': 'Global Reserve',
+  'EUR': 'Global Reserve',
+  'GBP': 'Global Reserve',
+  'JPY': 'Global Reserve',
+  'CHF': 'Global Reserve',
+  'CAD': 'Strong Economy',
+  'AUD': 'Strong Economy',
+  'COP': 'Latin American',
+  'MXN': 'Latin American',
+  'BRL': 'Latin American',
+  'CLP': 'Latin American',
+  'PEN': 'Latin American',
+  'ARS': 'Latin American',
+  'CNY': 'Global Economy',
+};
+
 const List<_CurrencyInfo> _kSupportedCurrencies = [
   _CurrencyInfo(iso: 'COP', name: 'Colombian Peso'),
   _CurrencyInfo(iso: 'USD', name: 'US Dollar'),
@@ -275,13 +293,27 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
                 _CurrencyBadge(iso: info.iso, color: _kSelectedAccent),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Text(
-                    info.name,
-                    style: GoogleFonts.nunito(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppPalette.ink,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        info.name,
+                        style: GoogleFonts.nunito(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                      Text(
+                        'Current Currency',
+                        style: GoogleFonts.nunito(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: _kSelectedAccent,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Text(
@@ -351,13 +383,27 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
               _CurrencyBadge(iso: info.iso, color: accent),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  info.name,
-                  style: GoogleFonts.nunito(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppPalette.ink,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      info.name,
+                      style: GoogleFonts.nunito(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.ink,
+                      ),
+                    ),
+                    Text(
+                      _kCurrencyCategory[info.iso] ?? '',
+                      style: GoogleFonts.nunito(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppPalette.fieldHint,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Text(

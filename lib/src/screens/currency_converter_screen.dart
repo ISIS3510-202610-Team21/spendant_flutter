@@ -81,26 +81,63 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   /// Rate from COP to [iso], sourced from the in-memory cache.
   double _rateFor(String iso) => CurrencyProvider.instance.rateFor(iso);
 
-  /// Equivalence label displayed on the right side of each list card.
+  /// Equivalence label — always shows the selected currency on the left.
   ///
-  /// Formula: Rate_COP→listCurrency / Rate_COP→selectedCurrency
-  /// This gives "1 [listCurrency] = X [selectedCurrency]".
+  /// Three cases:
+  ///
+  ///   Case 1  selectedFor1List ≥ 1000
+  ///     → "[X] [selected] = 1 [list]"
+  ///     e.g. selected=COP list=USD  →  "3,788 COP = 1 USD"
+  ///
+  ///   Case 2  listFor1Selected ≥ 1
+  ///     → "1 [selected] = [X] [list]"
+  ///     e.g. selected=USD list=COP  →  "1 USD = 3,788 COP"
+  ///          selected=EUR list=USD  →  "1 EUR = 1.16 USD"
+  ///
+  ///   Case 3  both sides < threshold
+  ///     → "1,000 [selected] = [X] [list]"
+  ///     e.g. selected=COP list=MXN  →  "1,000 COP = 4.59 MXN"
+  ///          selected=COP list=JPY  →  "1,000 COP = 42 JPY"
   String _equivalenceLabel(String listIso) {
-    final rateList = _rateFor(listIso);
-    final rateSel = _rateFor(_selectedIso);
-    if (rateSel == 0 || rateList == 0) {
-      return '—';
+    final rateSel  = _rateFor(_selectedIso); // 1 COP in selected units
+    final rateList = _rateFor(listIso);      // 1 COP in list units
+    if (rateSel == 0 || rateList == 0) return '—';
+
+    // How many selected units buy 1 list unit.
+    final selectedFor1List = rateSel / rateList;
+    // How many list units buy 1 selected unit.
+    final listFor1Selected = rateList / rateSel;
+
+    if (selectedFor1List >= 1000) {
+      // Case 1: selected is "cheap" → show big integer on left
+      // e.g. "3,788 COP = 1 USD"
+      return '${_fmtInt(selectedFor1List.round())} $_selectedIso = 1 $listIso';
+    } else if (listFor1Selected >= 1) {
+      // Case 2: selected is "expensive" or same tier → "1 selected = X list"
+      // e.g. "1 USD = 3,788 COP" / "1 EUR = 1.16 USD"
+      return '1 $_selectedIso = ${_fmtValue(listFor1Selected)} $listIso';
+    } else {
+      // Case 3: 1000-base on selected side
+      // e.g. "1,000 COP = 4.59 MXN"
+      final val = 1000.0 * listFor1Selected;
+      return '1,000 $_selectedIso = ${_fmtValue(val)} $listIso';
     }
-    // rate[X] = "1 COP expressed in X".
-    // To get "1 listIso = X selectedIso":
-    //   1 listIso = (1 / rateList) COP = (rateSel / rateList) selectedIso
-    final crossRate = rateSel / rateList;
-    // Display whole numbers for COP/JPY/CLP, two decimals otherwise.
-    const wholeNumber = {'COP', 'JPY', 'CLP', 'ARS'};
-    final formatted = wholeNumber.contains(_selectedIso)
-        ? crossRate.round().toString()
-        : crossRate.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    return '1 $listIso = $formatted $_selectedIso';
+  }
+
+  /// ≥ 10 → integer with thousands comma. < 10 → 2 decimal places.
+  static String _fmtValue(double value) {
+    if (value >= 10) return _fmtInt(value.round());
+    return value.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+  }
+
+  static String _fmtInt(int n) {
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   Color _accentColorFor(int index) =>

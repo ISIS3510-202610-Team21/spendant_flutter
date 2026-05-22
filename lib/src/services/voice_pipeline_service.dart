@@ -191,23 +191,38 @@ _PartialParseResult? _parseEntities(String raw, {String defaultCurrency = 'COP'}
   if (amount == null || amount <= 0) return null;
 
   // ── Currency extraction ──────────────────────────────────────────────────
-  // \b word boundaries prevent false matches (e.g. "pen" inside "open").
-  // Currency symbols cover STT transcriptions that use glyphs instead of words.
+  // ORDER MATTERS — Dart Map iterates insertion order, breaks on first match.
+  // Qualified country names come FIRST to resolve ambiguous shared names
+  // (peso, dollar, franc). Unqualified fallbacks come after.
+  //
+  // Symbols ($, €, £, ¥) are intentionally REMOVED: Android STT auto-formats
+  // "1000 pesos" → "$1,000" causing the $ to falsely match USD before the
+  // word "pesos" is even checked. Word-based matching is more reliable.
   final currencyMap = {
-    r'\bdollar[s]?\b|\busd\b|\bbucks?\b|\$':        'USD',
-    r'\beuro[s]?\b|\beur\b|€':                      'EUR',
-    r'\bpeso[s]?\b|\bcop\b':                        'COP',
-    r'\bpound[s]?\b|\bsterling\b|\bgbp\b|\bquid\b|£': 'GBP',
-    r'\byen[s]?\b|\bjpy\b|¥':                       'JPY',
-    r'\breais?\b|\breal[is]?\b|\bbrl\b':             'BRL',
-    r'\bcad\b|\bcanadian\b':                        'CAD',
-    r'\baud\b|\baustralian\b':                      'AUD',
-    r'\bchf\b|\bswiss\b|\bfranc[s]?\b':             'CHF',
-    r'\bmxn\b|\bmexican\b':                         'MXN',
-    r'\bcny\b|\byuan[s]?\b|\brenminbi\b|\brmb\b':   'CNY',
-    r'\bclp\b|\bchilean\b':                         'CLP',
-    r'\bsoles?\b|\bperuvian\b':                     'PEN', // "pen" alone removed: too ambiguous
-    r'\bars\b|\bargentin[ae]\b':                    'ARS',
+    // ── Qualified "peso" variants (must precede bare "peso") ──────────────
+    r'\bcolombian\s+peso[s]?\b|\bcop\b':                          'COP',
+    r'\bmexican\s+peso[s]?\b|\bmxn\b':                            'MXN',
+    r'\bchilean\s+peso[s]?\b|\bclp\b':                            'CLP',
+    r'\bargentin\w*\s+peso[s]?\b|\bars\b':                        'ARS',
+    // ── Bare "peso/pesos" → COP (app base, most likely intent) ───────────
+    r'\bpeso[s]?\b':                                              'COP',
+    // ── Qualified "dollar" variants (must precede bare "dollar") ─────────
+    r'\bcanadian\s+dollar[s]?\b|\bcad\b':                         'CAD',
+    r'\baustralian\s+dollar[s]?\b|\baud\b':                       'AUD',
+    r'\bus\s+dollar[s]?\b|\bamerican\s+dollar[s]?\b|\busd\b|\bbucks?\b': 'USD',
+    // ── Bare "dollar/dollars" → USD ───────────────────────────────────────
+    r'\bdollar[s]?\b':                                            'USD',
+    // ── Qualified "pound" variants ────────────────────────────────────────
+    r'\bbritish\s+pound[s]?\b|\bpound\s+sterling\b|\bgbp\b|\bquid\b': 'GBP',
+    // ── Bare "pound/pounds" → GBP ─────────────────────────────────────────
+    r'\bpound[s]?\b|\bsterling\b':                                'GBP',
+    // ── Unambiguous currencies ────────────────────────────────────────────
+    r'\beuro[s]?\b|\beur\b':                                      'EUR',
+    r'\bjapanese\s+yen[s]?\b|\byen[s]?\b|\bjpy\b':               'JPY',
+    r'\bbrazilian\s+real[is]?\b|\breais?\b|\breal[is]?\b|\bbrl\b': 'BRL',
+    r'\bswiss\s+franc[s]?\b|\bchf\b|\bfranc[s]?\b':              'CHF',
+    r'\bchinese\s+yuan[s]?\b|\bcny\b|\byuan[s]?\b|\brenminbi\b|\brmb\b': 'CNY',
+    r'\bperuvian\s+sol[es]?\b|\bsoles?\b|\bperuvian\b':           'PEN',
   };
 
   String detectedCurrency = defaultCurrency; // falls back to user's active currency

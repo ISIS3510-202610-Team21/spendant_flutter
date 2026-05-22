@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/voice_parse_result.dart';
-import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../services/voice_pipeline_service.dart';
 import '../theme/spendant_theme.dart';
 
@@ -361,17 +361,19 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
   }
 
   Widget _buildParsedSummary(VoiceParseResult result) {
-    // Show amount in the dictated currency.
-    // If it differs from COP, also show COP equivalent for context.
+    // If user dictated the SAME currency as the active one (or none = default),
+    // show plain amount. If they said a DIFFERENT currency, show the active
+    // currency equivalent so they know what will be stored.
+    final activeCurrency = CurrencyProvider.instance.activeCurrency;
     final String displayAmount;
-    if (result.originalCurrency == 'COP') {
-      displayAmount = AppCurrencyFormatService.formatCOP(result.originalAmount);
+    if (result.originalCurrency == activeCurrency) {
+      displayAmount = '$activeCurrency ${_fmtNum(result.originalAmount)}';
     } else {
-      final copLabel =
-          AppCurrencyFormatService.formatCOP(result.convertedAmountCop);
+      final localAmount =
+          CurrencyProvider.instance.convertToLocal(result.convertedAmountCop);
       displayAmount =
-          '${result.originalCurrency} ${result.originalAmount.toStringAsFixed(2)}'
-          '  (≈ $copLabel)';
+          '${result.originalCurrency} ${_fmtNum(result.originalAmount)}'
+          '  (≈ $activeCurrency ${_fmtNum(localAmount)})';
     }
 
     return Container(
@@ -409,6 +411,12 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
         ],
       ),
     );
+  }
+
+  /// Formats a number: integer if whole, 2 decimal places otherwise.
+  static String _fmtNum(double v) {
+    if (v == v.roundToDouble()) return v.round().toString();
+    return v.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
   }
 
   /// Converts "HH:mm" (24h) to "H:mm AM/PM" for display.

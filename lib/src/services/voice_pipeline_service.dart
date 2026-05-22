@@ -81,7 +81,12 @@ abstract final class VoicePipelineService {
     }
 
     // ── Stage 3: background isolate entity parsing ─────────────────────────
-    final partial = await Isolate.run(() => _parseEntities(rawText));
+    // Capture active currency on main isolate (CurrencyProvider not available
+    // inside Isolate.run) and pass it as the default when user says no currency.
+    final defaultCurrency = CurrencyProvider.instance.activeCurrency;
+    final partial = await Isolate.run(
+      () => _parseEntities(rawText, defaultCurrency: defaultCurrency),
+    );
     if (partial == null) return null;
 
     // ── Currency conversion on main isolate (needs CurrencyProvider) ───────
@@ -101,6 +106,7 @@ abstract final class VoicePipelineService {
       originalCurrency: partial.originalCurrency,
       convertedAmountCop: convertedCop,
       date: partial.date,
+      wasDateExplicit: partial.wasDateExplicit,
       time: partial.time,
       location: partial.location,
     );
@@ -138,7 +144,7 @@ abstract final class VoicePipelineService {
 /// Currency conversion is intentionally left to the main isolate
 /// ([VoicePipelineService.parseAndCache]) because it needs [CurrencyProvider].
 /// This function returns amounts in the dictated currency unit.
-_PartialParseResult? _parseEntities(String raw) {
+_PartialParseResult? _parseEntities(String raw, {String defaultCurrency = 'COP'}) {
   if (raw.trim().isEmpty) return null;
 
   final text = raw.toLowerCase().trim();
@@ -189,7 +195,7 @@ _PartialParseResult? _parseEntities(String raw) {
     r'ars|argentine': 'ARS',
   };
 
-  String detectedCurrency = 'COP'; // default
+  String detectedCurrency = defaultCurrency; // falls back to user's active currency
   for (final entry in currencyMap.entries) {
     if (RegExp(entry.key, caseSensitive: false).hasMatch(text)) {
       detectedCurrency = entry.value;
@@ -211,15 +217,18 @@ _PartialParseResult? _parseEntities(String raw) {
   // ── Date extraction ──────────────────────────────────────────────────────
   final now = DateTime.now();
   DateTime date = now;
+  bool wasDateExplicit = false;
 
   if (text.contains('yesterday')) {
     date = now.subtract(const Duration(days: 1));
+    wasDateExplicit = true;
   } else if (text.contains('tomorrow')) {
     date = now.add(const Duration(days: 1));
+    wasDateExplicit = true;
   } else if (text.contains('today')) {
     date = now;
+    wasDateExplicit = true;
   } else {
-    // Match day names
     const weekdays = {
       'monday': DateTime.monday,
       'tuesday': DateTime.tuesday,
@@ -234,24 +243,40 @@ _PartialParseResult? _parseEntities(String raw) {
         int diff = now.weekday - entry.value;
         if (diff <= 0) diff += 7;
         date = now.subtract(Duration(days: diff));
+        wasDateExplicit = true;
         break;
       }
     }
   }
 
   // ── Time extraction ──────────────────────────────────────────────────────
+  // Handles both 12h ("11 PM", "2:30 am") and 24h ("11:00", "14:30").
   String? time;
   final timeRegex = RegExp(
-    r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)',
+    r'(\d{1,2}):(\d{2})(?:\s*(am|pm))?|(\d{1,2})\s*(am|pm)',
     caseSensitive: false,
   );
   final timeMatch = timeRegex.firstMatch(text);
   if (timeMatch != null) {
-    int hour = int.parse(timeMatch.group(1)!);
-    final min = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
-    final ampm = timeMatch.group(3)!.toLowerCase();
+    int hour;
+    int min;
+    String? ampm;
+
+    if (timeMatch.group(1) != null) {
+      // Matched HH:MM format (with optional am/pm)
+      hour = int.parse(timeMatch.group(1)!);
+      min  = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
+      ampm = timeMatch.group(3)?.toLowerCase();
+    } else {
+      // Matched H am/pm format (no colon)
+      hour = int.parse(timeMatch.group(4)!);
+      min  = 0;
+      ampm = timeMatch.group(5)?.toLowerCase();
+    }
+
     if (ampm == 'pm' && hour < 12) hour += 12;
     if (ampm == 'am' && hour == 12) hour = 0;
+    // For 24h without am/pm, trust the parsed value directly.
     time = '${hour.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
   }
 
@@ -280,6 +305,7 @@ _PartialParseResult? _parseEntities(String raw) {
     originalAmount: amount,
     originalCurrency: detectedCurrency,
     date: DateUtils.dateOnly(date),
+    wasDateExplicit: wasDateExplicit,
     time: time,
     location: location,
   );
@@ -296,6 +322,7 @@ class _PartialParseResult {
     required this.originalAmount,
     required this.originalCurrency,
     required this.date,
+    this.wasDateExplicit = false,
     this.time,
     this.location,
   });
@@ -305,6 +332,7 @@ class _PartialParseResult {
   final double originalAmount;
   final String originalCurrency;
   final DateTime date;
+  final bool wasDateExplicit;
   final String? time;
   final String? location;
 }

@@ -6,6 +6,10 @@ import 'dart:convert';
 /// [originalAmount] and [originalCurrency] preserve the user's dictated
 /// values; [convertedAmountCop] is the COP equivalent computed by
 /// [CurrencyProvider] after parsing (Firebase always stores COP).
+///
+/// [wasDateExplicit] is true only when the user's speech contained a date
+/// reference (today/yesterday/Monday/etc.). When false the date was auto-set
+/// to today and should NOT be shown in the confirmation preview.
 class VoiceParseResult {
   const VoiceParseResult({
     required this.rawText,
@@ -14,6 +18,7 @@ class VoiceParseResult {
     required this.originalCurrency,
     required this.convertedAmountCop,
     required this.date,
+    this.wasDateExplicit = false,
     this.time,
     this.location,
   });
@@ -24,6 +29,7 @@ class VoiceParseResult {
   final String originalCurrency;
   final double convertedAmountCop;
   final DateTime date;
+  final bool wasDateExplicit;
   final String? time;      // "HH:mm" 24-hour or null
   final String? location;  // free-text location name or null
 
@@ -34,6 +40,7 @@ class VoiceParseResult {
     'originalCurrency': originalCurrency,
     'convertedAmountCop': convertedAmountCop,
     'date': date.toIso8601String(),
+    'wasDateExplicit': wasDateExplicit,
     'time': time,
     'location': location,
   };
@@ -46,6 +53,7 @@ class VoiceParseResult {
       originalCurrency: json['originalCurrency'] as String,
       convertedAmountCop: (json['convertedAmountCop'] as num).toDouble(),
       date: DateTime.parse(json['date'] as String),
+      wasDateExplicit: json['wasDateExplicit'] as bool? ?? false,
       time: json['time'] as String?,
       location: json['location'] as String?,
     );

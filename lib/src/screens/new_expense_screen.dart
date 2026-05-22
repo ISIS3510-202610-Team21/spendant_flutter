@@ -1541,13 +1541,6 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                   ),
                                                   minimumSize:
                                                       const Size(48, 0),
-                                                  shape:
-                                                      RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      8,
-                                                    ),
-                                                  ),
                                                 ),
                                                 child: SvgPicture.asset(
                                                   'web/icons/WhiteMic.svg',

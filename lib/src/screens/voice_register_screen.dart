@@ -361,10 +361,18 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
   }
 
   Widget _buildParsedSummary(VoiceParseResult result) {
-    final displayAmount = result.originalCurrency == 'COP'
-        ? AppCurrencyFormatService.formatCOP(result.originalAmount)
-        : '${result.originalCurrency} ${result.originalAmount.toStringAsFixed(2)}'
-          ' (≈ ${AppCurrencyFormatService.formatCOP(result.convertedAmountCop)})';
+    // Show amount in the dictated currency.
+    // If it differs from COP, also show COP equivalent for context.
+    final String displayAmount;
+    if (result.originalCurrency == 'COP') {
+      displayAmount = AppCurrencyFormatService.formatCOP(result.originalAmount);
+    } else {
+      final copLabel =
+          AppCurrencyFormatService.formatCOP(result.convertedAmountCop);
+      displayAmount =
+          '${result.originalCurrency} ${result.originalAmount.toStringAsFixed(2)}'
+          '  (≈ $copLabel)';
+    }
 
     return Container(
       width: double.infinity,
@@ -386,17 +394,33 @@ class _VoiceRegisterScreenState extends State<VoiceRegisterScreen>
           ],
           if (result.time != null) ...[
             const SizedBox(height: 6),
-            _summaryRow('Time', result.time!),
+            _summaryRow('Time', _to12h(result.time!)),
           ],
-          const SizedBox(height: 6),
-          _summaryRow(
-            'Date',
-            '${result.date.year}-${result.date.month.toString().padLeft(2, '0')}-'
-            '${result.date.day.toString().padLeft(2, '0')}',
-          ),
+          // Only show date when user explicitly mentioned it.
+          // If omitted, today is auto-applied — no need to clutter the preview.
+          if (result.wasDateExplicit) ...[
+            const SizedBox(height: 6),
+            _summaryRow(
+              'Date',
+              '${result.date.year}-${result.date.month.toString().padLeft(2, '0')}-'
+              '${result.date.day.toString().padLeft(2, '0')}',
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Converts "HH:mm" (24h) to "H:mm AM/PM" for display.
+  static String _to12h(String time24) {
+    final parts = time24.split(':');
+    if (parts.length != 2) return time24;
+    final hour24 = int.tryParse(parts[0]);
+    final min    = int.tryParse(parts[1]);
+    if (hour24 == null || min == null) return time24;
+    final suffix = hour24 < 12 ? 'AM' : 'PM';
+    final hour12 = hour24 == 0 ? 12 : (hour24 > 12 ? hour24 - 12 : hour24);
+    return '$hour12:${min.toString().padLeft(2, '0')} $suffix';
   }
 
   Widget _summaryRow(String label, String value) {

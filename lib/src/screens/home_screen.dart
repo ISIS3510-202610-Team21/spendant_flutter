@@ -244,92 +244,131 @@ class _HomeScreenState extends State<HomeScreen> {
                         current > stat.amount ? current : stat.amount,
                   );
 
+                  final flatItems =
+                      <({String? header, _ExpenseEntry? entry})>[];
+                  for (final group in expenseGroups) {
+                    flatItems.add((header: group.title, entry: null));
+                    for (final entry in group.entries) {
+                      flatItems.add((header: null, entry: entry));
+                    }
+                  }
+
                   return RefreshIndicator(
                     onRefresh: _refreshHomeFeed,
                     color: AppPalette.green,
                     backgroundColor: Colors.white,
-                    child: ListView(
+                    child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                      children: [
-                        Text(
-                          'Your Budget for today',
-                          style: AppTextStyles.sectionLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _AmountHeadline(
-                          amount: summary.spendableDailyBudget,
-                          amountColor: AppPalette.green,
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'This month you have spent',
-                          style: AppTextStyles.sectionLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _AmountHeadline(
-                          amount: monthTotal,
-                          amountColor: AppPalette.expenseRed,
-                          fontSize: 40,
-                        ),
-                        if (categoryStats.isNotEmpty) ...[
-                          const SizedBox(height: 28),
-                          SizedBox(
-                            height: 260,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final itemCount = categoryStats.length;
-                                const gap = 18.0;
-                                final totalGap = gap * (itemCount - 1);
-                                final availableWidth =
-                                    constraints.maxWidth - totalGap;
-                                final itemWidth = math.min(
-                                  110.0,
-                                  availableWidth / itemCount,
-                                );
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Your Budget for today',
+                                  style: AppTextStyles.sectionLabel,
+                                ),
+                                const SizedBox(height: 6),
+                                _AmountHeadline(
+                                  amount: summary.spendableDailyBudget,
+                                  amountColor: AppPalette.green,
+                                ),
+                                const SizedBox(height: 20),
+                                Text(
+                                  'This month you have spent',
+                                  style: AppTextStyles.sectionLabel,
+                                ),
+                                const SizedBox(height: 6),
+                                _AmountHeadline(
+                                  amount: monthTotal,
+                                  amountColor: AppPalette.expenseRed,
+                                  fontSize: 40,
+                                ),
+                                if (categoryStats.isNotEmpty) ...[
+                                  const SizedBox(height: 28),
+                                  RepaintBoundary(
+                                    child: SizedBox(
+                                      height: 260,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final itemCount =
+                                              categoryStats.length;
+                                          const gap = 18.0;
+                                          final totalGap =
+                                              gap * (itemCount - 1);
+                                          final availableWidth =
+                                              constraints.maxWidth - totalGap;
+                                          final itemWidth = math.min(
+                                            110.0,
+                                            availableWidth / itemCount,
+                                          );
 
-                                return Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < itemCount;
-                                      index++
-                                    ) ...[
-                                      SizedBox(
-                                        width: itemWidth,
-                                        child: _CategoryBarCard(
-                                          stat: categoryStats[index],
-                                          maxAmount: maxCategoryAmount,
-                                        ),
+                                          return Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              for (
+                                                var index = 0;
+                                                index < itemCount;
+                                                index++
+                                              ) ...[
+                                                SizedBox(
+                                                  width: itemWidth,
+                                                  child: _CategoryBarCard(
+                                                    stat: categoryStats[index],
+                                                    maxAmount:
+                                                        maxCategoryAmount,
+                                                  ),
+                                                ),
+                                                if (index < itemCount - 1)
+                                                  const SizedBox(width: gap),
+                                              ],
+                                            ],
+                                          );
+                                        },
                                       ),
-                                      if (index < itemCount - 1)
-                                        const SizedBox(width: gap),
-                                    ],
-                                  ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 22),
+                                ] else
+                                  const SizedBox(height: 22),
+                                if (expenseGroups.isEmpty)
+                                  const _EmptyExpensesCard(),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          sliver: SliverList.builder(
+                            itemCount: flatItems.length,
+                            itemBuilder: (context, index) {
+                              final item = flatItems[index];
+                              if (item.header != null) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Text(
+                                    item.header!,
+                                    style: AppTextStyles.dateGroupHeader,
+                                  ),
                                 );
-                              },
-                            ),
+                              }
+                              final entry = item.entry!;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _ExpenseListTile(
+                                  entry: entry,
+                                  onTap: () =>
+                                      _openExpenseDetail(entry.expense),
+                                ),
+                              );
+                            },
                           ),
-                          const SizedBox(height: 22),
-                        ] else
-                          const SizedBox(height: 22),
-                        if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
-                        for (final group in expenseGroups) ...[
-                          Text(
-                            group.title,
-                            style: AppTextStyles.dateGroupHeader,
-                          ),
-                          const SizedBox(height: 10),
-                          for (final entry in group.entries) ...[
-                            _ExpenseListTile(
-                              entry: entry,
-                              onTap: () => _openExpenseDetail(entry.expense),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                        ],
+                        ),
                       ],
                     ),
                   );

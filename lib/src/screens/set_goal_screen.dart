@@ -85,7 +85,11 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
     } catch (error) {
       // Revert optimistic update if persistence failed.
       debugPrint('_toggleActiveGoal: failed to persist — $error');
-      if (mounted) setState(() => _activeGoalKey = _activeGoalKey == newKey ? null : newKey);
+      if (mounted) {
+        setState(
+          () => _activeGoalKey = _activeGoalKey == newKey ? null : newKey,
+        );
+      }
     }
   }
 
@@ -412,9 +416,9 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
 
   AppNotificationModel _buildHabitFixerTestNotification() {
     final now = DateTime.now();
-    final timeLabel = DateFormat('HH:mm').format(
-      DateTime(now.year, now.month, now.day, 9, 15),
-    );
+    final timeLabel = DateFormat(
+      'HH:mm',
+    ).format(DateTime(now.year, now.month, now.day, 9, 15));
 
     return AppNotificationModel()
       ..id = 'habit-fixer-test-${now.microsecondsSinceEpoch}'
@@ -522,9 +526,8 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
           Expanded(child: _buildGoalsView()),
           SpendAntBottomNav(
             currentItem: SpendAntNavItem.goals,
-            onProfileTap: () => Navigator.of(
-              context,
-            ).pushReplacementNamed(AppRoutes.profile),
+            onProfileTap: () =>
+                Navigator.of(context).pushReplacementNamed(AppRoutes.profile),
           ),
         ],
       ),
@@ -620,47 +623,48 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
               final impactPerOtherGoal = otherImpactedGoals.isNotEmpty
                   ? remainingOverspend / otherImpactedGoals.length
                   : 0.0;
+              final items = <Widget>[
+                if (!summary.hasIncome) ...[
+                  const _GoalRulesNotice(
+                    message:
+                        'Goals need at least one active income because every goal reserves part of your daily budget.',
+                  ),
+                  const SizedBox(height: 14),
+                ] else if (summary.isSpendableBudgetExhausted) ...[
+                  _GoalRulesNotice(
+                    message: summary.isInternalBudgetExhausted
+                        ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
+                        : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (goalStates.isEmpty) const _EmptyGoalsCard(),
+                for (final goalState in goalStates)
+                  _GoalTile(
+                    goalState: goalState,
+                    isActive: identical(goalState, activeGoalState),
+                    todayImpact: identical(goalState, activeGoalState)
+                        ? activeGoalImpact
+                        : (otherImpactedGoals.contains(goalState)
+                              ? impactPerOtherGoal
+                              : 0.0),
+                    onDelete: () => _confirmDeleteGoal(goalState.goal),
+                    onEdit: () => _startGoalSetup(goal: goalState.goal),
+                    onToggleActive: () => _toggleActiveGoal(goalState.goal),
+                  ),
+              ];
 
               return Stack(
                 children: [
-                  ListView(
+                  ListView.builder(
                     padding: const EdgeInsets.fromLTRB(
                       24,
                       24,
                       24,
                       _bottomDockButtonClearance,
                     ),
-                    children: [
-                      if (!summary.hasIncome) ...[
-                        const _GoalRulesNotice(
-                          message:
-                              'Goals need at least one active income because every goal reserves part of your daily budget.',
-                        ),
-                        const SizedBox(height: 14),
-                      ] else if (summary.isSpendableBudgetExhausted) ...[
-                        _GoalRulesNotice(
-                          message: summary.isInternalBudgetExhausted
-                              ? 'You already spent all of today\'s internal budget. Your goals cannot grow from today\'s money anymore.'
-                              : 'You already spent all the money available to spend today. Spending more will start affecting the money reserved for your goals.',
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      if (goalStates.isEmpty) const _EmptyGoalsCard(),
-                      for (final goalState in goalStates)
-                        _GoalTile(
-                          goalState: goalState,
-                          isActive: identical(goalState, activeGoalState),
-                          todayImpact: identical(goalState, activeGoalState)
-                              ? activeGoalImpact
-                              : (otherImpactedGoals.contains(goalState)
-                                  ? impactPerOtherGoal
-                                  : 0.0),
-                          onDelete: () => _confirmDeleteGoal(goalState.goal),
-                          onEdit: () => _startGoalSetup(goal: goalState.goal),
-                          onToggleActive: () =>
-                              _toggleActiveGoal(goalState.goal),
-                        ),
-                    ],
+                    itemCount: items.length,
+                    itemBuilder: (context, index) => items[index],
                   ),
                   Positioned(
                     left: 0,
@@ -936,10 +940,8 @@ class _SetGoalScreenState extends State<SetGoalScreen> {
         final today = DateUtils.dateOnly(DateTime.now());
         final selected = await Navigator.of(context).push<DateTime>(
           MaterialPageRoute(
-            builder: (_) => DateSelectionScreen(
-              initialDate: _goalDeadline,
-              minDate: today,
-            ),
+            builder: (_) =>
+                DateSelectionScreen(initialDate: _goalDeadline, minDate: today),
           ),
         );
         if (selected != null) {
@@ -983,7 +985,6 @@ class _GoalTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onToggleActive;
-
 
   @override
   Widget build(BuildContext context) {

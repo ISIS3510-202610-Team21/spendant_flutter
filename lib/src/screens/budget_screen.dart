@@ -122,19 +122,28 @@ class BudgetScreen extends StatelessWidget {
                             .toList()
                           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(
-                        20,
-                        24,
-                        20,
-                        _bottomDockButtonClearance,
-                      ),
-                      children: [
-                        if (incomes.isEmpty)
-                          const _EmptyIncomesCard()
-                        else
-                          for (var i = 0; i < incomes.length; i++) ...[
-                            _IncomeCard(
+                    const listPadding = EdgeInsets.fromLTRB(
+                      20,
+                      24,
+                      20,
+                      _bottomDockButtonClearance,
+                    );
+
+                    if (incomes.isEmpty) {
+                      return ListView(
+                        padding: listPadding,
+                        children: const [_EmptyIncomesCard()],
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: listPadding,
+                      itemCount: incomes.length,
+                      itemBuilder: (context, i) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: RepaintBoundary(
+                            child: _IncomeCard(
                               income: incomes[i],
                               color: _cardColors[i % _cardColors.length],
                               recurrenceLabel: _recurrenceLabel(incomes[i]),
@@ -150,9 +159,9 @@ class BudgetScreen extends StatelessWidget {
                                 );
                               },
                             ),
-                            const SizedBox(height: 12),
-                          ],
-                      ],
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

@@ -1,0 +1,82 @@
+﻿Applications Memory Usage (in Kilobytes):
+Uptime: 1150458 Realtime: 1150458
+
+** MEMINFO in pid 6103 [com.example.spendant_flutter] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    16982    14748     2212    21469    17748    56824    49254     3180
+  Dalvik Heap    12642     7324     5232       59    13452    13479     6740     6739
+ Dalvik Other     9902     7240      228      100    12556                           
+        Stack     1888     1720      168      488     1896                           
+       Ashmem       22        4        0        0      428                           
+    Other dev       18        0       16        0      276                           
+     .so mmap     2783      152      248      205    32080                           
+    .jar mmap     4880        0     1092        0    38772                           
+    .apk mmap    25885      172    20212      160    47548                           
+    .ttf mmap      128        0        0        0      468                           
+    .dex mmap      669        0       12        0     3836                           
+    .oat mmap       85        0       16        0     1392                           
+    .art mmap     8737     2596     5400     4724    21412                           
+   Other mmap     8201     7060      308        0     9860                           
+      Unknown    39702    25672    14020    23430    40148                           
+        TOTAL   183159    66688    49164    50635   241872    70303    55994     9919
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    15320                          34864
+         Native Heap:    14748                          17748
+                Code:    22792                         129828
+               Stack:     1720                           1896
+            Graphics:        0                              0
+       Private Other:    61272
+              System:    67307
+             Unknown:                                   57536
+ 
+           TOTAL PSS:   183159            TOTAL RSS:   241872       TOTAL SWAP PSS:    50635
+ 
+ Objects
+               Views:        7         ViewRootImpl:        1
+         AppContexts:        9           Activities:        1
+              Assets:       35        AssetManagers:        0
+       Local Binders:       49        Proxy Binders:       74
+       Parcel memory:       18         Parcel count:       78
+    Death Recipients:        2             WebViews:        0
+ 
+ Native Allocations
+                         Count                       Total(kB)
+                        ------                         ------
+    Other (malloced):      338                             30
+ Other (nonmalloced):      148                             99
+ 
+ SQL
+         MEMORY_USED:      918
+  PAGECACHE_OVERFLOW:      393          MALLOC_SIZE:       46
+ 
+ DATABASES
+      pgsz     dbsz   Lookaside(b) cache hits cache misses cache size  Dbname
+PER CONNECTION STATS
+         4      156            110  1236   598    25  /data/user/0/com.example.spendant_flutter/databases/firestore.%5BDEFAULT%5D.spendant-5ec40.%28default%29
+         4       28             42     4    35     5  /data/user/0/com.example.spendant_flutter/databases/exchange_rates.db
+         4       28             34    27    36     4  /data/user/0/com.example.spendant_flutter/databases/sync_logs.db
+         4      104            114    46   112    25  /data/user/0/com.example.spendant_flutter/no_backup/androidx.work.workdb
+         4        8                    0     0     0    (attached) temp
+         4      104             81     8    20     5  /data/user/0/com.example.spendant_flutter/no_backup/androidx.work.workdb (3)
+POOL STATS
+     cache hits  cache misses    cache size  Dbname
+           1236           599            25  /data/user/0/com.example.spendant_flutter/databases/firestore.%5BDEFAULT%5D.spendant-5ec40.%28default%29
+              4            36             5  /data/user/0/com.example.spendant_flutter/databases/exchange_rates.db
+             27            37             4  /data/user/0/com.example.spendant_flutter/databases/sync_logs.db
+             54           136            30  /data/user/0/com.example.spendant_flutter/no_backup/androidx.work.workdb
+ 
+ Asset Allocations
+    : 127K
+    : 123K
+    : 123K
+    : 123K
+    : 122K
+    : 17K
+    : 21K
+    : 1607K
+ 

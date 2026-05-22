@@ -30,30 +30,6 @@ const List<Color> _kCurrencyColors = [
   Color(0xFFD1A039), // gold
 ];
 
-/// Currencies that operate in large numbers — displaying < 1,000 units
-/// of these gives no meaningful financial context to the user.
-/// When any of these appear as the LIST currency in Case 2, we scale up
-/// the displayed amounts until the list side shows ≥ 1,000 units.
-const Set<String> _kLargeNumberCurrencies = {'COP', 'ARS', 'CLP', 'JPY'};
-
-/// Economic category label for each supported ISO code.
-const Map<String, String> _kCurrencyCategory = {
-  'USD': 'Global Reserve',
-  'EUR': 'Global Reserve',
-  'GBP': 'Global Reserve',
-  'JPY': 'Global Reserve',
-  'CHF': 'Global Reserve',
-  'CAD': 'Strong Economy',
-  'AUD': 'Strong Economy',
-  'COP': 'Latin American',
-  'MXN': 'Latin American',
-  'BRL': 'Latin American',
-  'CLP': 'Latin American',
-  'PEN': 'Latin American',
-  'ARS': 'Latin American',
-  'CNY': 'Global Economy',
-};
-
 const List<_CurrencyInfo> _kSupportedCurrencies = [
   _CurrencyInfo(iso: 'COP', name: 'Colombian Peso'),
   _CurrencyInfo(iso: 'USD', name: 'US Dollar'),
@@ -105,76 +81,26 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   /// Rate from COP to [iso], sourced from the in-memory cache.
   double _rateFor(String iso) => CurrencyProvider.instance.rateFor(iso);
 
-  /// Equivalence label — always shows the selected currency on the left.
+  /// Equivalence label displayed on the right side of each list card.
   ///
-  /// Three cases:
-  ///
-  ///   Case 1  selectedFor1List ≥ 1000
-  ///     → "[X] [selected] = 1 [list]"
-  ///     e.g. selected=COP list=USD  →  "3,788 COP = 1 USD"
-  ///
-  ///   Case 2  listFor1Selected ≥ 1
-  ///     → "1 [selected] = [X] [list]"
-  ///     e.g. selected=USD list=COP  →  "1 USD = 3,788 COP"
-  ///          selected=EUR list=USD  →  "1 EUR = 1.16 USD"
-  ///
-  ///   Case 3  both sides < threshold
-  ///     → "1,000 [selected] = [X] [list]"
-  ///     e.g. selected=COP list=MXN  →  "1,000 COP = 4.59 MXN"
-  ///          selected=COP list=JPY  →  "1,000 COP = 42 JPY"
+  /// Formula: Rate_COP→listCurrency / Rate_COP→selectedCurrency
+  /// This gives "1 [listCurrency] = X [selectedCurrency]".
   String _equivalenceLabel(String listIso) {
-    final rateSel  = _rateFor(_selectedIso); // 1 COP in selected units
-    final rateList = _rateFor(listIso);      // 1 COP in list units
-    if (rateSel == 0 || rateList == 0) return '—';
-
-    // How many selected units buy 1 list unit.
-    final selectedFor1List = rateSel / rateList;
-    // How many list units buy 1 selected unit.
-    final listFor1Selected = rateList / rateSel;
-
-    if (selectedFor1List >= 1000) {
-      // Case 1: selected is "cheap" → big integer on left.
-      // e.g. "3,788 COP = 1 USD"
-      return '${_fmtInt(selectedFor1List.round())} $_selectedIso = 1 $listIso';
-    } else if (listFor1Selected >= 1) {
-      // Case 2: selected is more valuable → "N selected = X list"
-      // e.g. "1 USD = 3,788 COP" / "1 EUR = 1.16 USD"
-      //
-      // Large-number scale: for currencies like COP, ARS, CLP, JPY showing
-      // < 1,000 units gives no useful context ("1 MXN = 217 COP" is meaningless).
-      // Scale by powers of 10 until the list amount reaches ≥ 1,000.
-      if (_kLargeNumberCurrencies.contains(listIso) && listFor1Selected < 1000) {
-        int scale = 1;
-        while (listFor1Selected * scale < 1000 && scale <= 1000) {
-          scale *= 10;
-        }
-        final scaled = listFor1Selected * scale;
-        final scaleLabel = scale == 1 ? '1' : _fmtInt(scale);
-        return '$scaleLabel $_selectedIso = ${_fmtValue(scaled)} $listIso';
-      }
-      return '1 $_selectedIso = ${_fmtValue(listFor1Selected)} $listIso';
-    } else {
-      // Case 3: 1000-base on selected side.
-      // e.g. "1,000 COP = 4.59 MXN"
-      final val = 1000.0 * listFor1Selected;
-      return '1,000 $_selectedIso = ${_fmtValue(val)} $listIso';
+    final rateList = _rateFor(listIso);
+    final rateSel = _rateFor(_selectedIso);
+    if (rateSel == 0 || rateList == 0) {
+      return '—';
     }
-  }
-
-  /// ≥ 10 → integer with thousands comma. < 10 → 2 decimal places.
-  static String _fmtValue(double value) {
-    if (value >= 10) return _fmtInt(value.round());
-    return value.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
-  }
-
-  static String _fmtInt(int n) {
-    final s = n.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return buf.toString();
+    // rate[X] = "1 COP expressed in X".
+    // To get "1 listIso = X selectedIso":
+    //   1 listIso = (1 / rateList) COP = (rateSel / rateList) selectedIso
+    final crossRate = rateSel / rateList;
+    // Display whole numbers for COP/JPY/CLP, two decimals otherwise.
+    const wholeNumber = {'COP', 'JPY', 'CLP', 'ARS'};
+    final formatted = wholeNumber.contains(_selectedIso)
+        ? crossRate.round().toString()
+        : crossRate.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return '1 $listIso = $formatted $_selectedIso';
   }
 
   Color _accentColorFor(int index) =>
@@ -312,27 +238,13 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
                 _CurrencyBadge(iso: info.iso, color: _kSelectedAccent),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        info.name,
-                        style: GoogleFonts.nunito(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppPalette.ink,
-                        ),
-                      ),
-                      Text(
-                        'Current Currency',
-                        style: GoogleFonts.nunito(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: _kSelectedAccent,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    info.name,
+                    style: GoogleFonts.nunito(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.ink,
+                    ),
                   ),
                 ),
                 Text(
@@ -402,27 +314,13 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
               _CurrencyBadge(iso: info.iso, color: accent),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      info.name,
-                      style: GoogleFonts.nunito(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppPalette.ink,
-                      ),
-                    ),
-                    Text(
-                      _kCurrencyCategory[info.iso] ?? '',
-                      style: GoogleFonts.nunito(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: AppPalette.fieldHint,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  info.name,
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
                 ),
               ),
               Text(

@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'exchange_rate_db_service.dart';
 
@@ -58,11 +57,9 @@ class CurrencyProvider extends ChangeNotifier {
   double convertToLocal(double amountInCOP) => amountInCOP * _activeRate;
 
   /// Converts a local-currency amount back to COP.
-  /// Converts [amountInLocal] to COP, rounded UP to the nearest integer.
-  /// COP never uses decimals — rounding up avoids losing value precision.
   double convertToCOP(double amountInLocal) {
     if (_activeRate == 0) return 0;
-    return (amountInLocal / _activeRate).ceilToDouble();
+    return amountInLocal / _activeRate;
   }
 
   /// Formats [amountInCOP] with the active currency prefix.
@@ -76,9 +73,7 @@ class CurrencyProvider extends ChangeNotifier {
     return '$_activeCurrency ${_formatValue(converted)}';
   }
 
-  static const _kPrefKey = 'active_visual_currency';
-
-  /// Selects [isoCode] as the active visual currency and persists the choice.
+  /// Selects [isoCode] as the active visual currency.
   ///
   /// [rate] is the COP-indexed rate (1 COP = [rate] units of [isoCode]).
   void setActiveCurrency(String isoCode, double rate) {
@@ -86,10 +81,6 @@ class CurrencyProvider extends ChangeNotifier {
     _activeCurrency = isoCode;
     _activeRate = rate;
     notifyListeners();
-    // Persist asynchronously — never blocks the UI.
-    SharedPreferences.getInstance().then(
-      (prefs) => prefs.setString(_kPrefKey, isoCode),
-    );
   }
 
   /// Loads rates from the local SQLite cache into memory and optionally
@@ -98,28 +89,20 @@ class CurrencyProvider extends ChangeNotifier {
   /// Call this once during app startup after [ExchangeRateDbService.init].
   Future<void> loadFromDb() async {
     try {
-      // Restore rates from SQLite.
       final stored = await ExchangeRateDbService.getAllAsMap();
       if (stored.isNotEmpty) {
         _ratesCache = {
           for (final entry in stored.entries)
             entry.key: entry.value.rate,
         };
+        // Ensure COP is always present as the base.
         _ratesCache['COP'] = 1.0;
-      }
 
-      // Restore persisted currency selection from SharedPreferences.
-      final prefs = await SharedPreferences.getInstance();
-      final savedIso = prefs.getString(_kPrefKey);
-      if (savedIso != null && _ratesCache.containsKey(savedIso)) {
-        _activeCurrency = savedIso;
-        _activeRate = _ratesCache[savedIso]!;
-      } else if (_ratesCache.containsKey(_activeCurrency)) {
-        // Rates just updated — refresh active rate for the current selection.
-        _activeRate = _ratesCache[_activeCurrency]!;
+        // Refresh active rate if the currency is in the newly loaded cache.
+        if (_ratesCache.containsKey(_activeCurrency)) {
+          _activeRate = _ratesCache[_activeCurrency]!;
+        }
       }
-
-      notifyListeners();
     } catch (error) {
       debugPrint('CurrencyProvider.loadFromDb error: $error');
     }

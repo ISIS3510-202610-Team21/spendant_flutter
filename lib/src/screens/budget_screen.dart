@@ -141,21 +141,23 @@ class BudgetScreen extends StatelessWidget {
                       itemBuilder: (context, i) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: _IncomeCard(
-                            income: incomes[i],
-                            color: _cardColors[i % _cardColors.length],
-                            recurrenceLabel: _recurrenceLabel(incomes[i]),
-                            onDelete: () =>
-                                _confirmDeleteIncome(context, incomes[i]),
-                            onEdit: () async {
-                              await Navigator.of(context).push<bool>(
-                                MaterialPageRoute(
-                                  builder: (_) => NewIncomeScreen(
-                                    editingIncome: incomes[i],
+                          child: RepaintBoundary(
+                            child: _IncomeCard(
+                              income: incomes[i],
+                              color: _cardColors[i % _cardColors.length],
+                              recurrenceLabel: _recurrenceLabel(incomes[i]),
+                              onDelete: () =>
+                                  _confirmDeleteIncome(context, incomes[i]),
+                              onEdit: () async {
+                                await Navigator.of(context).push<bool>(
+                                  MaterialPageRoute(
+                                    builder: (_) => NewIncomeScreen(
+                                      editingIncome: incomes[i],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         );
                       },

@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hive/hive.dart';
 import '../models/income_model.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
@@ -298,12 +299,15 @@ class _IncomeCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                AppCurrencyFormatService.formatCOP(income.amount),
-                style: GoogleFonts.nunito(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: AppPalette.ink,
+              ListenableBuilder(
+                listenable: CurrencyProvider.instance,
+                builder: (context, _) => Text(
+                  CurrencyProvider.instance.formatFromCOP(income.amount),
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),

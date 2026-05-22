@@ -13,6 +13,7 @@ import '../../app.dart';
 import '../models/app_notification_model.dart';
 import '../models/goal_model.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../services/app_date_format_service.dart';
 import '../services/app_input_validation_service.dart';
 import '../services/auth_memory_store.dart';
@@ -1077,34 +1078,45 @@ class _GoalTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  'Saved: ${AppCurrencyFormatService.formatCOP(goalState.currentAmount)} / ${AppCurrencyFormatService.formatCOP(goal.targetAmount)}',
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
-                  ),
+                ListenableBuilder(
+                  listenable: CurrencyProvider.instance,
+                  builder: (context, _) {
+                    final fmt = CurrencyProvider.instance.formatFromCOP;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Saved: ${fmt(goalState.currentAmount)} / ${fmt(goal.targetAmount)}',
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Daily reserve: ${fmt(dailyReserve)}',
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        if (todayImpact > 0) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Today\'s spending impact: -${fmt(todayImpact)}',
+                            style: GoogleFonts.nunito(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFB25025),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Daily reserve: ${AppCurrencyFormatService.formatCOP(dailyReserve)}',
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
-                  ),
-                ),
-                if (todayImpact > 0) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Today\'s spending impact: -${AppCurrencyFormatService.formatCOP(todayImpact)}',
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFB25025),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: AppRadius.pill,

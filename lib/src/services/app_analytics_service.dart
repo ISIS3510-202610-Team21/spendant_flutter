@@ -5,7 +5,9 @@ import 'package:mixpanel_flutter/mixpanel_flutter.dart';
 
 import '../models/expense_model.dart';
 import '../repositories/expense_analytics_repository.dart';
+import 'daily_budget_service.dart';
 import 'expense_moment_service.dart';
+import 'local_storage_service.dart';
 
 class AppAnalyticsService {
   AppAnalyticsService({ExpenseAnalyticsRepository? repository})
@@ -58,6 +60,9 @@ class AppAnalyticsService {
       await _logMostActiveHour(mp, expenses);
       await _logSmallRecurringExpenses(mp, expenses);
       await _logExpenseRegistrationMethods(mp, expenses);
+      await _logMonthlyGoalProgress(mp, userId);
+      await _logMonthlyBudgetConsumption(mp, userId, expenses);
+      await _logHighestGrowthCategory(mp, expenses);
     } catch (_) {
       // Analytics is best-effort — must never interrupt app flow.
     }
@@ -233,5 +238,141 @@ class AppAnalyticsService {
       value.hour, value.minute, value.second,
       value.millisecond, value.microsecond,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // BQ6 — Monthly savings goal progress vs expected pace
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logMonthlyGoalProgress(Mixpanel mp, int userId) async {
+    final goals = LocalStorageService.goalBox.values
+        .where((g) => g.userId == userId)
+        .toList();
+    if (goals.isEmpty) return;
+
+    final now        = DateTime.now();
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final dayOfMonth  = now.day;
+    final summary     = DailyBudgetService.buildSummaryForUser(userId);
+
+    for (final goal in goals) {
+      final state = summary.stateFor(goal);
+      if (state == null || goal.targetAmount <= 0) continue;
+
+      final actualPct   = ((state.currentAmount / goal.targetAmount) * 100).clamp(0.0, 100.0);
+      final expectedPct = ((dayOfMonth / daysInMonth) * 100);
+      final delta       = actualPct - expectedPct;
+
+      mp.track('monthly_goal_progress', properties: <String, dynamic>{
+        'goal_name':          goal.name,
+        'target_amount_cop':  goal.targetAmount.round(),
+        'current_amount_cop': state.currentAmount.round(),
+        'actual_pct':         actualPct.truncate(),
+        'expected_pct':       expectedPct.truncate(),
+        'delta_pct':          delta.truncate(),  // positive = ahead, negative = behind
+        'day_of_month':       dayOfMonth,
+        'status':             delta >= 0 ? 'on_track' : 'behind',
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // BQ7 — Monthly budget consumed vs midpoint threshold
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logMonthlyBudgetConsumption(
+    Mixpanel mp,
+    int userId,
+    List<ExpenseModel> allExpenses,
+  ) async {
+    final now   = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+
+    final monthExpenses = allExpenses.where((e) {
+      final moment = ExpenseMomentService.expenseMoment(e);
+      return !moment.isBefore(start) && !moment.isAfter(now);
+    }).toList();
+
+    if (monthExpenses.isEmpty) return;
+
+    final dayOfMonth  = now.day;
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+
+    final summary = DailyBudgetService.buildSummaryForUser(userId);
+    // Monthly budget ≈ dailyBudget × days-in-month (incomes are daily-normalized)
+    final monthlyIncome = summary.internalDailyBudget * daysInMonth;
+    if (monthlyIncome <= 0) return;
+
+    final consumed = monthExpenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final consumedPct = ((consumed / monthlyIncome) * 100).clamp(0.0, 200.0);
+    final monthProgress = (dayOfMonth / daysInMonth * 100).truncate();
+
+    mp.track('monthly_budget_midpoint_consumption', properties: <String, dynamic>{
+      'consumed_cop':    consumed.round(),
+      'budget_cop':      monthlyIncome.round(),
+      'consumed_pct':    consumedPct.truncate(),
+      'day_of_month':    dayOfMonth,
+      'month_progress_pct': monthProgress,
+      // Flag when > 60% budget used with < 50% month elapsed
+      'overpace_alert':  consumedPct > 60 && monthProgress < 50,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // BQ8 — Highest category growth vs same period last month
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logHighestGrowthCategory(
+    Mixpanel mp,
+    List<ExpenseModel> allExpenses,
+  ) async {
+    final now      = DateTime.now();
+    final thisStart = DateTime(now.year, now.month, 1);
+    final lastStart = DateTime(now.year, now.month - 1, 1);
+    final lastEnd   = DateTime(now.year, now.month - 1, now.day, 23, 59, 59);
+
+    Map<String, double> sumByCategory(
+      List<ExpenseModel> expenses,
+      DateTime from,
+      DateTime to,
+    ) {
+      final totals = <String, double>{};
+      for (final e in expenses) {
+        final m = ExpenseMomentService.expenseMoment(e);
+        if (m.isBefore(from) || m.isAfter(to)) continue;
+        final cat = e.primaryCategory ?? 'Other';
+        totals[cat] = (totals[cat] ?? 0) + e.amount;
+      }
+      return totals;
+    }
+
+    final thisPeriod = sumByCategory(allExpenses, thisStart, now);
+    final lastPeriod = sumByCategory(allExpenses, lastStart, lastEnd);
+
+    if (thisPeriod.isEmpty) return;
+
+    String? topCategory;
+    double topGrowthPct = double.negativeInfinity;
+
+    for (final entry in thisPeriod.entries) {
+      final prev   = lastPeriod[entry.key] ?? 0;
+      final growth = prev > 0
+          ? ((entry.value - prev) / prev) * 100
+          : entry.value > 0 ? 100.0 : 0.0;
+      if (growth > topGrowthPct) {
+        topGrowthPct = growth;
+        topCategory  = entry.key;
+      }
+    }
+
+    if (topCategory == null) return;
+
+    mp.track('highest_growth_category', properties: <String, dynamic>{
+      'category':          topCategory,
+      'current_amount_cop': thisPeriod[topCategory]!.round(),
+      'previous_amount_cop': (lastPeriod[topCategory] ?? 0).round(),
+      'growth_pct':        topGrowthPct.truncate(),
+      'is_new_category':   !(lastPeriod.containsKey(topCategory)),
+    });
   }
 }

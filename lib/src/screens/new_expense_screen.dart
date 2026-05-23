@@ -2070,13 +2070,16 @@ class DateSelectionScreen extends StatefulWidget {
     super.key,
     required this.initialDate,
     this.minDate,
+    this.maxDate,
   });
 
   final DateTime initialDate;
 
   /// When set, the calendar will not allow selecting a date before this day.
-  /// Defaults to 2020-01-01 (allows past dates, used for expense editing).
   final DateTime? minDate;
+
+  /// When set, the calendar will not allow selecting a date after this day.
+  final DateTime? maxDate;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
@@ -2155,7 +2158,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                           firstDate: widget.minDate != null
                               ? DateUtils.dateOnly(widget.minDate!)
                               : DateTime(2020),
-                          lastDate: DateTime(2040),
+                          lastDate: widget.maxDate != null
+                              ? DateUtils.dateOnly(widget.maxDate!)
+                              : DateTime(2040),
                           currentDate: DateTime.now(),
                           onDateChanged: (value) {
                             setState(() {

@@ -26,6 +26,7 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
   DateTime? _firstExpenseDate;
   List<FinancialReport> _recentReports = [];
   bool _generating = false;
+  FinancialReport? _cachedForSelection; // cached report matching current dates
 
   @override
   void initState() {
@@ -38,17 +39,29 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
   Future<void> _loadConstraintsAndRecent() async {
     final userId = AuthMemoryStore.currentUserIdOrGuest;
     final first  = ReportWorker.firstExpenseDate(userId);
+
+    // Compute the effective startDate AFTER applying the first-expense clamp,
+    // so the cache lookup uses the same dates the user will actually see.
+    final effectiveStart = (first != null && _startDate.isBefore(first))
+        ? first
+        : _startDate;
+
     final recent = await ReportCacheService.listRecent(userId);
+    final cached = await ReportCacheService.get(userId, effectiveStart, _endDate);
 
     if (!mounted) return;
     setState(() {
       _firstExpenseDate = first;
-      // Clamp startDate to first expense
-      if (first != null && _startDate.isBefore(first)) {
-        _startDate = first;
-      }
-      _recentReports = recent;
+      _startDate        = effectiveStart;
+      _recentReports      = recent;
+      _cachedForSelection = cached;
     });
+  }
+
+  Future<void> _checkCacheForSelection() async {
+    final userId = AuthMemoryStore.currentUserIdOrGuest;
+    final cached = await ReportCacheService.get(userId, _startDate, _endDate);
+    if (mounted) setState(() => _cachedForSelection = cached);
   }
 
   // ---------------------------------------------------------------------------
@@ -61,19 +74,19 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
       MaterialPageRoute(
         builder: (_) => DateSelectionScreen(
           initialDate: _startDate,
+          title: 'Select period',
           minDate: min,
-          maxDate: _endDate,  // start cannot exceed current end
+          maxDate: _endDate,
         ),
       ),
     );
     if (result != null && mounted) {
       setState(() {
         _startDate = result;
-        // If start overtook end, move end forward
-        if (_startDate.isAfter(_endDate)) {
-          _endDate = _startDate;
-        }
+        if (_startDate.isAfter(_endDate)) _endDate = _startDate;
+        _cachedForSelection = null; // dates changed, invalidate
       });
+      _checkCacheForSelection();
     }
   }
 
@@ -82,13 +95,18 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
       MaterialPageRoute(
         builder: (_) => DateSelectionScreen(
           initialDate: _endDate,
-          minDate: _startDate,   // end cannot precede start
-          maxDate: _today,       // end cannot exceed today
+          title: 'Select period',
+          minDate: _startDate,
+          maxDate: _today,
         ),
       ),
     );
     if (result != null && mounted) {
-      setState(() => _endDate = result);
+      setState(() {
+        _endDate            = result;
+        _cachedForSelection = null;
+      });
+      _checkCacheForSelection();
     }
   }
 
@@ -106,11 +124,9 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
     setState(() => _generating = false);
 
     if (report != null) {
-      await Navigator.of(context).pushNamed(
-        AppRoutes.report,
-        arguments: report,
-      );
-      // Refresh recent list after returning
+      // Show cached-report button immediately (same dates = this IS the cache)
+      if (mounted) setState(() => _cachedForSelection = report);
+      await Navigator.of(context).pushNamed(AppRoutes.report, arguments: report);
       _loadConstraintsAndRecent();
     }
   }
@@ -151,15 +167,21 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
                       date: _endDate,
                       onTap: _pickEndDate,
                     ),
-                    if (_recentReports.isNotEmpty) ...[
-                      const SizedBox(height: 28),
-                      _buildSectionLabel(
-                        _recentReports.length == 1
-                            ? 'Last report (cached)'
-                            : 'Recent reports (cached)',
-                      ),
+                    // "Ver este informe" — shows when current selection is cached
+                    if (_cachedForSelection != null) ...[
+                      const SizedBox(height: 20),
+                      _buildViewCachedButton(_cachedForSelection!),
+                    ],
+                    // Other recent reports for different date ranges
+                    if (_recentReports
+                        .where((r) => r.periodKey != _cachedForSelection?.periodKey)
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      _buildSectionLabel('Other recent reports'),
                       const SizedBox(height: 10),
-                      ..._recentReports.map(_buildRecentCard),
+                      ..._recentReports
+                          .where((r) => r.periodKey != _cachedForSelection?.periodKey)
+                          .map(_buildRecentCard),
                     ],
                     const SizedBox(height: 28),
                     _buildGenerateButton(),
@@ -261,6 +283,53 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
   // ---------------------------------------------------------------------------
   // Recent report card
   // ---------------------------------------------------------------------------
+
+  // "Ver este informe" — prominent button when cached report matches current dates
+  Widget _buildViewCachedButton(FinancialReport report) {
+    return GestureDetector(
+      onTap: () => _openReport(report),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppPalette.green.withValues(alpha: 0.10),
+          borderRadius: AppRadius.card,
+          border: Border.all(color: AppPalette.green, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_outline,
+                color: AppPalette.green, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'View this report',
+                    style: GoogleFonts.nunito(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                  Text(
+                    'Generated at ${DateFormat('HH:mm').format(report.generatedAt)} · tap to open',
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppPalette.fieldHint,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppPalette.green),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildRecentCard(FinancialReport report) {
     final iso = report.totalSpent == 0 ? '' : '  ·  ';

@@ -64,6 +64,15 @@ abstract final class ReportWorker {
       return empty;
     }
 
+    // ── BQ1: days since last expense (all-time, main thread) ─────────────
+    final allUserExpenses = LocalStorageService.expenseBox.values
+        .where((e) => e.userId == userId)
+        .toList();
+    final daysSinceLastExpense = _daysSinceLastExpense(allUserExpenses);
+
+    // ── BQ4: small recurring expenses in last 3 months (main thread) ─────
+    final smallRecurring3m = _smallRecurringLast3Months(allUserExpenses);
+
     // Serialise to primitive maps — safe across Isolate boundary.
     final rawExpenses = allExpenses
         .map(_expenseToMap)
@@ -75,13 +84,15 @@ abstract final class ReportWorker {
     // ── Background Isolate: aggregate ─────────────────────────────────────
     final report = await Isolate.run(
       () => _aggregate(
-        rawExpenses:     rawExpenses,
-        startDate:       start,
-        endDate:         end,
-        periodLabel:     periodLabel,
-        activeRate:      activeRate,
-        activeCurrency:  activeCurrency,
-        usageCount:      usageCount,
+        rawExpenses:          rawExpenses,
+        startDate:            start,
+        endDate:              end,
+        periodLabel:          periodLabel,
+        activeRate:           activeRate,
+        activeCurrency:       activeCurrency,
+        usageCount:           usageCount,
+        daysSinceLastExpense: daysSinceLastExpense,
+        smallRecurring3m:     smallRecurring3m,
       ),
     );
 
@@ -111,6 +122,8 @@ FinancialReport _aggregate({
   required double activeRate,
   required String activeCurrency,
   required int usageCount,
+  required int daysSinceLastExpense,
+  required int smallRecurring3m,
 }) {
   double totalCop = 0;
   final dailyMap    = <String, double>{};
@@ -160,6 +173,14 @@ FinancialReport _aggregate({
     count:  catCounts[entry.key] ?? 0,
   )).toList();
 
+  // Fill every calendar day in the range so the histogram has no gaps.
+  var cursor = startDate;
+  while (!cursor.isAfter(endDate)) {
+    final k = '${cursor.year}-${cursor.month.toString().padLeft(2, '0')}-${cursor.day.toString().padLeft(2, '0')}';
+    dailyMap.putIfAbsent(k, () => 0);
+    cursor = cursor.add(const Duration(days: 1));
+  }
+
   // Daily spends ascending.
   final daily = dailyMap.entries
       .map((e) => DailySpend(
@@ -168,6 +189,81 @@ FinancialReport _aggregate({
           ))
       .toList()
     ..sort((a, b) => a.date.compareTo(b.date));
+
+  // ── BQ2: OCR usage rate ───────────────────────────────────────────────
+  final ocrCount  = rawExpenses.where((e) => e['source'] == 'OCR').length;
+  final total     = rawExpenses.length;
+  final ocrPct    = total > 0 ? ((ocrCount / total) * 100).round() : 0;
+
+  // ── BQ3: most common registration hour ───────────────────────────────
+  final hourCounts = <int, int>{};
+  for (final e in rawExpenses) {
+    final t = e['time'] as String?;
+    if (t != null && t.length >= 2) {
+      final h = int.tryParse(t.substring(0, 2));
+      if (h != null) hourCounts[h] = (hourCounts[h] ?? 0) + 1;
+    }
+  }
+  String? mostActiveHourLabel;
+  if (hourCounts.isNotEmpty) {
+    final h = hourCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    final suffix = h < 12 ? 'AM' : 'PM';
+    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+    mostActiveHourLabel = '$h12:00 $suffix';
+  }
+
+  // ── Spending advice: highest single expense in period ────────────────
+  String? highestExpenseNote;
+  if (top5.isNotEmpty) {
+    final top = top5.first;
+    highestExpenseNote =
+        'Highest expense: ${top.name} — $activeCurrency ${_fmtNum(top.amount)}';
+  }
+
+  // ── Spending advice: average daily spending ───────────────────────────
+  final periodDays = endDate.difference(startDate).inDays + 1;
+  final avgDaily   = periodDays > 0 ? (totalCop * activeRate) / periodDays : 0.0;
+
+  // ── Micro-expenses (< 5000 COP equivalent) in period ─────────────────
+  final microCount = rawExpenses
+      .where((e) => (e['amount'] as num).toDouble() < 5000)
+      .length;
+
+  // ── Build ordered BQ insight lines ───────────────────────────────────
+  final insights = <String>[];
+
+  // BQ1
+  if (daysSinceLastExpense >= 0) {
+    insights.add(daysSinceLastExpense == 0
+        ? 'You registered an expense today'
+        : '$daysSinceLastExpense ${daysSinceLastExpense == 1 ? 'day' : 'days'} since your last registered expense');
+  }
+
+  // BQ2 — OCR edit rate proxy
+  if (total > 0) {
+    insights.add('$ocrPct% of expenses in this period were captured with OCR scanning ($ocrCount of $total)');
+  }
+
+  // BQ3
+  if (mostActiveHourLabel != null) {
+    insights.add('Most common registration time in this period: $mostActiveHourLabel');
+  }
+
+  // BQ4
+  if (smallRecurring3m > 0) {
+    insights.add('$smallRecurring3m small recurring ${smallRecurring3m == 1 ? 'expense' : 'expenses'} in the last 3 months');
+  }
+
+  // Spending advice insights
+  if (highestExpenseNote != null) insights.add(highestExpenseNote);
+
+  if (microCount > 0) {
+    insights.add('$microCount small purchases under $activeCurrency ${_fmtNum(5000 * activeRate)} in this period');
+  }
+
+  if (avgDaily > 0 && periodDays > 1) {
+    insights.add('Average daily spending: $activeCurrency ${_fmtNum(avgDaily)}');
+  }
 
   return FinancialReport(
     startDate:              startDate,
@@ -180,6 +276,7 @@ FinancialReport _aggregate({
     topCategories:          top5Cats,
     reportsGeneratedCount:  usageCount,
     mostActiveWeekday:      mostActiveWeekday,
+    bqInsights:             insights,
   );
 }
 
@@ -187,8 +284,44 @@ Map<String, dynamic> _expenseToMap(ExpenseModel e) => {
   'amount':          e.amount,
   'name':            e.name,
   'date':            e.date.toIso8601String(),
+  'time':            e.time,                      // "HH:mm" for most-active-hour
   'primaryCategory': e.primaryCategory,
+  'source':          e.source,                    // 'MANUAL' | 'OCR' | 'GOOGLE_PAY'
+  'isRecurring':     e.isRecurring,               // small recurring BQ
 };
+
+// Helper: days since last expense across ALL user expenses (main thread).
+int _daysSinceLastExpense(List<ExpenseModel> allExpenses) {
+  if (allExpenses.isEmpty) return -1;
+  final latest = allExpenses
+      .map((e) => e.date)
+      .reduce((a, b) => a.isAfter(b) ? a : b);
+  return DateTime.now().difference(DateUtils.dateOnly(latest)).inDays;
+}
+
+// Helper: small recurring expense count in last 3 months (main thread).
+int _smallRecurringLast3Months(List<ExpenseModel> allExpenses) {
+  final cutoff = DateUtils.dateOnly(DateTime.now()).subtract(const Duration(days: 90));
+  return allExpenses
+      .where((e) => e.isRecurring && e.amount < 50000 && !e.date.isBefore(cutoff))
+      .length;
+}
+
+// Format number for insight strings (no currency provider — top-level fn).
+String _fmtNum(double v) {
+  if (v >= 1000) {
+    // Simple thousands separator without intl
+    final s = v.round().toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
+  }
+  final s = v.toStringAsFixed(2);
+  return s.replaceAll(RegExp(r'\.?0+$'), '');
+}
 
 String _buildLabel(DateTime start, DateTime end) {
   final fmt = DateFormat('MMM d');

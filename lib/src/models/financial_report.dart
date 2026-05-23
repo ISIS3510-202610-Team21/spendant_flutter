@@ -16,6 +16,7 @@ class FinancialReport {
     required this.topCategories,
     this.reportsGeneratedCount = 0,
     this.mostActiveWeekday,
+    this.bqInsights = const [],
   });
 
   final DateTime startDate;
@@ -42,6 +43,9 @@ class FinancialReport {
   /// Day-of-week (1=Mon…7=Sun) with most spending, null if not enough data.
   final int? mostActiveWeekday;
 
+  /// Pre-computed BQ insight strings shown in the report UI.
+  final List<String> bqInsights;
+
   // ---------------------------------------------------------------------------
 
   String get periodKey =>
@@ -61,6 +65,7 @@ class FinancialReport {
     'topCategories': topCategories.map((c) => c.toJson()).toList(),
     'reportsGeneratedCount': reportsGeneratedCount,
     'mostActiveWeekday': mostActiveWeekday,
+    'bqInsights': bqInsights,
   };
 
   factory FinancialReport.fromJson(Map<String, dynamic> json) =>
@@ -81,6 +86,10 @@ class FinancialReport {
             .toList(),
         reportsGeneratedCount: json['reportsGeneratedCount'] as int? ?? 0,
         mostActiveWeekday: json['mostActiveWeekday'] as int?,
+        bqInsights: (json['bqInsights'] as List?)
+                ?.map((e) => e as String)
+                .toList() ??
+            const [],
       );
 
   String toJsonString() => jsonEncode(toJson());

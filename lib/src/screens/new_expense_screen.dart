@@ -2071,15 +2071,17 @@ class DateSelectionScreen extends StatefulWidget {
     required this.initialDate,
     this.minDate,
     this.maxDate,
+    this.title = 'New Expense',
   });
 
   final DateTime initialDate;
-
-  /// When set, the calendar will not allow selecting a date before this day.
   final DateTime? minDate;
-
-  /// When set, the calendar will not allow selecting a date after this day.
   final DateTime? maxDate;
+
+  /// Header title shown at the top.  Defaults to 'New Expense' for backward
+  /// compatibility; pass a custom value (e.g. 'Select period') when reusing
+  /// this screen outside the expense flow.
+  final String title;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
@@ -2117,7 +2119,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'New Expense',
+              title: widget.title,
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
             ),

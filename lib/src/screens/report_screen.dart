@@ -39,16 +39,9 @@ class _ReportScreenState extends State<ReportScreen> {
     if (!mounted) return;
     setState(() => _downloadingPdf = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          path != null
-              ? 'PDF saved to Downloads'
-              : 'Could not generate PDF. Try again.',
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    if (path != null) {
+      await PdfReportService.openFile(path);
+    }
   }
 
   @override
@@ -191,13 +184,13 @@ class _ReportScreenState extends State<ReportScreen> {
           ...report.topCategories.asMap().entries.map(
             (e) => _buildCategoryRow(e.key, e.value, report.totalSpent),
           ),
-          if (report.reportsGeneratedCount > 0 || report.mostActiveWeekday != null) ...[
+          if (report.bqInsights.isNotEmpty || report.reportsGeneratedCount > 0) ...[
             const SizedBox(height: 28),
             _buildInsights(report),
           ],
           const SizedBox(height: 16),
           Text(
-            'Generated ${DateFormat('MMM d, HH:mm').format(report.generatedAt)}  ·  Cached 24h',
+            'Generated ${DateFormat('MMM d, y · HH:mm').format(report.generatedAt)}',
             style: GoogleFonts.nunito(fontSize: 11, color: Colors.black38),
           ),
         ],
@@ -210,25 +203,12 @@ class _ReportScreenState extends State<ReportScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildInsights(FinancialReport report) {
-    final items = <String>[];
-
-    if (report.reportsGeneratedCount > 0) {
-      items.add(
-        '📊  You\'ve generated ${report.reportsGeneratedCount} '
+    final items = <String>[
+      ...report.bqInsights,
+      if (report.reportsGeneratedCount > 0)
+        'You have generated ${report.reportsGeneratedCount} '
         '${report.reportsGeneratedCount == 1 ? 'report' : 'reports'} so far',
-      );
-    }
-    if (report.mostActiveWeekday != null) {
-      const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-          'Friday', 'Saturday', 'Sunday'];
-      final wd = report.mostActiveWeekday!;
-      if (wd >= 1 && wd <= 7) {
-        items.add('📅  Most spending happened on ${days[wd]}s');
-      }
-    }
-    if (report.topCategories.isNotEmpty) {
-      items.add('🏆  Top category: ${report.topCategories.first.label}');
-    }
+    ];
 
     if (items.isEmpty) return const SizedBox.shrink();
 

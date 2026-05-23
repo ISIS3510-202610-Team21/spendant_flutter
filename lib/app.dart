@@ -9,6 +9,8 @@ import 'src/models/goal_model.dart';
 import 'src/models/income_model.dart';
 import 'src/screens/budget_screen.dart';
 import 'src/screens/currency_converter_screen.dart';
+import 'src/screens/report_screen.dart';
+import 'src/screens/report_setup_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
@@ -45,6 +47,8 @@ abstract final class AppRoutes {
   static const budget = '/budget';
   static const profile = '/profile';
   static const currencyConverter = '/currency-converter';
+  static const reportSetup = '/report-setup';
+  static const report = '/report';
 }
 
 class SpendAntApp extends StatefulWidget {
@@ -238,6 +242,8 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.budget: (_) => const BudgetScreen(),
         AppRoutes.profile: (_) => const ProfileScreen(),
         AppRoutes.currencyConverter: (_) => const CurrencyConverterScreen(),
+        AppRoutes.reportSetup: (_) => const ReportSetupScreen(),
+        AppRoutes.report: (_) => const ReportScreen(),
       },
     );
   }

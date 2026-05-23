@@ -332,8 +332,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: _actionButton(
                           'Summary',
                           assetPath: 'web/icons/PDF.svg',
-                          // TODO: Future PDF Feature
-                          onPressed: () {},
+                          onPressed: () => Navigator.of(context).pushNamed(
+                            AppRoutes.reportSetup,
+                          ),
                         ),
                       ),
                     ],

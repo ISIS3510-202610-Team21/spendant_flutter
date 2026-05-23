@@ -26,6 +26,7 @@ import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/sync_log_service.dart';
 import '../utils/url_utils.dart';
+import '../models/voice_parse_result.dart';
 import '../services/currency_provider.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
@@ -36,6 +37,7 @@ import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../mixins/connectivity_aware_mixin.dart';
 import '../widgets/no_internet_banner.dart';
+import 'voice_register_screen.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
@@ -863,6 +865,53 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Voice Register
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openVoiceRegister() async {
+    final result = await Navigator.of(context).push<VoiceParseResult>(
+      MaterialPageRoute(
+        builder: (_) => const VoiceRegisterScreen(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (result != null && mounted) {
+      _fillFromVoiceResult(result);
+    }
+  }
+
+  void _fillFromVoiceResult(VoiceParseResult result) {
+    setState(() {
+      _expenseNameController.text = result.productName;
+
+      // Fill field in the active currency so the user sees their own unit.
+      // The save path already calls convertToCOP(parsedAmount) → Firebase gets COP.
+      _expenseValueController.text = _formatAmountForInput(
+        CurrencyProvider.instance.convertToLocal(result.convertedAmountCop),
+      );
+
+      _selectedDate = DateUtils.dateOnly(result.date);
+
+      if (result.time != null) {
+        final parts = result.time!.split(':');
+        if (parts.length == 2) {
+          final hour = int.tryParse(parts[0]);
+          final minute = int.tryParse(parts[1]);
+          if (hour != null && minute != null) {
+            _selectedTime = TimeOfDay(hour: hour, minute: minute);
+          }
+        }
+      }
+
+      if (result.location != null) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: result.location!,
+        );
+      }
+    });
+  }
+
   Future<String?> _resolveReceiptCloudinaryUrl() async {
     // Case 1: no new receipt selected — return whatever URL is already stored.
     // This covers both existing remote URLs and legacy local-path-as-URL records.
@@ -1427,53 +1476,84 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   ),
                                   const SizedBox(height: 24),
                                   Center(
-                                    child: SizedBox(
-                                      width: 148,
-                                      child: widget.editingExpense == null
-                                          ? ElevatedButton.icon(
-                                              onPressed: _isScanningReceipt
-                                                  ? null
-                                                  : _scanReceipt,
-                                              icon: _isScanningReceipt
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        valueColor:
-                                                            AlwaysStoppedAnimation<
-                                                              Color
-                                                            >(AppPalette.white),
-                                                      ),
-                                                    )
-                                                  : SvgPicture.asset(
-                                                      'web/icons/Camera.svg',
-                                                      width: 18,
-                                                      height: 18,
-                                                      colorFilter:
-                                                          const ColorFilter.mode(
+                                    child: widget.editingExpense == null
+                                        ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SizedBox(
+                                                width: 148,
+                                                child: ElevatedButton.icon(
+                                                  onPressed: _isScanningReceipt
+                                                      ? null
+                                                      : _scanReceipt,
+                                                  icon: _isScanningReceipt
+                                                      ? const SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            valueColor:
+                                                                AlwaysStoppedAnimation<Color>(
+                                                              AppPalette.white,
+                                                            ),
+                                                          ),
+                                                        )
+                                                      : SvgPicture.asset(
+                                                          'web/icons/Camera.svg',
+                                                          width: 18,
+                                                          height: 18,
+                                                          colorFilter:
+                                                              const ColorFilter.mode(
                                                             AppPalette.white,
                                                             BlendMode.srcIn,
                                                           ),
-                                                    ),
-                                              label: Text(
-                                                _isScanningReceipt
-                                                    ? 'Scanning...'
-                                                    : 'Scan Receipt',
-                                              ),
-                                              style: ElevatedButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
+                                                        ),
+                                                  label: Text(
+                                                    _isScanningReceipt
+                                                        ? 'Scanning...'
+                                                        : 'Scan Receipt',
+                                                  ),
+                                                  style: ElevatedButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
                                                       vertical: 12,
                                                       horizontal: 14,
                                                     ),
-                                                textStyle: GoogleFonts.nunito(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
+                                                    textStyle:
+                                                        GoogleFonts.nunito(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
-                                            )
-                                          : ElevatedButton(
+                                              const SizedBox(width: 10),
+                                              ElevatedButton(
+                                                onPressed: _openVoiceRegister,
+                                                style:
+                                                    ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      AppPalette.ink,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    vertical: 12,
+                                                    horizontal: 14,
+                                                  ),
+                                                  minimumSize:
+                                                      const Size(48, 0),
+                                                ),
+                                                child: SvgPicture.asset(
+                                                  'web/icons/WhiteMic.svg',
+                                                  width: 20,
+                                                  height: 20,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : SizedBox(
+                                            width: 148,
+                                            child: ElevatedButton(
                                               onPressed:
                                                   _isDeletingExpense ||
                                                       _isSavingExpense
@@ -1989,13 +2069,18 @@ class DateSelectionScreen extends StatefulWidget {
     super.key,
     required this.initialDate,
     this.minDate,
+    this.maxDate,
+    this.title = 'New Expense',
   });
 
   final DateTime initialDate;
-
-  /// When set, the calendar will not allow selecting a date before this day.
-  /// Defaults to 2020-01-01 (allows past dates, used for expense editing).
   final DateTime? minDate;
+  final DateTime? maxDate;
+
+  /// Header title shown at the top.  Defaults to 'New Expense' for backward
+  /// compatibility; pass a custom value (e.g. 'Select period') when reusing
+  /// this screen outside the expense flow.
+  final String title;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
@@ -2033,7 +2118,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'New Expense',
+              title: widget.title,
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
             ),
@@ -2074,7 +2159,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                           firstDate: widget.minDate != null
                               ? DateUtils.dateOnly(widget.minDate!)
                               : DateTime(2020),
-                          lastDate: DateTime(2040),
+                          lastDate: widget.maxDate != null
+                              ? DateUtils.dateOnly(widget.maxDate!)
+                              : DateTime(2040),
                           currentDate: DateTime.now(),
                           onDateChanged: (value) {
                             setState(() {

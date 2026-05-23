@@ -1,0 +1,65 @@
+import 'dart:convert';
+
+/// Result produced by the voice pipeline after passing through all 3 stages:
+///   Stage 1+2 (Android SpeechRecognizer) → Stage 3 (Isolate entity parser).
+///
+/// [originalAmount] and [originalCurrency] preserve the user's dictated
+/// values; [convertedAmountCop] is the COP equivalent computed by
+/// [CurrencyProvider] after parsing (Firebase always stores COP).
+///
+/// [wasDateExplicit] is true only when the user's speech contained a date
+/// reference (today/yesterday/Monday/etc.). When false the date was auto-set
+/// to today and should NOT be shown in the confirmation preview.
+class VoiceParseResult {
+  const VoiceParseResult({
+    required this.rawText,
+    required this.productName,
+    required this.originalAmount,
+    required this.originalCurrency,
+    required this.convertedAmountCop,
+    required this.date,
+    this.wasDateExplicit = false,
+    this.time,
+    this.location,
+  });
+
+  final String rawText;
+  final String productName;
+  final double originalAmount;
+  final String originalCurrency;
+  final double convertedAmountCop;
+  final DateTime date;
+  final bool wasDateExplicit;
+  final String? time;      // "HH:mm" 24-hour or null
+  final String? location;  // free-text location name or null
+
+  Map<String, dynamic> toJson() => {
+    'rawText': rawText,
+    'productName': productName,
+    'originalAmount': originalAmount,
+    'originalCurrency': originalCurrency,
+    'convertedAmountCop': convertedAmountCop,
+    'date': date.toIso8601String(),
+    'wasDateExplicit': wasDateExplicit,
+    'time': time,
+    'location': location,
+  };
+
+  factory VoiceParseResult.fromJson(Map<String, dynamic> json) {
+    return VoiceParseResult(
+      rawText: json['rawText'] as String,
+      productName: json['productName'] as String,
+      originalAmount: (json['originalAmount'] as num).toDouble(),
+      originalCurrency: json['originalCurrency'] as String,
+      convertedAmountCop: (json['convertedAmountCop'] as num).toDouble(),
+      date: DateTime.parse(json['date'] as String),
+      wasDateExplicit: json['wasDateExplicit'] as bool? ?? false,
+      time: json['time'] as String?,
+      location: json['location'] as String?,
+    );
+  }
+
+  String toJsonString() => jsonEncode(toJson());
+  static VoiceParseResult fromJsonString(String s) =>
+      VoiceParseResult.fromJson(jsonDecode(s) as Map<String, dynamic>);
+}

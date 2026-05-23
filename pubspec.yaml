@@ -96,6 +96,7 @@ flutter:
     - .env
     - web/ant/
     - web/icons/
+    - android/app/src/main/res/drawable/spendant_notification_large_icon.png
 
   fonts:
     - family: Nunito

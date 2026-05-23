@@ -395,12 +395,12 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             timePickerTheme: TimePickerThemeData(
               backgroundColor: AppPalette.field,
               shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(28)),
+                borderRadius: const BorderRadius.all(Radius.circular(28)),
               ),
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               helpTextStyle: timePickerTextTheme.labelMedium,
               hourMinuteShape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
               ),
               hourMinuteColor: WidgetStateColor.resolveWith((
                 Set<WidgetState> states,
@@ -419,7 +419,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 return AppPalette.green;
               }),
               dayPeriodShape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(10)),
+                borderRadius: const BorderRadius.all(Radius.circular(10)),
                 side: BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
               ),
               dayPeriodColor: WidgetStateColor.resolveWith((
@@ -470,15 +470,15 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   vertical: 18,
                 ),
                 border: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide(color: AppPalette.green, width: 1.5),
                 ),
               ),
@@ -512,7 +512,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
             decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.all(Radius.circular(24)),
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
@@ -1272,7 +1272,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
             decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.all(Radius.circular(24)),
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
@@ -1732,7 +1732,7 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
                         decoration: const BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.all(Radius.circular(4)),
+                          borderRadius: const BorderRadius.all(Radius.circular(4)),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black45,
@@ -1844,7 +1844,7 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                       ),
                       child: _scanning
                           ? const Padding(
-                              padding: EdgeInsets.all(18),
+                              padding: const EdgeInsets.all(18),
                               child: CircularProgressIndicator(
                                 color: Colors.white,
                                 strokeWidth: 2.5,
@@ -2130,7 +2130,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
                   decoration: const BoxDecoration(
                     color: AppPalette.field,
-                    borderRadius: BorderRadius.all(Radius.circular(24)),
+                    borderRadius: const BorderRadius.all(Radius.circular(24)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2305,7 +2305,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
             decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.all(Radius.circular(24)),
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
@@ -2423,7 +2423,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _isSearchingLocation
                             ? const Padding(
-                                padding: EdgeInsets.all(14),
+                                padding: const EdgeInsets.all(14),
                                 child: SizedBox(
                                   width: 20,
                                   height: 20,
@@ -3333,11 +3333,11 @@ class _ExpenseField extends StatelessWidget {
           fillColor: Colors.transparent,
           filled: true,
           border: const OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.zero),
+            borderRadius: const BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
           enabledBorder: const OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.zero),
+            borderRadius: const BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
         ),
@@ -3435,7 +3435,7 @@ class _SublabelChip extends StatelessWidget {
                 curve: Curves.easeOut,
                 child: selected
                     ? const Padding(
-                        padding: EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.only(right: 6),
                         child: Icon(
                           Icons.check,
                           size: 15,

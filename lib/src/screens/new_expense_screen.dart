@@ -392,13 +392,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             ),
             timePickerTheme: TimePickerThemeData(
               backgroundColor: AppPalette.field,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(28)),
               ),
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               helpTextStyle: timePickerTextTheme.labelMedium,
-              hourMinuteShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              hourMinuteShape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
               ),
               hourMinuteColor: WidgetStateColor.resolveWith((
                 Set<WidgetState> states,
@@ -416,9 +416,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.green;
               }),
-              dayPeriodShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: const BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
+              dayPeriodShape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(10)),
+                side: BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
               ),
               dayPeriodColor: WidgetStateColor.resolveWith((
                 Set<WidgetState> states,
@@ -467,20 +467,17 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   horizontal: 12,
                   vertical: 18,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                enabledBorder: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: AppPalette.green,
-                    width: 1.5,
-                  ),
+                focusedBorder: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: AppPalette.green, width: 1.5),
                 ),
               ),
             ),
@@ -511,10 +508,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -1224,10 +1221,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -1359,7 +1356,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                     !_isExpenseRegretted;
                                               });
                                             },
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: const BorderRadius.all(
+                                        Radius.circular(8),
+                                      ),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 4,
@@ -1651,10 +1650,10 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                       child: Container(
                         width: 220,
                         padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: const [
+                          borderRadius: BorderRadius.all(Radius.circular(4)),
+                          boxShadow: [
                             BoxShadow(
                               color: Colors.black45,
                               blurRadius: 20,
@@ -1897,8 +1896,8 @@ class _ReceiptSourceSheet extends StatelessWidget {
             Container(
               width: 48,
               height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFF6D6D6D),
+              decoration: const BoxDecoration(
+                color: Color(0xFF6D6D6D),
                 borderRadius: AppRadius.pill,
               ),
             ),
@@ -1954,7 +1953,7 @@ class _ReceiptSourceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
@@ -2044,9 +2043,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppPalette.field,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.all(Radius.circular(24)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2217,10 +2216,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -2383,7 +2382,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           ),
                           style: TextButton.styleFrom(
                             foregroundColor: AppPalette.green,
-                            padding: EdgeInsets.zero,
+                            padding: const EdgeInsets.all(0),
                             minimumSize: const Size(0, 32),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             textStyle: GoogleFonts.nunito(
@@ -2409,7 +2408,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                     const SizedBox(height: 16),
                     Expanded(
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(24),
+                        ),
                         child: Container(
                           color: AppPalette.field,
                           child: Stack(
@@ -2956,7 +2957,7 @@ class _LocationPickerFooter extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: const BorderRadius.all(Radius.circular(18)),
             ),
             child: Text(
               label,
@@ -2979,7 +2980,7 @@ class _LocationPickerFooter extends StatelessWidget {
               foregroundColor: AppPalette.ink,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: const BorderRadius.all(Radius.circular(18)),
               ),
             ),
             child: Text(
@@ -3122,7 +3123,9 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(16),
+                        ),
                       ),
                     ),
                     child: const Text('Done'),
@@ -3243,11 +3246,11 @@ class _ExpenseField extends StatelessWidget {
           fillColor: Colors.transparent,
           filled: true,
           border: const OutlineInputBorder(
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
           enabledBorder: const OutlineInputBorder(
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
         ),
@@ -3276,7 +3279,7 @@ class _MetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
       child: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -3386,7 +3389,7 @@ class _SelectedExpenseLabelChip extends StatelessWidget {
         child: Container(
           height: _MiniActionButton.buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: AppPalette.green,
             borderRadius: AppRadius.pill,
           ),
@@ -3434,7 +3437,7 @@ class _MiniActionButton extends StatelessWidget {
         child: Container(
           height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: AppPalette.green,
             borderRadius: AppRadius.pill,
           ),

@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
@@ -9,21 +8,23 @@ import 'package:provider/provider.dart';
 import 'package:wear/wear.dart';
 
 import '../models/expense_model.dart';
+import '../models/voice_parse_result.dart';
 import '../services/app_currency_format_service.dart';
+import '../theme/expense_visuals.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auth_memory_store.dart';
 import '../services/local_storage_service.dart';
+import '../services/voice_pipeline_service.dart';
 import '../services/wear_expense_sync_service.dart';
 import '../theme/spendant_theme.dart';
-import '../utils/voice_expense_parser.dart';
 
-// ─── Voice input ────────────────────────────────────────────────────────────
+// ─── Voice helpers ───────────────────────────────────────────────────────────
 
-const _voiceChannel = MethodChannel('spendant_flutter/voice_input');
-
-Future<String?> _startVoiceInput() async {
+Future<VoiceParseResult?> _listenAndParse() async {
   try {
-    return await _voiceChannel.invokeMethod<String>('startSpeechRecognition');
+    final rawText = await VoicePipelineService.startListening();
+    if (rawText == null || rawText.trim().isEmpty) return null;
+    return VoicePipelineService.parseAndCache(rawText);
   } catch (_) {
     return null;
   }
@@ -64,8 +65,10 @@ class WatchExpenseController extends ChangeNotifier {
   bool _isSaving = false;
   bool _isRefreshing = false;
   List<ExpenseModel> _recentExpenses = const <ExpenseModel>[];
+  List<ExpenseCategoryTotal> _monthlyCategories = const <ExpenseCategoryTotal>[];
 
   List<ExpenseModel> get recentExpenses => _recentExpenses;
+  List<ExpenseCategoryTotal> get monthlyCategories => _monthlyCategories;
   bool get isSaving => _isSaving;
   bool get isRefreshing => _isRefreshing;
 
@@ -192,6 +195,10 @@ class WatchExpenseController extends ChangeNotifier {
             _expenseDateTime(right).compareTo(_expenseDateTime(left)),
       );
     _recentExpenses = visibleExpenses.take(5).toList(growable: false);
+    _monthlyCategories = ExpenseVisuals.topCategoryTotalsForMonth(
+      visibleExpenses,
+      limit: 3,
+    );
     notifyListeners();
   }
 
@@ -222,32 +229,17 @@ class _VoiceWatchShell extends StatefulWidget {
 }
 
 class _VoiceWatchShellState extends State<_VoiceWatchShell> {
-  bool _isListeningVoice = false;
-
-  Future<void> _startRegistration() async {
+  Future<void> _openAddExpense() async {
     final controller = context.read<WatchExpenseController>();
-    if (!controller.canCreateExpense || _isListeningVoice) return;
-    setState(() => _isListeningVoice = true);
-    try {
-      final rawText = await _startVoiceInput();
-      if (rawText == null || rawText.isEmpty || !mounted) return;
-      final parsed = VoiceExpenseParser.parse(rawText);
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => ChangeNotifierProvider.value(
-            value: controller,
-            child: _WatchVoiceConfirmScreen(
-              rawText: rawText,
-              parsedAmount: parsed.amount,
-              parsedName: parsed.name,
-              shape: widget.shape,
-            ),
-          ),
+    if (!controller.canCreateExpense) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ChangeNotifierProvider.value(
+          value: controller,
+          child: _WatchVoiceInstructionsScreen(shape: widget.shape),
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _isListeningVoice = false);
-    }
+      ),
+    );
   }
 
   @override
@@ -261,10 +253,9 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
             floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
             floatingActionButton: widget.isAmbient
                 ? null
-                : _WatchMicButton(
-                    isLoading: _isListeningVoice,
+                : _WatchAddButton(
                     isDisabled: !controller.canCreateExpense,
-                    onTap: _startRegistration,
+                    onTap: _openAddExpense,
                   ),
             body: Column(
               children: [
@@ -275,7 +266,7 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                 if (!widget.isAmbient) ...[
                   const SizedBox(height: 6),
                   Text(
-                    controller.isRefreshing ? 'Sincronizando...' : 'Di: [monto] [concepto]',
+                    controller.isRefreshing ? 'Syncing...' : 'Pull to sync · Tap + to add',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.nunito(
                       fontSize: 11,
@@ -319,12 +310,22 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                               widget._isRound ? 22 : 18,
                               98,
                             ),
-                            itemCount: controller.recentExpenses.length,
+                            itemCount: controller.recentExpenses.length +
+                                (controller.monthlyCategories.isNotEmpty ? 1 : 0),
                             itemBuilder: (context, index) {
+                              if (index == 0 &&
+                                  controller.monthlyCategories.isNotEmpty) {
+                                return _WatchCategoryBarsSection(
+                                  categories: controller.monthlyCategories,
+                                );
+                              }
+                              final expenseIndex = controller.monthlyCategories.isNotEmpty
+                                  ? index - 1
+                                  : index;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: _WatchExpenseTile(
-                                  expense: controller.recentExpenses[index],
+                                  expense: controller.recentExpenses[expenseIndex],
                                   isAmbient: widget.isAmbient,
                                   controller: controller,
                                 ),
@@ -446,6 +447,97 @@ class _WatchDetailHeader extends StatelessWidget {
           color: AppPalette.ink,
           height: 1.2,
         ),
+      ),
+    );
+  }
+}
+
+// ─── Category bars section ───────────────────────────────────────────────────
+
+class _WatchCategoryBarsSection extends StatelessWidget {
+  const _WatchCategoryBarsSection({required this.categories});
+
+  final List<ExpenseCategoryTotal> categories;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxAmount = categories.first.amount;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'This month',
+            style: GoogleFonts.nunito(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: Colors.black38,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...List.generate(categories.length, (i) {
+            final cat = categories[i];
+            final color = ExpenseVisuals.reservedChartColors[i];
+            final progress = maxAmount <= 0 ? 0.0 : cat.amount / maxAmount;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cat.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.nunito(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        LayoutBuilder(
+                          builder: (context, constraints) => Container(
+                            height: 7,
+                            width: constraints.maxWidth * progress,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    AppCurrencyFormatService.formatCOP(cat.amount),
+                    style: GoogleFonts.nunito(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const Divider(height: 14, color: Colors.black12),
+          Text(
+            'Recent expenses',
+            style: GoogleFonts.nunito(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: Colors.black38,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
       ),
     );
   }
@@ -649,33 +741,161 @@ class _WatchExpenseTile extends StatelessWidget {
   }
 }
 
-// ─── Mic FAB ─────────────────────────────────────────────────────────────────
+// ─── Add FAB ─────────────────────────────────────────────────────────────────
 
-class _WatchMicButton extends StatelessWidget {
-  const _WatchMicButton({
-    required this.isLoading,
-    required this.isDisabled,
-    required this.onTap,
-  });
+class _WatchAddButton extends StatelessWidget {
+  const _WatchAddButton({required this.isDisabled, required this.onTap});
 
-  final bool isLoading;
   final bool isDisabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
-      heroTag: 'watch-voice-register-fab',
+      heroTag: 'watch-add-expense-fab',
       backgroundColor: isDisabled ? Colors.grey.shade300 : AppPalette.green,
       foregroundColor: AppPalette.ink,
-      onPressed: isDisabled || isLoading ? null : onTap,
-      child: isLoading
-          ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppPalette.ink),
-            )
-          : const Icon(Icons.mic_rounded, size: 28),
+      onPressed: isDisabled ? null : onTap,
+      child: const Icon(Icons.add_rounded, size: 28),
+    );
+  }
+}
+
+// ─── Voice instructions screen ────────────────────────────────────────────────
+
+class _WatchVoiceInstructionsScreen extends StatefulWidget {
+  const _WatchVoiceInstructionsScreen({required this.shape});
+
+  final WearShape shape;
+
+  @override
+  State<_WatchVoiceInstructionsScreen> createState() =>
+      _WatchVoiceInstructionsScreenState();
+}
+
+class _WatchVoiceInstructionsScreenState
+    extends State<_WatchVoiceInstructionsScreen> {
+  bool _isListening = false;
+
+  Future<void> _record() async {
+    if (_isListening) return;
+    setState(() => _isListening = true);
+    try {
+      final result = await _listenAndParse();
+      if (result == null || !mounted) return;
+      final controller = context.read<WatchExpenseController>();
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => ChangeNotifierProvider.value(
+            value: controller,
+            child: _WatchVoiceConfirmScreen(
+              parseResult: result,
+              shape: widget.shape,
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isListening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isRound = widget.shape == WearShape.round;
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          _WatchDetailHeader(title: 'Add\nexpense', isRound: isRound),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                isRound ? 22 : 14,
+                14,
+                isRound ? 22 : 14,
+                18,
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Say your expense:',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppPalette.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '"I paid [amount] for [product]"',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black54,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'e.g. "I paid 5 dollars for coffee"',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black38,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  GestureDetector(
+                    onTap: _isListening ? null : _record,
+                    child: Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isListening
+                            ? AppPalette.green.withValues(alpha: 0.6)
+                            : AppPalette.green,
+                      ),
+                      child: _isListening
+                          ? const Center(
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: AppPalette.ink,
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.mic_rounded,
+                              color: AppPalette.ink,
+                              size: 32,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _isListening ? 'Listening...' : 'Tap to record',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -684,15 +904,11 @@ class _WatchMicButton extends StatelessWidget {
 
 class _WatchVoiceConfirmScreen extends StatefulWidget {
   const _WatchVoiceConfirmScreen({
-    required this.rawText,
-    required this.parsedAmount,
-    required this.parsedName,
+    required this.parseResult,
     required this.shape,
   });
 
-  final String rawText;
-  final double? parsedAmount;
-  final String parsedName;
+  final VoiceParseResult parseResult;
   final WearShape shape;
 
   @override
@@ -709,11 +925,11 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.parsedName);
-    _amountDigits = widget.parsedAmount != null
-        ? widget.parsedAmount!.round().toString()
+    _nameController = TextEditingController(text: widget.parseResult.productName);
+    _amountDigits = widget.parseResult.convertedAmountCop > 0
+        ? widget.parseResult.convertedAmountCop.round().toString()
         : '';
-    _selectedCategory = _categoryFromName(widget.parsedName);
+    _selectedCategory = _categoryFromName(widget.parseResult.productName);
   }
 
   @override
@@ -758,15 +974,14 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
   Future<void> _reRecord() async {
     setState(() => _isLoadingVoice = true);
     try {
-      final rawText = await _startVoiceInput();
-      if (rawText == null || rawText.isEmpty || !mounted) return;
-      final parsed = VoiceExpenseParser.parse(rawText);
+      final result = await _listenAndParse();
+      if (result == null || !mounted) return;
       setState(() {
-        _nameController.text = parsed.name;
-        if (parsed.amount != null) {
-          _amountDigits = parsed.amount!.round().toString();
+        _nameController.text = result.productName;
+        if (result.convertedAmountCop > 0) {
+          _amountDigits = result.convertedAmountCop.round().toString();
         }
-        _selectedCategory = _categoryFromName(parsed.name);
+        _selectedCategory = _categoryFromName(result.productName);
       });
     } finally {
       if (mounted) setState(() => _isLoadingVoice = false);
@@ -822,7 +1037,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _WatchDetailHeader(title: 'Confirmar\ngasto', isRound: isRound),
+          _WatchDetailHeader(title: 'Confirm\nexpense', isRound: isRound),
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -830,7 +1045,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
               child: Column(
                 children: [
                   _WatchFieldCard(
-                    label: 'Monto',
+                    label: 'Amount',
                     child: Column(
                       children: [
                         Text(
@@ -852,7 +1067,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
                   ),
                   const SizedBox(height: 10),
                   _WatchFieldCard(
-                    label: 'Concepto',
+                    label: 'Name',
                     child: Row(
                       children: [
                         Expanded(
@@ -896,7 +1111,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
                   ),
                   const SizedBox(height: 10),
                   _WatchActionCard(
-                    label: 'Categoría',
+                    label: 'Category',
                     assetPath: _selectedCategory.assetPath,
                     value: _selectedCategory.label,
                     onTap: _pickCategory,
@@ -919,7 +1134,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
                         ),
                       ),
                       child: Text(
-                        controller.isSaving ? 'Guardando...' : 'Guardar',
+                        controller.isSaving ? 'Saving...' : 'Save expense',
                         style: GoogleFonts.nunito(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
@@ -994,9 +1209,14 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
   Future<void> _activateVoice() async {
     setState(() => _isLoadingVoice = true);
     try {
-      final result = await _startVoiceInput();
-      if (result != null && result.isNotEmpty && mounted) {
-        setState(() => _nameController.text = result);
+      final result = await _listenAndParse();
+      if (result != null && mounted) {
+        setState(() {
+          _nameController.text = result.productName;
+          if (result.convertedAmountCop > 0) {
+            _amountDigits = result.convertedAmountCop.round().toString();
+          }
+        });
       }
     } finally {
       if (mounted) setState(() => _isLoadingVoice = false);

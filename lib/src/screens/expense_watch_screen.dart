@@ -15,6 +15,7 @@ import '../services/auth_memory_store.dart';
 import '../services/local_storage_service.dart';
 import '../services/wear_expense_sync_service.dart';
 import '../theme/spendant_theme.dart';
+import '../utils/voice_expense_parser.dart';
 
 // ─── Voice input ────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ class ExpenseWatchScreen extends StatelessWidget {
         builder: (context, shape, child) {
           return AmbientMode(
             builder: (context, mode, child) {
-              return _ExpenseWatchShell(
+              return _VoiceWatchShell(
                 shape: shape,
                 isAmbient: mode != WearMode.active,
               );
@@ -208,13 +209,46 @@ class WatchExpenseController extends ChangeNotifier {
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
-class _ExpenseWatchShell extends StatelessWidget {
-  const _ExpenseWatchShell({required this.shape, required this.isAmbient});
+class _VoiceWatchShell extends StatefulWidget {
+  const _VoiceWatchShell({required this.shape, required this.isAmbient});
 
   final WearShape shape;
   final bool isAmbient;
 
   bool get _isRound => shape == WearShape.round;
+
+  @override
+  State<_VoiceWatchShell> createState() => _VoiceWatchShellState();
+}
+
+class _VoiceWatchShellState extends State<_VoiceWatchShell> {
+  bool _isListeningVoice = false;
+
+  Future<void> _startRegistration() async {
+    final controller = context.read<WatchExpenseController>();
+    if (!controller.canCreateExpense || _isListeningVoice) return;
+    setState(() => _isListeningVoice = true);
+    try {
+      final rawText = await _startVoiceInput();
+      if (rawText == null || rawText.isEmpty || !mounted) return;
+      final parsed = VoiceExpenseParser.parse(rawText);
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => ChangeNotifierProvider.value(
+            value: controller,
+            child: _WatchVoiceConfirmScreen(
+              rawText: rawText,
+              parsedAmount: parsed.amount,
+              parsedName: parsed.name,
+              shape: widget.shape,
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isListeningVoice = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -223,34 +257,34 @@ class _ExpenseWatchShell extends StatelessWidget {
         return Theme(
           data: _buildWatchTheme(),
           child: Scaffold(
-            backgroundColor: isAmbient ? Colors.black : Colors.white,
-            floatingActionButtonLocation:
-                FloatingActionButtonLocation.centerFloat,
-            floatingActionButton: isAmbient
+            backgroundColor: widget.isAmbient ? Colors.black : Colors.white,
+            floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+            floatingActionButton: widget.isAmbient
                 ? null
-                : _WatchQuickAddButton(controller: controller),
+                : _WatchMicButton(
+                    isLoading: _isListeningVoice,
+                    isDisabled: !controller.canCreateExpense,
+                    onTap: _startRegistration,
+                  ),
             body: Column(
               children: [
-                // Pinned header — never scrolls
-                _WatchHeader(
-                  isAmbient: isAmbient,
-                  isRefreshing: controller.isRefreshing,
-                  isRound: _isRound,
+                _VoiceHomeHeader(
+                  isAmbient: widget.isAmbient,
+                  isRound: widget._isRound,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  controller.isRefreshing
-                      ? 'Syncing...'
-                      : (isAmbient ? 'Ambient' : 'Pull to sync'),
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.nunito(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: isAmbient ? Colors.white54 : Colors.black54,
+                if (!widget.isAmbient) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    controller.isRefreshing ? 'Sincronizando...' : 'Di: [monto] [concepto]',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                // Scrollable content
+                  const SizedBox(height: 4),
+                ],
                 Expanded(
                   child: RefreshIndicator(
                     color: Colors.white,
@@ -280,9 +314,9 @@ class _ExpenseWatchShell extends StatelessWidget {
                               parent: BouncingScrollPhysics(),
                             ),
                             padding: EdgeInsets.fromLTRB(
-                              _isRound ? 22 : 18,
+                              widget._isRound ? 22 : 18,
                               6,
-                              _isRound ? 22 : 18,
+                              widget._isRound ? 22 : 18,
                               98,
                             ),
                             itemCount: controller.recentExpenses.length,
@@ -291,7 +325,7 @@ class _ExpenseWatchShell extends StatelessWidget {
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: _WatchExpenseTile(
                                   expense: controller.recentExpenses[index],
-                                  isAmbient: isAmbient,
+                                  isAmbient: widget.isAmbient,
                                   controller: controller,
                                 ),
                               );
@@ -337,17 +371,12 @@ class _ExpenseWatchShell extends StatelessWidget {
   }
 }
 
-// ─── Header ──────────────────────────────────────────────────────────────────
+// ─── Home header ─────────────────────────────────────────────────────────────
 
-class _WatchHeader extends StatelessWidget {
-  const _WatchHeader({
-    required this.isAmbient,
-    required this.isRefreshing,
-    required this.isRound,
-  });
+class _VoiceHomeHeader extends StatelessWidget {
+  const _VoiceHomeHeader({required this.isAmbient, required this.isRound});
 
   final bool isAmbient;
-  final bool isRefreshing;
   final bool isRound;
 
   @override
@@ -358,23 +387,21 @@ class _WatchHeader extends StatelessWidget {
         isRound ? 24 : 18,
         isRound ? 52 : 38,
         isRound ? 24 : 18,
-        28,
+        18,
       ),
       decoration: BoxDecoration(
         color: isAmbient ? Colors.black : AppPalette.green,
-        border: isAmbient
-            ? Border.all(color: Colors.white24, width: 1)
-            : null,
+        border: isAmbient ? Border.all(color: Colors.white24, width: 1) : null,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(isRound ? 54 : 30),
           bottomRight: Radius.circular(isRound ? 54 : 30),
         ),
       ),
       child: Text(
-        'Recent\nexpenses',
+        'SpendAnt',
         textAlign: TextAlign.center,
         style: GoogleFonts.nunito(
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: FontWeight.w800,
           color: isAmbient ? Colors.white : AppPalette.ink,
           height: 1.2,
@@ -595,7 +622,7 @@ class _WatchExpenseTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: () async {
-          final shape = context.findAncestorWidgetOfExactType<_ExpenseWatchShell>()?.shape
+          final shape = context.findAncestorWidgetOfExactType<_VoiceWatchShell>()?.shape
               ?? WearShape.round;
           await Navigator.of(context).push<void>(
             MaterialPageRoute<void>(
@@ -622,64 +649,128 @@ class _WatchExpenseTile extends StatelessWidget {
   }
 }
 
-// ─── FAB ─────────────────────────────────────────────────────────────────────
+// ─── Mic FAB ─────────────────────────────────────────────────────────────────
 
-class _WatchQuickAddButton extends StatelessWidget {
-  const _WatchQuickAddButton({required this.controller});
+class _WatchMicButton extends StatelessWidget {
+  const _WatchMicButton({
+    required this.isLoading,
+    required this.isDisabled,
+    required this.onTap,
+  });
 
-  final WatchExpenseController controller;
+  final bool isLoading;
+  final bool isDisabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
-      heroTag: 'watch-quick-expense-fab',
-      backgroundColor: AppPalette.green,
+      heroTag: 'watch-voice-register-fab',
+      backgroundColor: isDisabled ? Colors.grey.shade300 : AppPalette.green,
       foregroundColor: AppPalette.ink,
-      onPressed: controller.isSaving || !controller.canCreateExpense
-          ? null
-          : () async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => ChangeNotifierProvider.value(
-                    value: controller,
-                    child: const _WatchQuickAddScreen(),
-                  ),
-                ),
-              );
-            },
-      child: controller.isSaving
+      onPressed: isDisabled || isLoading ? null : onTap,
+      child: isLoading
           ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.2,
-                color: AppPalette.ink,
-              ),
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppPalette.ink),
             )
-          : const Icon(Icons.add_rounded, size: 28),
+          : const Icon(Icons.mic_rounded, size: 28),
     );
   }
 }
 
-// ─── New expense screen ───────────────────────────────────────────────────────
+// ─── Voice confirm screen ─────────────────────────────────────────────────────
 
-class _WatchQuickAddScreen extends StatefulWidget {
-  const _WatchQuickAddScreen();
+class _WatchVoiceConfirmScreen extends StatefulWidget {
+  const _WatchVoiceConfirmScreen({
+    required this.rawText,
+    required this.parsedAmount,
+    required this.parsedName,
+    required this.shape,
+  });
+
+  final String rawText;
+  final double? parsedAmount;
+  final String parsedName;
+  final WearShape shape;
 
   @override
-  State<_WatchQuickAddScreen> createState() => _WatchQuickAddScreenState();
+  State<_WatchVoiceConfirmScreen> createState() =>
+      _WatchVoiceConfirmScreenState();
 }
 
-class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  String _amountDigits = '';
-  WatchQuickCategory _selectedCategory = watchQuickCategories.first;
+class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
+  late final TextEditingController _nameController;
+  late String _amountDigits;
+  late WatchQuickCategory _selectedCategory;
   bool _isLoadingVoice = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.parsedName);
+    _amountDigits = widget.parsedAmount != null
+        ? widget.parsedAmount!.round().toString()
+        : '';
+    _selectedCategory = _categoryFromName(widget.parsedName);
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  WatchQuickCategory _categoryFromName(String name) {
+    final lower = name.toLowerCase();
+    for (final cat in watchQuickCategories) {
+      if (lower.contains(cat.label.toLowerCase()) ||
+          lower.contains(cat.shortLabel.toLowerCase())) {
+        return cat;
+      }
+    }
+    if (lower.contains('comida') ||
+        lower.contains('almuerzo') ||
+        lower.contains('cena') ||
+        lower.contains('desayuno') ||
+        lower.contains('café') ||
+        lower.contains('cafe') ||
+        lower.contains('restaurante')) {
+      return watchQuickCategories.firstWhere(
+        (c) => c.primaryCategory == 'Food',
+        orElse: () => watchQuickCategories.first,
+      );
+    }
+    if (lower.contains('transporte') ||
+        lower.contains('bus') ||
+        lower.contains('taxi') ||
+        lower.contains('uber') ||
+        lower.contains('metro')) {
+      return watchQuickCategories.firstWhere(
+        (c) => c.primaryCategory == 'Transport',
+        orElse: () => watchQuickCategories.first,
+      );
+    }
+    return watchQuickCategories.first;
+  }
+
+  Future<void> _reRecord() async {
+    setState(() => _isLoadingVoice = true);
+    try {
+      final rawText = await _startVoiceInput();
+      if (rawText == null || rawText.isEmpty || !mounted) return;
+      final parsed = VoiceExpenseParser.parse(rawText);
+      setState(() {
+        _nameController.text = parsed.name;
+        if (parsed.amount != null) {
+          _amountDigits = parsed.amount!.round().toString();
+        }
+        _selectedCategory = _categoryFromName(parsed.name);
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingVoice = false);
+    }
   }
 
   Future<void> _pickCategory() async {
@@ -692,18 +783,6 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
     );
     if (selected == null || !mounted) return;
     setState(() => _selectedCategory = selected);
-  }
-
-  Future<void> _activateVoice() async {
-    setState(() => _isLoadingVoice = true);
-    try {
-      final result = await _startVoiceInput();
-      if (result != null && result.isNotEmpty && mounted) {
-        setState(() => _nameController.text = result);
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingVoice = false);
-    }
   }
 
   Future<void> _save() async {
@@ -737,14 +816,13 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
     final formattedAmount = _amountDigits.isEmpty
         ? '0'
         : AppCurrencyFormatService.formatAmount(double.parse(_amountDigits));
-    final isRound = MediaQuery.of(context).size.width ==
-        MediaQuery.of(context).size.height;
+    final isRound = widget.shape == WearShape.round;
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _WatchDetailHeader(title: 'New\nexpense', isRound: isRound),
+          _WatchDetailHeader(title: 'Confirmar\ngasto', isRound: isRound),
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -752,7 +830,7 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
               child: Column(
                 children: [
                   _WatchFieldCard(
-                    label: 'Amount',
+                    label: 'Monto',
                     child: Column(
                       children: [
                         Text(
@@ -774,7 +852,7 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
                   ),
                   const SizedBox(height: 10),
                   _WatchFieldCard(
-                    label: 'Name',
+                    label: 'Concepto',
                     child: Row(
                       children: [
                         Expanded(
@@ -792,7 +870,7 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
                           ),
                         ),
                         IconButton(
-                          onPressed: _isLoadingVoice ? null : _activateVoice,
+                          onPressed: _isLoadingVoice ? null : _reRecord,
                           icon: _isLoadingVoice
                               ? const SizedBox(
                                   width: 18,
@@ -818,7 +896,7 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
                   ),
                   const SizedBox(height: 10),
                   _WatchActionCard(
-                    label: 'Category',
+                    label: 'Categoría',
                     assetPath: _selectedCategory.assetPath,
                     value: _selectedCategory.label,
                     onTap: _pickCategory,
@@ -841,7 +919,7 @@ class _WatchQuickAddScreenState extends State<_WatchQuickAddScreen> {
                         ),
                       ),
                       child: Text(
-                        controller.isSaving ? 'Saving...' : 'Save expense',
+                        controller.isSaving ? 'Guardando...' : 'Guardar',
                         style: GoogleFonts.nunito(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,

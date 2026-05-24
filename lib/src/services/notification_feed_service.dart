@@ -1,7 +1,7 @@
 import 'package:intl/intl.dart';
 
 import '../models/app_notification_model.dart';
-import 'app_currency_format_service.dart';
+import 'currency_provider.dart';
 import 'app_date_format_service.dart';
 import 'auth_memory_store.dart';
 
@@ -98,7 +98,7 @@ abstract final class NotificationFeedService {
   }
 
   static String formatAmount(double amount) {
-    return AppCurrencyFormatService.formatCOP(amount);
+    return CurrencyProvider.instance.formatFromCOP(amount);
   }
 
   static String formatTimestamp(DateTime timestamp, {DateTime? now}) {

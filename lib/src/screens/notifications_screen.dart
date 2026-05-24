@@ -29,6 +29,12 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
+  static final _sectionTitleStyle = GoogleFonts.nunito(
+    fontSize: 15,
+    fontWeight: FontWeight.w800,
+    color: AppPalette.ink,
+  );
+
   late final ValueListenable<Box<ExpenseModel>> _expensesListenable;
   late final ValueListenable<Box<AppNotificationModel>>
   _notificationsListenable;
@@ -167,11 +173,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       widgets.add(
         Text(
           section.title,
-          style: GoogleFonts.nunito(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: AppPalette.ink,
-          ),
+          style: _sectionTitleStyle,
         ),
       );
       widgets.add(const SizedBox(height: 12));

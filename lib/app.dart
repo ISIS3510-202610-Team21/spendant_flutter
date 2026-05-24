@@ -8,7 +8,9 @@ import 'src/models/expense_model.dart';
 import 'src/models/goal_model.dart';
 import 'src/models/income_model.dart';
 import 'src/screens/budget_screen.dart';
-import 'src/screens/expense_watch_screen.dart';
+import 'src/screens/currency_converter_screen.dart';
+import 'src/screens/report_screen.dart';
+import 'src/screens/report_setup_screen.dart';
 import 'src/screens/home_screen.dart';
 import 'src/screens/loading_screen.dart';
 import 'src/screens/login_screen.dart';
@@ -17,6 +19,7 @@ import 'src/screens/new_expense_screen.dart';
 import 'src/screens/notifications_screen.dart';
 import 'src/screens/onboarding_screen.dart';
 import 'src/screens/post_register_intro_screen.dart';
+import 'src/screens/profile_screen.dart';
 import 'src/screens/register_screen.dart';
 import 'src/screens/set_goal_screen.dart';
 import 'src/services/app_navigation_service.dart';
@@ -42,7 +45,10 @@ abstract final class AppRoutes {
   static const setGoal = '/set-goal';
   static const newExpense = '/new-expense';
   static const budget = '/budget';
-  static const expenseWatch = '/watch-expenses';
+  static const profile = '/profile';
+  static const currencyConverter = '/currency-converter';
+  static const reportSetup = '/report-setup';
+  static const report = '/report';
 }
 
 class SpendAntApp extends StatefulWidget {
@@ -236,7 +242,10 @@ class _SpendAntAppState extends State<SpendAntApp> {
         AppRoutes.setGoal: (_) => const SetGoalScreen(),
         AppRoutes.newExpense: (_) => const NewExpenseScreen(),
         AppRoutes.budget: (_) => const BudgetScreen(),
-        AppRoutes.expenseWatch: (_) => const ExpenseWatchScreen(),
+        AppRoutes.profile: (_) => const ProfileScreen(),
+        AppRoutes.currencyConverter: (_) => const CurrencyConverterScreen(),
+        AppRoutes.reportSetup: (_) => const ReportSetupScreen(),
+        AppRoutes.report: (_) => const ReportScreen(),
       },
     );
   }

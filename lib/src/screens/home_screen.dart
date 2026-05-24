@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../../app.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../models/app_notification_model.dart';
 import '../models/expense_model.dart';
 import '../services/app_date_format_service.dart';
@@ -244,92 +245,131 @@ class _HomeScreenState extends State<HomeScreen> {
                         current > stat.amount ? current : stat.amount,
                   );
 
+                  final flatItems =
+                      <({String? header, _ExpenseEntry? entry})>[];
+                  for (final group in expenseGroups) {
+                    flatItems.add((header: group.title, entry: null));
+                    for (final entry in group.entries) {
+                      flatItems.add((header: null, entry: entry));
+                    }
+                  }
+
                   return RefreshIndicator(
                     onRefresh: _refreshHomeFeed,
                     color: AppPalette.green,
                     backgroundColor: Colors.white,
-                    child: ListView(
+                    child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                      children: [
-                        Text(
-                          'Your Budget for today',
-                          style: AppTextStyles.sectionLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _AmountHeadline(
-                          amount: summary.spendableDailyBudget,
-                          amountColor: AppPalette.green,
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'This month you have spent',
-                          style: AppTextStyles.sectionLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _AmountHeadline(
-                          amount: monthTotal,
-                          amountColor: AppPalette.expenseRed,
-                          fontSize: 40,
-                        ),
-                        if (categoryStats.isNotEmpty) ...[
-                          const SizedBox(height: 28),
-                          SizedBox(
-                            height: 260,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final itemCount = categoryStats.length;
-                                const gap = 18.0;
-                                final totalGap = gap * (itemCount - 1);
-                                final availableWidth =
-                                    constraints.maxWidth - totalGap;
-                                final itemWidth = math.min(
-                                  110.0,
-                                  availableWidth / itemCount,
-                                );
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Your Budget for today',
+                                  style: AppTextStyles.sectionLabel,
+                                ),
+                                const SizedBox(height: 6),
+                                _AmountHeadline(
+                                  amount: summary.spendableDailyBudget,
+                                  amountColor: AppPalette.green,
+                                ),
+                                const SizedBox(height: 20),
+                                Text(
+                                  'This month you have spent',
+                                  style: AppTextStyles.sectionLabel,
+                                ),
+                                const SizedBox(height: 6),
+                                _AmountHeadline(
+                                  amount: monthTotal,
+                                  amountColor: AppPalette.expenseRed,
+                                  fontSize: 40,
+                                ),
+                                if (categoryStats.isNotEmpty) ...[
+                                  const SizedBox(height: 28),
+                                  RepaintBoundary(
+                                    child: SizedBox(
+                                      height: 260,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final itemCount =
+                                              categoryStats.length;
+                                          const gap = 18.0;
+                                          final totalGap =
+                                              gap * (itemCount - 1);
+                                          final availableWidth =
+                                              constraints.maxWidth - totalGap;
+                                          final itemWidth = math.min(
+                                            110.0,
+                                            availableWidth / itemCount,
+                                          );
 
-                                return Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < itemCount;
-                                      index++
-                                    ) ...[
-                                      SizedBox(
-                                        width: itemWidth,
-                                        child: _CategoryBarCard(
-                                          stat: categoryStats[index],
-                                          maxAmount: maxCategoryAmount,
-                                        ),
+                                          return Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              for (
+                                                var index = 0;
+                                                index < itemCount;
+                                                index++
+                                              ) ...[
+                                                SizedBox(
+                                                  width: itemWidth,
+                                                  child: _CategoryBarCard(
+                                                    stat: categoryStats[index],
+                                                    maxAmount:
+                                                        maxCategoryAmount,
+                                                  ),
+                                                ),
+                                                if (index < itemCount - 1)
+                                                  const SizedBox(width: gap),
+                                              ],
+                                            ],
+                                          );
+                                        },
                                       ),
-                                      if (index < itemCount - 1)
-                                        const SizedBox(width: gap),
-                                    ],
-                                  ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 22),
+                                ] else
+                                  const SizedBox(height: 22),
+                                if (expenseGroups.isEmpty)
+                                  const _EmptyExpensesCard(),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          sliver: SliverList.builder(
+                            itemCount: flatItems.length,
+                            itemBuilder: (context, index) {
+                              final item = flatItems[index];
+                              if (item.header != null) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Text(
+                                    item.header!,
+                                    style: AppTextStyles.dateGroupHeader,
+                                  ),
                                 );
-                              },
-                            ),
+                              }
+                              final entry = item.entry!;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _ExpenseListTile(
+                                  entry: entry,
+                                  onTap: () =>
+                                      _openExpenseDetail(entry.expense),
+                                ),
+                              );
+                            },
                           ),
-                          const SizedBox(height: 22),
-                        ] else
-                          const SizedBox(height: 22),
-                        if (expenseGroups.isEmpty) const _EmptyExpensesCard(),
-                        for (final group in expenseGroups) ...[
-                          Text(
-                            group.title,
-                            style: AppTextStyles.dateGroupHeader,
-                          ),
-                          const SizedBox(height: 10),
-                          for (final entry in group.entries) ...[
-                            _ExpenseListTile(
-                              entry: entry,
-                              onTap: () => _openExpenseDetail(entry.expense),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                        ],
+                        ),
                       ],
                     ),
                   );
@@ -613,25 +653,40 @@ class _AmountHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedAmount = AppCurrencyFormatService.formatAmount(amount);
+    // ListenableBuilder ensures this widget rebuilds whenever the user changes
+    // the active currency in CurrencyConverterScreen — zero extra state needed.
+    return ListenableBuilder(
+      listenable: CurrencyProvider.instance,
+      builder: (context, _) {
+        final provider = CurrencyProvider.instance;
+        final converted = provider.convertToLocal(amount);
+        final iso = provider.activeCurrency;
 
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: '\$$formattedAmount ',
-            style: GoogleFonts.nunito(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w800,
-              color: amountColor,
-            ),
+        // For COP (base currency) keep the existing compact integer format.
+        // For foreign currencies use the provider's locale-aware formatter.
+        final formattedValue = provider.isBaseCurrency
+            ? AppCurrencyFormatService.formatAmount(converted)
+            : provider.formatFromCOP(amount).split(' ').skip(1).join(' ');
+
+        return RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '\$$formattedValue ',
+                style: GoogleFonts.nunito(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w900,
+                  color: amountColor,
+                ),
+              ),
+              TextSpan(
+                text: iso,
+                style: AppTextStyles.amountCOP,
+              ),
+            ],
           ),
-          TextSpan(
-            text: 'COP',
-            style: AppTextStyles.amountCOP,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -733,9 +788,16 @@ class _ExpenseListTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                entry.amount,
-                style: AppTextStyles.expenseAmount,
+              // Rebuild only this leaf widget on currency change — the rest of
+              // the tile (icon, name, category) is unaffected and stays const.
+              ListenableBuilder(
+                listenable: CurrencyProvider.instance,
+                builder: (context, _) => Text(
+                  CurrencyProvider.instance.formatFromCOP(
+                    entry.expense.amount,
+                  ),
+                  style: AppTextStyles.expenseAmount,
+                ),
               ),
             ],
           ),

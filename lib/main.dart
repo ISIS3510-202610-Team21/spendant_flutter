@@ -13,6 +13,11 @@ import 'src/services/auth_memory_store.dart';
 import 'src/services/background_task_service.dart';
 import 'src/services/calendar_availability_service.dart';
 import 'src/services/cloud_sync_service.dart';
+import 'src/services/currency_provider.dart';
+import 'src/services/exchange_rate_db_service.dart';
+import 'src/services/exchange_rate_sync_service.dart';
+import 'src/services/report_cache_service.dart';
+import 'src/services/voice_pattern_cache_service.dart';
 import 'src/services/firebase_uid_service.dart';
 import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
@@ -75,6 +80,28 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       debugPrint('SyncLogService initialized');
     } catch (error) {
       debugPrint('Error initializing SyncLogService: $error');
+    }
+
+    try {
+      // Exchange rate DB must be ready before the sync check and before
+      // CurrencyProvider.loadFromDb() so the in-memory cache is populated.
+      await ExchangeRateDbService.init();
+      await VoicePatternCacheService.init();
+      await ReportCacheService.init();
+      await CurrencyProvider.instance.loadFromDb();
+      // Background sync runs in a separate Isolate — never blocks UI.
+      // When the sync completes (writes new rates to DB), reload the
+      // in-memory cache so CurrencyProvider reflects the fresh rates
+      // without requiring an app restart.
+      unawaited(
+        ExchangeRateSyncService.runOnAppLaunch().then((_) async {
+          await CurrencyProvider.instance.loadFromDb();
+          debugPrint('ExchangeRateService: cache reloaded after sync.');
+        }),
+      );
+      debugPrint('ExchangeRateService initialized');
+    } catch (error) {
+      debugPrint('Error initializing ExchangeRateService: $error');
     }
 
     try {

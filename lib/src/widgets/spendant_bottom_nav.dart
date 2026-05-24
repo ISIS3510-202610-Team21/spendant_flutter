@@ -54,8 +54,7 @@ class SpendAntBottomNav extends StatelessWidget {
                       }
                       if (currentItem != SpendAntNavItem.profile) {
                         Navigator.of(context).pushReplacementNamed(
-                          AppRoutes.setGoal,
-                          arguments: 0,
+                          AppRoutes.profile,
                         );
                       }
                     },

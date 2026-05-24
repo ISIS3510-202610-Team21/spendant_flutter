@@ -26,6 +26,8 @@ import '../services/cloudinary_receipt_upload_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/sync_log_service.dart';
 import '../utils/url_utils.dart';
+import '../models/voice_parse_result.dart';
+import '../services/currency_provider.dart';
 import '../services/expense_location_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/platform_configuration_service.dart';
@@ -35,6 +37,7 @@ import '../theme/expense_visuals.dart';
 import '../theme/spendant_theme.dart';
 import '../mixins/connectivity_aware_mixin.dart';
 import '../widgets/no_internet_banner.dart';
+import 'voice_register_screen.dart';
 import '../widgets/spendant_delete_dialog.dart';
 
 class _ExpenseLabelGroup {
@@ -174,8 +177,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
   void _hydrateFromEditingExpense(ExpenseModel editingExpense) {
     try {
       _expenseNameController.text = editingExpense.name.trim();
+      // Pre-fill in active currency (stored as COP → convert to local).
       _expenseValueController.text = _formatAmountForInput(
-        editingExpense.amount,
+        CurrencyProvider.instance.convertToLocal(editingExpense.amount),
       );
       _selectedCategory = _normalizedOptionalText(
         editingExpense.primaryCategory,
@@ -390,13 +394,13 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
             ),
             timePickerTheme: TimePickerThemeData(
               backgroundColor: AppPalette.field,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
+              shape: const RoundedRectangleBorder(
+                borderRadius: const BorderRadius.all(Radius.circular(28)),
               ),
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               helpTextStyle: timePickerTextTheme.labelMedium,
-              hourMinuteShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              hourMinuteShape: const RoundedRectangleBorder(
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
               ),
               hourMinuteColor: WidgetStateColor.resolveWith((
                 Set<WidgetState> states,
@@ -414,9 +418,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                 }
                 return AppPalette.green;
               }),
-              dayPeriodShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: const BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
+              dayPeriodShape: const RoundedRectangleBorder(
+                borderRadius: const BorderRadius.all(Radius.circular(10)),
+                side: BorderSide(color: Color(0xFF7A7A7A), width: 0.8),
               ),
               dayPeriodColor: WidgetStateColor.resolveWith((
                 Set<WidgetState> states,
@@ -465,20 +469,17 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   horizontal: 12,
                   vertical: 18,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                border: const OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                enabledBorder: const OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
                   borderSide: BorderSide.none,
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: AppPalette.green,
-                    width: 1.5,
-                  ),
+                focusedBorder: const OutlineInputBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: AppPalette.green, width: 1.5),
                 ),
               ),
             ),
@@ -509,10 +510,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -864,6 +865,53 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Voice Register
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openVoiceRegister() async {
+    final result = await Navigator.of(context).push<VoiceParseResult>(
+      MaterialPageRoute(
+        builder: (_) => const VoiceRegisterScreen(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (result != null && mounted) {
+      _fillFromVoiceResult(result);
+    }
+  }
+
+  void _fillFromVoiceResult(VoiceParseResult result) {
+    setState(() {
+      _expenseNameController.text = result.productName;
+
+      // Fill field in the active currency so the user sees their own unit.
+      // The save path already calls convertToCOP(parsedAmount) → Firebase gets COP.
+      _expenseValueController.text = _formatAmountForInput(
+        CurrencyProvider.instance.convertToLocal(result.convertedAmountCop),
+      );
+
+      _selectedDate = DateUtils.dateOnly(result.date);
+
+      if (result.time != null) {
+        final parts = result.time!.split(':');
+        if (parts.length == 2) {
+          final hour = int.tryParse(parts[0]);
+          final minute = int.tryParse(parts[1]);
+          if (hour != null && minute != null) {
+            _selectedTime = TimeOfDay(hour: hour, minute: minute);
+          }
+        }
+      }
+
+      if (result.location != null) {
+        _selectedLocation = ExpenseLocationSelection(
+          label: result.location!,
+        );
+      }
+    });
+  }
+
   Future<String?> _resolveReceiptCloudinaryUrl() async {
     // Case 1: no new receipt selected — return whatever URL is already stored.
     // This covers both existing remote URLs and legacy local-path-as-URL records.
@@ -1144,7 +1192,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
     expense
       ..userId = editingExpense?.userId ?? _currentUserId
       ..name = expenseName
-      ..amount = parsedAmount
+      ..amount = CurrencyProvider.instance.convertToCOP(parsedAmount)
       ..date = _selectedDate
       ..time =
           '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}'
@@ -1222,10 +1270,10 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -1357,7 +1405,9 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                     !_isExpenseRegretted;
                                               });
                                             },
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: const BorderRadius.all(
+                                        Radius.circular(8),
+                                      ),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 4,
@@ -1426,53 +1476,84 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                   ),
                                   const SizedBox(height: 24),
                                   Center(
-                                    child: SizedBox(
-                                      width: 148,
-                                      child: widget.editingExpense == null
-                                          ? ElevatedButton.icon(
-                                              onPressed: _isScanningReceipt
-                                                  ? null
-                                                  : _scanReceipt,
-                                              icon: _isScanningReceipt
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        valueColor:
-                                                            AlwaysStoppedAnimation<
-                                                              Color
-                                                            >(AppPalette.white),
-                                                      ),
-                                                    )
-                                                  : SvgPicture.asset(
-                                                      'web/icons/Camera.svg',
-                                                      width: 18,
-                                                      height: 18,
-                                                      colorFilter:
-                                                          const ColorFilter.mode(
+                                    child: widget.editingExpense == null
+                                        ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SizedBox(
+                                                width: 148,
+                                                child: ElevatedButton.icon(
+                                                  onPressed: _isScanningReceipt
+                                                      ? null
+                                                      : _scanReceipt,
+                                                  icon: _isScanningReceipt
+                                                      ? const SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            valueColor:
+                                                                AlwaysStoppedAnimation<Color>(
+                                                              AppPalette.white,
+                                                            ),
+                                                          ),
+                                                        )
+                                                      : SvgPicture.asset(
+                                                          'web/icons/Camera.svg',
+                                                          width: 18,
+                                                          height: 18,
+                                                          colorFilter:
+                                                              const ColorFilter.mode(
                                                             AppPalette.white,
                                                             BlendMode.srcIn,
                                                           ),
-                                                    ),
-                                              label: Text(
-                                                _isScanningReceipt
-                                                    ? 'Scanning...'
-                                                    : 'Scan Receipt',
-                                              ),
-                                              style: ElevatedButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
+                                                        ),
+                                                  label: Text(
+                                                    _isScanningReceipt
+                                                        ? 'Scanning...'
+                                                        : 'Scan Receipt',
+                                                  ),
+                                                  style: ElevatedButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
                                                       vertical: 12,
                                                       horizontal: 14,
                                                     ),
-                                                textStyle: GoogleFonts.nunito(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
+                                                    textStyle:
+                                                        GoogleFonts.nunito(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
-                                            )
-                                          : ElevatedButton(
+                                              const SizedBox(width: 10),
+                                              ElevatedButton(
+                                                onPressed: _openVoiceRegister,
+                                                style:
+                                                    ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      AppPalette.ink,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    vertical: 12,
+                                                    horizontal: 14,
+                                                  ),
+                                                  minimumSize:
+                                                      const Size(48, 0),
+                                                ),
+                                                child: SvgPicture.asset(
+                                                  'web/icons/WhiteMic.svg',
+                                                  width: 20,
+                                                  height: 20,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : SizedBox(
+                                            width: 148,
+                                            child: ElevatedButton(
                                               onPressed:
                                                   _isDeletingExpense ||
                                                       _isSavingExpense
@@ -1649,10 +1730,10 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                       child: Container(
                         width: 220,
                         padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: const [
+                          borderRadius: const BorderRadius.all(Radius.circular(4)),
+                          boxShadow: [
                             BoxShadow(
                               color: Colors.black45,
                               blurRadius: 20,
@@ -1763,7 +1844,7 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                       ),
                       child: _scanning
                           ? const Padding(
-                              padding: EdgeInsets.all(18),
+                              padding: const EdgeInsets.all(18),
                               child: CircularProgressIndicator(
                                 color: Colors.white,
                                 strokeWidth: 2.5,
@@ -1895,8 +1976,8 @@ class _ReceiptSourceSheet extends StatelessWidget {
             Container(
               width: 48,
               height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFF6D6D6D),
+              decoration: const BoxDecoration(
+                color: Color(0xFF6D6D6D),
                 borderRadius: AppRadius.pill,
               ),
             ),
@@ -1952,7 +2033,7 @@ class _ReceiptSourceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: const BorderRadius.all(Radius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
@@ -1988,13 +2069,18 @@ class DateSelectionScreen extends StatefulWidget {
     super.key,
     required this.initialDate,
     this.minDate,
+    this.maxDate,
+    this.title = 'New Expense',
   });
 
   final DateTime initialDate;
-
-  /// When set, the calendar will not allow selecting a date before this day.
-  /// Defaults to 2020-01-01 (allows past dates, used for expense editing).
   final DateTime? minDate;
+  final DateTime? maxDate;
+
+  /// Header title shown at the top.  Defaults to 'New Expense' for backward
+  /// compatibility; pass a custom value (e.g. 'Select period') when reusing
+  /// this screen outside the expense flow.
+  final String title;
 
   @override
   State<DateSelectionScreen> createState() => _DateSelectionScreenState();
@@ -2032,7 +2118,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
           children: [
             _ExpenseHeader(
               isSubmitting: false,
-              title: 'New Expense',
+              title: widget.title,
               onClose: () => Navigator.of(context).pop(),
               onConfirm: () => Navigator.of(context).pop(_selectedDate),
             ),
@@ -2042,9 +2128,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppPalette.field,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: const BorderRadius.all(Radius.circular(24)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2073,7 +2159,9 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                           firstDate: widget.minDate != null
                               ? DateUtils.dateOnly(widget.minDate!)
                               : DateTime(2020),
-                          lastDate: DateTime(2040),
+                          lastDate: widget.maxDate != null
+                              ? DateUtils.dateOnly(widget.maxDate!)
+                              : DateTime(2040),
                           currentDate: DateTime.now(),
                           onDateChanged: (value) {
                             setState(() {
@@ -2215,10 +2303,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           child: Container(
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppPalette.field,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
+              borderRadius: const BorderRadius.all(Radius.circular(24)),
+              boxShadow: [
                 BoxShadow(
                   color: Color(0x33000000),
                   blurRadius: 18,
@@ -2335,7 +2423,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _isSearchingLocation
                             ? const Padding(
-                                padding: EdgeInsets.all(14),
+                                padding: const EdgeInsets.all(14),
                                 child: SizedBox(
                                   width: 20,
                                   height: 20,
@@ -2381,7 +2469,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           ),
                           style: TextButton.styleFrom(
                             foregroundColor: AppPalette.green,
-                            padding: EdgeInsets.zero,
+                            padding: const EdgeInsets.all(0),
                             minimumSize: const Size(0, 32),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             textStyle: GoogleFonts.nunito(
@@ -2407,7 +2495,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                     const SizedBox(height: 16),
                     Expanded(
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(24),
+                        ),
                         child: Container(
                           color: AppPalette.field,
                           child: Stack(
@@ -2954,7 +3044,7 @@ class _LocationPickerFooter extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: const BorderRadius.all(Radius.circular(18)),
             ),
             child: Text(
               label,
@@ -2977,7 +3067,7 @@ class _LocationPickerFooter extends StatelessWidget {
               foregroundColor: AppPalette.ink,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: const BorderRadius.all(Radius.circular(18)),
               ),
             ),
             child: Text(
@@ -3120,7 +3210,9 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(16),
+                        ),
                       ),
                     ),
                     child: const Text('Done'),
@@ -3241,11 +3333,11 @@ class _ExpenseField extends StatelessWidget {
           fillColor: Colors.transparent,
           filled: true,
           border: const OutlineInputBorder(
-            borderRadius: BorderRadius.zero,
+            borderRadius: const BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
           enabledBorder: const OutlineInputBorder(
-            borderRadius: BorderRadius.zero,
+            borderRadius: const BorderRadius.all(Radius.zero),
             borderSide: BorderSide.none,
           ),
         ),
@@ -3274,7 +3366,7 @@ class _MetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
       child: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -3343,7 +3435,7 @@ class _SublabelChip extends StatelessWidget {
                 curve: Curves.easeOut,
                 child: selected
                     ? const Padding(
-                        padding: EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.only(right: 6),
                         child: Icon(
                           Icons.check,
                           size: 15,
@@ -3384,7 +3476,7 @@ class _SelectedExpenseLabelChip extends StatelessWidget {
         child: Container(
           height: _MiniActionButton.buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: AppPalette.green,
             borderRadius: AppRadius.pill,
           ),
@@ -3432,7 +3524,7 @@ class _MiniActionButton extends StatelessWidget {
         child: Container(
           height: buttonHeight,
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: AppPalette.green,
             borderRadius: AppRadius.pill,
           ),

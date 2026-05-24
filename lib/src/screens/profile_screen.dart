@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app.dart';
 import '../services/auth_memory_store.dart';
+import '../services/currency_provider.dart';
 import '../services/local_storage_service.dart';
 import '../theme/spendant_theme.dart';
 import '../widgets/auth_chrome.dart';
@@ -76,6 +77,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '');
     return '@${normalized.isEmpty ? 'spendant' : normalized}';
+  }
+
+  void _openCurrencyConverter(BuildContext context) {
+    // Guard: if rates were never downloaded (only COP in cache = no connectivity),
+    // block navigation to avoid showing "1 USD = 1 COP" everywhere.
+    final ratesLoaded = CurrencyProvider.instance.ratesCache.length > 1;
+    if (!ratesLoaded) {
+      showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+            decoration: BoxDecoration(
+              color: AppPalette.field,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Rates not available',
+                  style: GoogleFonts.nunito(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Exchange rates could not be downloaded. Connect to the internet and reopen the app to enable currency conversion.',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.fieldHint,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Got it',
+                        style: GoogleFonts.nunito(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppPalette.ink,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pushNamed(AppRoutes.currencyConverter);
   }
 
   Future<void> _openProfileEditor() async {
@@ -250,9 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: _actionButton(
                           'Currency',
                           assetPath: 'web/icons/CurrencyConverter.svg',
-                          onPressed: () => Navigator.of(context).pushNamed(
-                            AppRoutes.currencyConverter,
-                          ),
+                          onPressed: () => _openCurrencyConverter(context),
                         ),
                       ),
                       const SizedBox(width: 16),

@@ -1,15 +1,18 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:wear/wear.dart';
 
 import '../models/expense_model.dart';
 import '../models/voice_parse_result.dart';
 import '../services/app_currency_format_service.dart';
+import '../services/currency_provider.dart';
 import '../theme/expense_visuals.dart';
 import '../services/app_time_format_service.dart';
 import '../services/auth_memory_store.dart';
@@ -22,6 +25,11 @@ import '../theme/spendant_theme.dart';
 
 Future<VoiceParseResult?> _listenAndParse() async {
   try {
+    // Request RECORD_AUDIO at runtime — required by SpeechRecognizer on Wear OS
+    // (permission is declared in the manifest but not auto-granted).
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) return null;
+
     final rawText = await VoicePipelineService.startListening();
     if (rawText == null || rawText.trim().isEmpty) return null;
     return VoicePipelineService.parseAndCache(rawText);
@@ -87,6 +95,8 @@ class WatchExpenseController extends ChangeNotifier {
     if (_isInitialized) return;
     _expensesListenable = LocalStorageService.expensesListenable;
     _expensesListenable.addListener(_refreshExpenses);
+    // Rebuild when active currency changes (phone syncs new currency to watch).
+    CurrencyProvider.instance.addListener(notifyListeners);
     _refreshExpenses();
     _isInitialized = true;
   }
@@ -96,6 +106,7 @@ class WatchExpenseController extends ChangeNotifier {
     if (_isInitialized) {
       _expensesListenable.removeListener(_refreshExpenses);
     }
+    CurrencyProvider.instance.removeListener(notifyListeners);
     super.dispose();
   }
 
@@ -195,10 +206,15 @@ class WatchExpenseController extends ChangeNotifier {
             _expenseDateTime(right).compareTo(_expenseDateTime(left)),
       );
     _recentExpenses = visibleExpenses.take(5).toList(growable: false);
-    _monthlyCategories = ExpenseVisuals.topCategoryTotalsForMonth(
-      visibleExpenses,
-      limit: 3,
-    );
+
+    // Prefer monthly totals pushed by the phone (covers the full expense
+    // history); fall back to computing from the 5 local expenses on the watch.
+    final phoneCategories =
+        WearExpenseSyncService.instance.storedMonthlyCategories;
+    _monthlyCategories = phoneCategories.isNotEmpty
+        ? phoneCategories
+        : ExpenseVisuals.topCategoryTotalsForMonth(visibleExpenses, limit: 3);
+
     notifyListeners();
   }
 
@@ -229,6 +245,44 @@ class _VoiceWatchShell extends StatefulWidget {
 }
 
 class _VoiceWatchShellState extends State<_VoiceWatchShell> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onRotaryScroll(PointerSignalEvent signal) {
+    if (signal is! PointerScrollEvent) return;
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    // Wear OS rotary encoder fires PointerScrollEvent with scrollDelta.dy.
+    // Multiply by 50 to convert the raw rotary unit to a comfortable pixel jump.
+    final delta = signal.scrollDelta.dy * 50.0;
+    final target = (pos.pixels + delta).clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    _scrollController.jumpTo(target);
+  }
+
+  Color _accentColorForExpense(
+    ExpenseModel expense,
+    List<ExpenseCategoryTotal> monthlyCategories,
+    int expenseIndex,
+  ) {
+    final label = expense.detailLabels
+            .where((l) => l.trim().isNotEmpty)
+            .firstOrNull ??
+        expense.primaryCategory?.trim() ??
+        '';
+    for (var i = 0; i < monthlyCategories.length; i++) {
+      if (monthlyCategories[i].label == label) {
+        return ExpenseVisuals.reservedChartColors[i];
+      }
+    }
+    return ExpenseVisuals.rotatingColors[
+        expenseIndex % ExpenseVisuals.rotatingColors.length];
+  }
+
   Future<void> _openAddExpense() async {
     final controller = context.read<WatchExpenseController>();
     if (!controller.canCreateExpense) return;
@@ -277,7 +331,12 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                   const SizedBox(height: 4),
                 ],
                 Expanded(
-                  child: RefreshIndicator(
+                  child: Focus(
+                    autofocus: true,
+                    child: Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerSignal: _onRotaryScroll,
+                      child: RefreshIndicator(
                     color: Colors.white,
                     backgroundColor: AppPalette.green,
                     onRefresh: controller.requestSync,
@@ -301,6 +360,7 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                             children: const [_WatchEmptyState()],
                           )
                         : ListView.builder(
+                            controller: _scrollController,
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
@@ -322,17 +382,27 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                               final expenseIndex = controller.monthlyCategories.isNotEmpty
                                   ? index - 1
                                   : index;
+                              final expense =
+                                  controller.recentExpenses[expenseIndex];
+                              final accentColor = _accentColorForExpense(
+                                expense,
+                                controller.monthlyCategories,
+                                expenseIndex,
+                              );
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: _WatchExpenseTile(
-                                  expense: controller.recentExpenses[expenseIndex],
+                                  expense: expense,
                                   isAmbient: widget.isAmbient,
                                   controller: controller,
+                                  accentColor: accentColor,
                                 ),
                               );
                             },
                           ),
                   ),
+                    ),   // Listener
+                  ),     // Focus
                 ),
               ],
             ),
@@ -515,7 +585,7 @@ class _WatchCategoryBarsSection extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    AppCurrencyFormatService.formatCOP(cat.amount),
+                    CurrencyProvider.instance.formatFromCOP(cat.amount),
                     style: GoogleFonts.nunito(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
@@ -638,72 +708,100 @@ class _WatchExpenseTile extends StatelessWidget {
     required this.expense,
     required this.isAmbient,
     required this.controller,
+    required this.accentColor,
   });
 
   final ExpenseModel expense;
   final bool isAmbient;
   final WatchExpenseController controller;
+  final Color accentColor;
 
   static final DateFormat _shortDateFormatter = DateFormat('dd MMM');
 
   @override
   Widget build(BuildContext context) {
     final categoryLabel = _categoryLabel(expense);
-    final amount = AppCurrencyFormatService.formatCOP(expense.amount);
+    // Display in the active currency (phone syncs its currency to the watch).
+    final amount = CurrencyProvider.instance.formatFromCOP(expense.amount);
     final dateLabel = _shortDateFormatter.format(expense.date);
 
-    final tile = Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: isAmbient ? Colors.black : AppPalette.field,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isAmbient ? Colors.white24 : AppPalette.green,
-          width: 1.2,
+    final tile = ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 64),
+        decoration: BoxDecoration(
+          // Pastel tinted background matching the accent colour.
+          color: isAmbient
+              ? Colors.black
+              : Color.lerp(accentColor, Colors.white, 0.82)!,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: isAmbient
+                ? Colors.white24
+                : accentColor.withValues(alpha: 0.50),
+            width: 1.5,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  expense.name.trim().isEmpty ? categoryLabel : expense.name.trim(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: isAmbient ? Colors.white : AppPalette.ink,
-                  ),
+        child: Row(
+          children: [
+            // Full-opacity accent left strip over the pastel background.
+            if (!isAmbient)
+              Container(
+                width: 4,
+                color: accentColor,
+              ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            expense.name.trim().isEmpty
+                                ? categoryLabel
+                                : expense.name.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.nunito(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: isAmbient ? Colors.white : AppPalette.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$categoryLabel · $dateLabel',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.nunito(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color:
+                                  isAmbient ? Colors.white54 : Colors.black45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      amount,
+                      style: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: isAmbient ? Colors.white : AppPalette.ink,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '$categoryLabel · $dateLabel',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isAmbient ? Colors.white54 : Colors.black45,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            amount,
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: isAmbient ? Colors.white : AppPalette.ink,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 

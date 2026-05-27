@@ -150,9 +150,7 @@ class _AuthCredentialsScreenState extends State<AuthCredentialsScreen> {
         password: password,
       );
     } catch (e) {
-      unawaited(
-        AppAnalyticsService.instance.logModuleCrash('login', e),
-      );
+      AppAnalyticsService.instance.logModuleCrash('login', e);
       if (!mounted) {
         return;
       }

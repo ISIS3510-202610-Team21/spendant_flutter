@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'src/screens/expense_watch_screen.dart';
 import 'src/services/auth_memory_store.dart';
+import 'src/services/currency_provider.dart';
 import 'src/services/local_storage_service.dart';
 import 'src/services/wear_expense_sync_service.dart';
 
@@ -32,6 +33,9 @@ class _WearBootstrapAppState extends State<_WearBootstrapApp> {
       await _loadLocalConfiguration();
       await LocalStorageService.init();
       await AuthMemoryStore.initialize();
+      // Restore persisted ISO before sync arrives so voice parsing uses the
+      // correct defaultCurrency from the very first frame.
+      await CurrencyProvider.instance.restoreFromPrefs();
       await WearExpenseSyncService.instance.initialize();
       return null;
     } catch (error) {

@@ -35,6 +35,12 @@ class WearExpenseSyncService {
   // Serial queue — ensures concurrent _handleWearEvent calls never interleave,
   // eliminating duplicate insertions and race conditions on both phone and watch.
   Future<void> _eventProcessingChain = Future<void>.value();
+
+  // Maps OLD fingerprint → updated ExpenseModel for in-flight watch edits.
+  // Stores the full expense so that a phone REPLACE mid-flight can re-apply the
+  // edit after the REPLACE overwrites the local box.  Cleared only after a
+  // successful outgoing putJsonData.
+  final Map<String, ExpenseModel> _pendingEdits = {};
   int? _lastSyncedUserId;
   List<ExpenseCategoryTotal> _storedMonthlyCategories =
       const <ExpenseCategoryTotal>[];
@@ -188,7 +194,20 @@ class WearExpenseSyncService {
         // Allows the receiving device to know the origin and apply the
         // correct strategy (REPLACE vs ADD).
         'senderIsPhone': _isPhoneSide,
-        'expenses': expensesToSend.map(_expenseToMap).toList(growable: false),
+        'expenses': () {
+          // Build new-fingerprint → old-fingerprint reverse map so each
+          // outgoing expense can carry a `replaces` field for the phone.
+          final newFpToOldFp = <String, String>{
+            for (final entry in _pendingEdits.entries)
+              _expenseFingerprint(entry.value): entry.key,
+          };
+          return expensesToSend.map((e) {
+            final map = _expenseToMap(e);
+            final oldFp = newFpToOldFp[_expenseFingerprint(e)];
+            if (oldFp != null) map['replaces'] = oldFp;
+            return map;
+          }).toList(growable: false);
+        }(),
         'monthlyCategoryTotals': ?monthlyCategoryMaps,
         // Phone sends its active currency so the watch can display amounts in
         // the same currency as the phone without needing the full rates DB.
@@ -196,7 +215,39 @@ class WearExpenseSyncService {
         if (_isPhoneSide) 'activeRate': CurrencyProvider.instance.activeRate,
       },
     );
+    _pendingEdits.clear();
     debugPrint('[WearSync] putJsonData done');
+  }
+
+  /// Registers a watch-side edit so the next sync payload tells the phone to
+  /// replace [original] with [updated] instead of inserting a duplicate.
+  ///
+  /// Chains correctly: if [original] was itself a pending edit (i.e. there is
+  /// already an entry in [_pendingEdits] whose value has the same fingerprint
+  /// as [original]), that entry is updated in-place rather than adding a
+  /// separate entry.  This keeps the "true original → latest edit" mapping
+  /// intact across multiple consecutive edits.
+  ///
+  /// Call this BEFORE saving [updated] to Hive so the fingerprint is ready
+  /// when the Hive listener fires and triggers the outgoing sync.
+  void registerExpenseEdit(ExpenseModel original, ExpenseModel updated) {
+    final oldFp = _expenseFingerprint(original);
+    final newFp = _expenseFingerprint(updated);
+    if (oldFp == newFp) return;
+    // Check whether original was itself a pending edit (chain detection).
+    String? chainedKey;
+    for (final entry in _pendingEdits.entries) {
+      if (_expenseFingerprint(entry.value) == oldFp) {
+        chainedKey = entry.key;
+        break;
+      }
+    }
+    if (chainedKey != null) {
+      // Update the existing entry in-place: trueOriginal → updated.
+      _pendingEdits[chainedKey] = updated;
+    } else {
+      _pendingEdits[oldFp] = updated;
+    }
   }
 
   /// Enqueues [event] onto the serial processing chain so that concurrent
@@ -268,19 +319,48 @@ class WearExpenseSyncService {
     }
 
     _isApplyingRemoteChanges = true;
+    // Track whether we need a follow-up push after REPLACE re-applies pending
+    // edits. Evaluated inside the REPLACE branch, used in the finally block.
+    var needsPendingEditsPush = false;
     try {
       if (senderIsPhone && !_isPhoneSide) {
-        // Watch receiving phone data → REPLACE all non-watch expenses so
-        // deletions on the phone are reflected here too.
+        // Cancel any pending outgoing sync.  The stale debounce timer would
+        // otherwise push the (now-overwritten) box content back to the phone,
+        // resurrecting expenses that the phone already replaced or deleted.
+        _syncDebounce?.cancel();
+        _syncDebounce = null;
+
+        // Watch receiving phone data → phone payload is authoritative.
+        // Delete ALL local expenses for this user EXCEPT:
+        //   (a) watch-created expenses created AFTER the phone's snapshot
+        //       (not yet received by phone — must not be lost), and
+        //   (b) expenses that are the updated version of a pending edit
+        //       (same reason — must survive the REPLACE so we can push them).
+        final payloadGeneratedAt =
+            DateTime.tryParse(payload['generatedAt']?.toString() ?? '');
+        // Build set of fingerprints that are the *updated* side of a pending edit.
+        final pendingUpdatedFps = <String>{
+          for (final e in _pendingEdits.values) _expenseFingerprint(e),
+        };
         final keysToDelete = LocalStorageService.expenseBox
             .toMap()
             .entries
-            .where(
-              (e) =>
-                  e.value.userId == payloadUserId &&
-                  !_isWearCreated(e.value.source),
-            )
-            .map((e) => e.key)
+            .where((entry) {
+              if (entry.value.userId != payloadUserId) return false;
+              if (!_isWearCreated(entry.value.source)) return true;
+              // Keep pending watch-created expenses created after the snapshot.
+              if (payloadGeneratedAt != null &&
+                  entry.value.createdAt.isAfter(payloadGeneratedAt)) {
+                return false;
+              }
+              // Keep expenses that are the updated side of a pending edit so
+              // they survive the REPLACE and can be pushed to the phone later.
+              if (pendingUpdatedFps.contains(_expenseFingerprint(entry.value))) {
+                return false;
+              }
+              return true;
+            })
+            .map((entry) => entry.key)
             .toList();
         await LocalStorageService.expenseBox.deleteAll(keysToDelete);
 
@@ -292,6 +372,37 @@ class WearExpenseSyncService {
           final incomingExpense = _expenseFromMap(normalized);
           if (incomingExpense == null) continue;
           await LocalStorageService.expenseBox.add(incomingExpense);
+        }
+
+        // Re-apply any pending watch edits that were overwritten by REPLACE.
+        // For each old-fingerprint → updated-expense mapping, find the "old"
+        // expense that the phone just re-added and replace it with the edited
+        // version so local state stays consistent with what we'll push.
+        if (_pendingEdits.isNotEmpty) {
+          for (final entry in _pendingEdits.entries) {
+            final oldFp = entry.key;
+            final updatedExpense = entry.value;
+            // Skip if the updated version is already in the box (survived REPLACE).
+            if (_hasEquivalentExpense(updatedExpense)) continue;
+            // Find the old (original) expense the phone sent back.
+            dynamic existingKey;
+            for (final e in LocalStorageService.expenseBox.toMap().entries) {
+              if (_expenseFingerprint(e.value) == oldFp) {
+                existingKey = e.key;
+                break;
+              }
+            }
+            if (existingKey != null) {
+              await LocalStorageService.expenseBox.put(
+                existingKey,
+                updatedExpense,
+              );
+            } else {
+              // Original not in phone's top-5; add the edited version directly.
+              await LocalStorageService.expenseBox.add(updatedExpense);
+            }
+          }
+          needsPendingEditsPush = true;
         }
       } else {
         // Phone receiving watch data (or legacy payload without senderIsPhone)
@@ -311,7 +422,27 @@ class WearExpenseSyncService {
           if (_isPhoneSide && !_isWearCreated(incomingExpense.source)) {
             continue;
           }
-          if (_hasEquivalentExpense(incomingExpense)) continue;
+          // If the watch flagged this as an edit, delete the old expense first
+          // so we replace in-place rather than inserting a duplicate.
+          final replacesFingerprint = normalized['replaces'] as String?;
+          if (replacesFingerprint != null) {
+            final keysToDelete = LocalStorageService.expenseBox
+                .toMap()
+                .entries
+                .where((e) => _expenseFingerprint(e.value) == replacesFingerprint)
+                .map((e) => e.key)
+                .toList();
+            if (keysToDelete.isNotEmpty) {
+              await LocalStorageService.expenseBox.deleteAll(keysToDelete);
+            } else if (_hasEquivalentExpense(incomingExpense)) {
+              // Old expense already gone and new one already present — this
+              // payload was processed before (e.g. Data Layer startup replay).
+              // Skip to avoid inserting a duplicate.
+              continue;
+            }
+          } else if (_hasEquivalentExpense(incomingExpense)) {
+            continue;
+          }
           if (_isPhoneSide) {
             await _enrichWithLocation(incomingExpense);
           }
@@ -324,6 +455,11 @@ class WearExpenseSyncService {
       // Futures resolve) still see the flag as true and skip re-triggering sync.
       await Future<void>.delayed(Duration.zero);
       _isApplyingRemoteChanges = false;
+      // If the REPLACE re-applied pending edits, push immediately so the phone
+      // receives the correct edited versions instead of the old originals.
+      if (needsPendingEditsPush) {
+        _scheduleRecentExpensesSync();
+      }
     }
   }
 
@@ -455,6 +591,10 @@ class WearExpenseSyncService {
 
     return expense;
   }
+
+  /// Public fingerprint accessor so the watch UI can do fingerprint-based
+  /// Hive key lookups (avoids stale-key edits after a REPLACE sync cycle).
+  String fingerprintOf(ExpenseModel expense) => _expenseFingerprint(expense);
 
   /// Returns true for any expense created on the watch (voice or manual).
   /// Used by sync filters to distinguish watch-originated vs phone-originated.

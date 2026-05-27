@@ -1228,7 +1228,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         );
       }
     } catch (e) {
-      unawaited(AppAnalyticsService.instance.logModuleCrash('expenses', e));
+      AppAnalyticsService.instance.logModuleCrash('expenses', e);
       if (!mounted) {
         return;
       }

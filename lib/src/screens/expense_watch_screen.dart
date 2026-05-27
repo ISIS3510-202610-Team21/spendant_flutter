@@ -26,6 +26,21 @@ import '../theme/spendant_theme.dart';
 
 // ─── Voice helpers ───────────────────────────────────────────────────────────
 
+/// Converts a [VoiceParseResult] to the active display currency amount.
+///
+/// When [result.originalCurrency] matches the active currency (most common
+/// on the watch — user says "500" with JPY active), [originalAmount] is
+/// returned directly, bypassing the COP round-trip.  This avoids precision
+/// loss when the watch's ratesCache is incomplete (it only has the one active
+/// rate, not the full exchange-rate table).
+double _localAmountFromResult(VoiceParseResult result) {
+  final cp = CurrencyProvider.instance;
+  if (result.originalCurrency == cp.activeCurrency) {
+    return result.originalAmount;
+  }
+  return cp.convertToLocal(result.convertedAmountCop);
+}
+
 Future<VoiceParseResult?> _listenAndParse() async {
   try {
     // Request RECORD_AUDIO at runtime — required by SpeechRecognizer on Wear OS
@@ -174,8 +189,6 @@ class WatchExpenseController extends ChangeNotifier {
     final normalizedAmount = rawAmount.replaceAll(RegExp(r'[^0-9]'), '');
     final localAmount = double.tryParse(normalizedAmount);
     if (localAmount == null || localAmount <= 0 || _isSaving) return;
-    final key = original.key;
-    if (key == null) return;
     // _amountDigits is in the active display currency; convert to COP for storage.
     final amount = CurrencyProvider.instance.convertToCOP(localAmount);
 
@@ -193,7 +206,26 @@ class WatchExpenseController extends ChangeNotifier {
     _isSaving = true;
     notifyListeners();
     try {
-      await LocalStorageService.expenseBox.put(key, updated);
+      // Resolve the current Hive key by fingerprint rather than original.key.
+      // A REPLACE sync cycle (phone → watch) deletes and re-adds expenses with
+      // new auto-generated keys. If the edit screen opened before that cycle
+      // completed, original.key is stale: put(staleKey, updated) creates a NEW
+      // entry instead of replacing → duplicates. Fingerprint lookup always finds
+      // the live key regardless of when the REPLACE happened.
+      final fp = WearExpenseSyncService.instance.fingerprintOf(original);
+      dynamic resolvedKey;
+      for (final entry in LocalStorageService.expenseBox.toMap().entries) {
+        if (WearExpenseSyncService.instance.fingerprintOf(entry.value) == fp) {
+          resolvedKey = entry.key;
+          break;
+        }
+      }
+      final currentKey = resolvedKey ?? original.key;
+      if (currentKey == null) return;
+      // Register the edit so the sync payload tells the phone to replace
+      // the original expense instead of inserting a duplicate.
+      WearExpenseSyncService.instance.registerExpenseEdit(original, updated);
+      await LocalStorageService.expenseBox.put(currentKey, updated);
       _refreshExpenses();
     } finally {
       _isSaving = false;
@@ -265,11 +297,22 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
     if (signal is! PointerScrollEvent) return;
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
-    // Wear OS rotary encoder fires PointerScrollEvent with scrollDelta.dy.
-    // Multiply by 50 to convert the raw rotary unit to a comfortable pixel jump.
-    final delta = signal.scrollDelta.dy * 50.0;
-    final target = (pos.pixels + delta).clamp(pos.minScrollExtent, pos.maxScrollExtent);
-    _scrollController.jumpTo(target);
+    // Wear OS rotary encoder fires PointerScrollEvent. Use whichever axis
+    // carries the value — side-crown watches use dy, bezel watches may use dx.
+    final raw = signal.scrollDelta.dy != 0
+        ? signal.scrollDelta.dy
+        : signal.scrollDelta.dx;
+    if (raw == 0) return;
+    // Scale to a comfortable scroll distance (~70 px per notch).
+    final target = (pos.pixels + raw * 70.0)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    // animateTo cooperates with the Scrollable's own physics instead of
+    // fighting it; jumpTo was cancelling the natural scroll animation.
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
   }
 
   Color _accentColorForExpense(
@@ -310,7 +353,16 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
       builder: (context, controller, child) {
         return Theme(
           data: _buildWatchTheme(),
-          child: Scaffold(
+          // Listener wraps the full Scaffold so rotary PointerScrollEvents
+          // are caught regardless of their reported (x,y) position — the
+          // hardware crown has no meaningful pointer position and may land
+          // anywhere (including the header) in the hit-test tree.
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerSignal: _onRotaryScroll,
+            child: Focus(
+              autofocus: true,
+              child: Scaffold(
             backgroundColor: widget.isAmbient ? Colors.black : Colors.white,
             floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
             floatingActionButton: widget.isAmbient
@@ -339,12 +391,7 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                   const SizedBox(height: 4),
                 ],
                 Expanded(
-                  child: Focus(
-                    autofocus: true,
-                    child: Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerSignal: _onRotaryScroll,
-                      child: RefreshIndicator(
+                  child: RefreshIndicator(
                     color: Colors.white,
                     backgroundColor: AppPalette.green,
                     onRefresh: controller.requestSync,
@@ -408,13 +455,13 @@ class _VoiceWatchShellState extends State<_VoiceWatchShell> {
                               );
                             },
                           ),
-                  ),
-                    ),   // Listener
-                  ),     // Focus
-                ),
+                  ),        // RefreshIndicator
+                ),          // Expanded
               ],
             ),
-          ),
+          ),          // Scaffold
+            ),        // Focus
+          ),          // Listener
         );
       },
     );
@@ -464,9 +511,9 @@ class _VoiceHomeHeader extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
         isRound ? 24 : 18,
-        isRound ? 52 : 38,
+        isRound ? 30 : 20,
         isRound ? 24 : 18,
-        18,
+        14,
       ),
       decoration: BoxDecoration(
         color: isAmbient ? Colors.black : AppPalette.green,
@@ -504,9 +551,9 @@ class _WatchDetailHeader extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
         isRound ? 24 : 18,
-        isRound ? 42 : 30,
+        isRound ? 22 : 14,
         isRound ? 24 : 18,
-        18,
+        12,
       ),
       decoration: BoxDecoration(
         color: AppPalette.green,
@@ -932,7 +979,9 @@ class _WatchVoiceInstructionsScreenState
   Future<void> _confirmResult() async {
     final result = _pendingResult;
     if (result == null || !mounted) return;
-    setState(() => _pendingResult = null);
+    // Do NOT clear _pendingResult before pushing — that triggers a rebuild
+    // that briefly flashes the idle/recording view before the new route
+    // covers the screen.  _startListening() clears it when the user re-records.
     final controller = context.read<WatchExpenseController>();
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -1236,12 +1285,8 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.parseResult.productName);
-    // convertedAmountCop is in COP — convert to active display currency.
     _amountDigits = widget.parseResult.convertedAmountCop > 0
-        ? CurrencyProvider.instance
-            .convertToLocal(widget.parseResult.convertedAmountCop)
-            .round()
-            .toString()
+        ? _localAmountFromResult(widget.parseResult).round().toString()
         : '';
     _selectedCategory = _categoryFromName(widget.parseResult.productName);
   }
@@ -1293,11 +1338,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
       setState(() {
         _nameController.text = result.productName;
         if (result.convertedAmountCop > 0) {
-          // convertedAmountCop is in COP — convert to active display currency.
-          _amountDigits = CurrencyProvider.instance
-              .convertToLocal(result.convertedAmountCop)
-              .round()
-              .toString();
+          _amountDigits = _localAmountFromResult(result).round().toString();
         }
         _selectedCategory = _categoryFromName(result.productName);
       });
@@ -1327,7 +1368,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
       rawAmount: _amountDigits,
       isVoice: true,
     );
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _appendDigit(String digit) {
@@ -1544,11 +1585,7 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
         setState(() {
           _nameController.text = result.productName;
           if (result.convertedAmountCop > 0) {
-            // convertedAmountCop is in COP — convert to active display currency.
-            _amountDigits = CurrencyProvider.instance
-                .convertToLocal(result.convertedAmountCop)
-                .round()
-                .toString();
+            _amountDigits = _localAmountFromResult(result).round().toString();
           }
         });
       }

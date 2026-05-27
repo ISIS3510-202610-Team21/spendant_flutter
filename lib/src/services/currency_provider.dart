@@ -92,12 +92,37 @@ class CurrencyProvider extends ChangeNotifier {
     final isoChanged = _activeCurrency != isoCode;
     _activeCurrency = isoCode;
     _activeRate = rate;
+    // Keep ratesCache in sync so _convertToCop (voice parsing) finds the rate
+    // even on the watch where loadFromDb is never called.
+    _ratesCache[isoCode] = rate;
     notifyListeners();
     // Persist ISO only when it actually changed — never blocks the UI.
     if (isoChanged) {
       SharedPreferences.getInstance().then(
         (prefs) => prefs.setString(_kPrefKey, isoCode),
       );
+    }
+  }
+
+  /// Restores only the persisted ISO code from SharedPreferences — no SQLite.
+  ///
+  /// Use on Wear OS where [ExchangeRateDbService] is not available.
+  /// Guarantees [activeCurrency] is correct from the very first frame so that
+  /// voice parsing uses the right [defaultCurrency] even before the first
+  /// phone→watch sync arrives.  The rate is left at its default (1.0) until
+  /// [setActiveCurrency] is called by the sync service.
+  Future<void> restoreFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedIso = prefs.getString(_kPrefKey);
+      if (savedIso != null && savedIso.isNotEmpty && savedIso != _activeCurrency) {
+        _activeCurrency = savedIso;
+        // Rate unknown until sync — keep _activeRate at 1.0 so display shows
+        // raw values rather than a wrong conversion until sync fills it in.
+        notifyListeners();
+      }
+    } catch (error) {
+      debugPrint('CurrencyProvider.restoreFromPrefs error: $error');
     }
   }
 

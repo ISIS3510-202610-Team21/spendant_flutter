@@ -7,6 +7,7 @@ import '../models/expense_model.dart';
 import '../models/financial_report.dart';
 import '../services/auth_memory_store.dart';
 import '../services/currency_provider.dart';
+import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/report_cache_service.dart';
 
@@ -73,6 +74,98 @@ abstract final class ReportWorker {
     // ── BQ4: small recurring expenses in last 3 months (main thread) ─────
     final smallRecurring3m = _smallRecurringLast3Months(allUserExpenses);
 
+    // ── BQ7: savings goal progress (needs Hive goalBox — main thread) ────
+    double savingsAchievedPct = -1;
+    int savingsGoalCount = 0;
+    try {
+      final goals = LocalStorageService.goalBox.values
+          .where((g) => g.userId == userId)
+          .toList();
+      if (goals.isNotEmpty) {
+        final summary = DailyBudgetService.buildSummaryForUser(userId);
+        double totalPct = 0;
+        int validGoals = 0;
+        for (final goal in goals) {
+          final state = summary.stateFor(goal);
+          if (state == null || goal.targetAmount <= 0) continue;
+          totalPct += ((state.currentAmount / goal.targetAmount) * 100)
+              .clamp(0.0, 100.0);
+          validGoals++;
+        }
+        if (validGoals > 0) {
+          savingsAchievedPct = totalPct / validGoals;
+          savingsGoalCount = validGoals;
+        }
+      }
+    } catch (_) {}
+
+    // ── BQ8: budget midpoint consumption (needs DailyBudgetService) ──────
+    double budgetConsumedPct = -1;
+    bool budgetEvaluatedAtMidpoint = false;
+    try {
+      final now = DateTime.now();
+      final monthStart = DateTime(now.year, now.month, 1);
+      final monthExpenses = allUserExpenses
+          .where((e) => !e.date.isBefore(monthStart) && !e.date.isAfter(now))
+          .toList();
+      if (monthExpenses.isNotEmpty) {
+        final summary = DailyBudgetService.buildSummaryForUser(userId);
+        final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+        final monthlyBudget = summary.internalDailyBudget * daysInMonth;
+        if (monthlyBudget > 0) {
+          final consumed =
+              monthExpenses.fold<double>(0, (s, e) => s + e.amount);
+          budgetConsumedPct =
+              (consumed / monthlyBudget * 100).clamp(0.0, 200.0);
+          budgetEvaluatedAtMidpoint = now.day >= (daysInMonth ~/ 2);
+        }
+      }
+    } catch (_) {}
+
+    // ── BQ9: highest category spending growth vs previous month ──────────
+    // Uses all-time expenses — computed on main thread, passed as primitives.
+    String? topGrowthCategory;
+    double topGrowthCurrentCop = 0;
+    double topGrowthPreviousCop = 0;
+    double topGrowthPercent = 0;
+    try {
+      final now = DateTime.now();
+      final thisStart = DateTime(now.year, now.month, 1);
+      final lastStart = DateTime(now.year, now.month - 1, 1);
+      final lastEnd =
+          DateTime(now.year, now.month - 1, now.day, 23, 59, 59);
+
+      Map<String, double> sumByCat(DateTime from, DateTime to) {
+        final totals = <String, double>{};
+        for (final e in allUserExpenses) {
+          if (e.date.isBefore(from) || e.date.isAfter(to)) continue;
+          final cat = e.primaryCategory ?? 'Other';
+          totals[cat] = (totals[cat] ?? 0) + e.amount;
+        }
+        return totals;
+      }
+
+      final thisPeriod = sumByCat(thisStart, now);
+      final lastPeriod = sumByCat(lastStart, lastEnd);
+      double topGrowthPct = double.negativeInfinity;
+
+      for (final entry in thisPeriod.entries) {
+        final prev = lastPeriod[entry.key] ?? 0;
+        final growth = prev > 0
+            ? ((entry.value - prev) / prev) * 100
+            : entry.value > 0
+                ? 100.0
+                : 0.0;
+        if (growth > topGrowthPct) {
+          topGrowthPct = growth;
+          topGrowthCategory = entry.key;
+          topGrowthCurrentCop = entry.value;
+          topGrowthPreviousCop = prev;
+          topGrowthPercent = growth;
+        }
+      }
+    } catch (_) {}
+
     // Serialise to primitive maps — safe across Isolate boundary.
     final rawExpenses = allExpenses
         .map(_expenseToMap)
@@ -84,15 +177,23 @@ abstract final class ReportWorker {
     // ── Background Isolate: aggregate ─────────────────────────────────────
     final report = await Isolate.run(
       () => _aggregate(
-        rawExpenses:          rawExpenses,
-        startDate:            start,
-        endDate:              end,
-        periodLabel:          periodLabel,
-        activeRate:           activeRate,
-        activeCurrency:       activeCurrency,
-        usageCount:           usageCount,
-        daysSinceLastExpense: daysSinceLastExpense,
-        smallRecurring3m:     smallRecurring3m,
+        rawExpenses:             rawExpenses,
+        startDate:               start,
+        endDate:                 end,
+        periodLabel:             periodLabel,
+        activeRate:              activeRate,
+        activeCurrency:          activeCurrency,
+        usageCount:              usageCount,
+        daysSinceLastExpense:    daysSinceLastExpense,
+        smallRecurring3m:        smallRecurring3m,
+        savingsAchievedPct:      savingsAchievedPct,
+        savingsGoalCount:        savingsGoalCount,
+        budgetConsumedPct:       budgetConsumedPct,
+        budgetEvaluatedAtMidpoint: budgetEvaluatedAtMidpoint,
+        topGrowthCategory:       topGrowthCategory,
+        topGrowthCurrentCop:     topGrowthCurrentCop,
+        topGrowthPreviousCop:    topGrowthPreviousCop,
+        topGrowthPercent:        topGrowthPercent,
       ),
     );
 
@@ -124,6 +225,14 @@ FinancialReport _aggregate({
   required int usageCount,
   required int daysSinceLastExpense,
   required int smallRecurring3m,
+  required double savingsAchievedPct,
+  required int savingsGoalCount,
+  required double budgetConsumedPct,
+  required bool budgetEvaluatedAtMidpoint,
+  required String? topGrowthCategory,
+  required double topGrowthCurrentCop,
+  required double topGrowthPreviousCop,
+  required double topGrowthPercent,
 }) {
   double totalCop = 0;
   final dailyMap    = <String, double>{};
@@ -252,6 +361,45 @@ FinancialReport _aggregate({
   // BQ4
   if (smallRecurring3m > 0) {
     insights.add('$smallRecurring3m small recurring ${smallRecurring3m == 1 ? 'expense' : 'expenses'} in the last 3 months');
+  }
+
+  // BQ7 — Savings goal progress
+  if (savingsAchievedPct >= 0) {
+    final pct = savingsAchievedPct.round();
+    final onTrack = savingsAchievedPct >= 50;
+    insights.add(
+      'Savings goals: $pct% achieved on average across '
+      '$savingsGoalCount active ${savingsGoalCount == 1 ? 'goal' : 'goals'} '
+      '(${onTrack ? 'on track' : 'behind target'})',
+    );
+  }
+
+  // BQ8 — Budget midpoint consumption
+  if (budgetConsumedPct >= 0) {
+    final pct = budgetConsumedPct.round();
+    if (budgetEvaluatedAtMidpoint && budgetConsumedPct > 50) {
+      insights.add(
+        'Monthly budget: $pct% consumed past the midpoint — overspending risk',
+      );
+    } else {
+      insights.add('Monthly budget: $pct% consumed so far this month');
+    }
+  }
+
+  // BQ9 — Highest category growth vs previous month
+  if (topGrowthCategory != null) {
+    if (topGrowthPreviousCop == 0) {
+      insights.add(
+        'New spending category this month: $topGrowthCategory '
+        '($activeCurrency ${_fmtNum(topGrowthCurrentCop * activeRate)})',
+      );
+    } else {
+      final pct = topGrowthPercent.round();
+      insights.add(
+        'Highest category growth: $topGrowthCategory +$pct% vs last month '
+        '($activeCurrency ${_fmtNum(topGrowthCurrentCop * activeRate)})',
+      );
+    }
   }
 
   // Spending advice insights

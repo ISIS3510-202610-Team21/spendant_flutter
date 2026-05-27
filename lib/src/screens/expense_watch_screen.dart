@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -131,10 +134,12 @@ class WatchExpenseController extends ChangeNotifier {
   }) async {
     final resolvedUserId = currentUserId;
     final normalizedAmount = rawAmount.replaceAll(RegExp(r'[^0-9]'), '');
-    final amount = double.tryParse(normalizedAmount);
-    if (resolvedUserId == null || amount == null || amount <= 0 || _isSaving) {
+    final localAmount = double.tryParse(normalizedAmount);
+    if (resolvedUserId == null || localAmount == null || localAmount <= 0 || _isSaving) {
       return;
     }
+    // _amountDigits is in the active display currency; convert to COP for storage.
+    final amount = CurrencyProvider.instance.convertToCOP(localAmount);
 
     final now = DateTime.now();
     final expense = ExpenseModel()
@@ -166,10 +171,12 @@ class WatchExpenseController extends ChangeNotifier {
     required String rawAmount,
   }) async {
     final normalizedAmount = rawAmount.replaceAll(RegExp(r'[^0-9]'), '');
-    final amount = double.tryParse(normalizedAmount);
-    if (amount == null || amount <= 0 || _isSaving) return;
+    final localAmount = double.tryParse(normalizedAmount);
+    if (localAmount == null || localAmount <= 0 || _isSaving) return;
     final key = original.key;
     if (key == null) return;
+    // _amountDigits is in the active display currency; convert to COP for storage.
+    final amount = CurrencyProvider.instance.convertToCOP(localAmount);
 
     final updated = ExpenseModel()
       ..userId = original.userId
@@ -875,27 +882,68 @@ class _WatchVoiceInstructionsScreenState
     extends State<_WatchVoiceInstructionsScreen> {
   bool _isListening = false;
 
+  // When non-null, the voice was parsed and we're showing the "understood"
+  // preview. User can confirm → navigate to full edit, or re-record.
+  VoiceParseResult? _pendingResult;
+
+  // Real-time RMS amplitude from Android SpeechRecognizer [0.0 – 1.0].
+  // Exponentially smoothed to avoid jitter (same formula as phone app).
+  double _amplitude = 0.0;
+  StreamSubscription<double>? _rmsSub;
+
+  @override
+  void dispose() {
+    _rmsSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _record() async {
     if (_isListening) return;
-    setState(() => _isListening = true);
+    setState(() {
+      _isListening = true;
+      _pendingResult = null;
+      _amplitude = 0.0;
+    });
+    // Subscribe to RMS stream before startListening so no events are missed.
+    _rmsSub = VoicePipelineService.rmsStream.listen((raw) {
+      if (!mounted) return;
+      setState(() {
+        // Exponential smoothing: fast rise, slow decay for natural feel.
+        _amplitude = _amplitude * 0.55 + raw * 0.45;
+      });
+    });
     try {
       final result = await _listenAndParse();
-      if (result == null || !mounted) return;
-      final controller = context.read<WatchExpenseController>();
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => ChangeNotifierProvider.value(
-            value: controller,
-            child: _WatchVoiceConfirmScreen(
-              parseResult: result,
-              shape: widget.shape,
-            ),
+      if (!mounted) return;
+      if (result == null) return; // no result → go back to idle
+      // Show understood preview instead of navigating immediately.
+      setState(() => _pendingResult = result);
+    } finally {
+      _rmsSub?.cancel();
+      _rmsSub = null;
+      if (mounted) setState(() {
+        _isListening = false;
+        _amplitude = 0.0;
+      });
+    }
+  }
+
+  Future<void> _confirmResult() async {
+    final result = _pendingResult;
+    if (result == null || !mounted) return;
+    setState(() => _pendingResult = null);
+    final controller = context.read<WatchExpenseController>();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ChangeNotifierProvider.value(
+          value: controller,
+          child: _WatchVoiceConfirmScreen(
+            parseResult: result,
+            shape: widget.shape,
           ),
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _isListening = false);
-    }
+      ),
+    );
   }
 
   @override
@@ -907,89 +955,252 @@ class _WatchVoiceInstructionsScreenState
         children: [
           _WatchDetailHeader(title: 'Add\nexpense', isRound: isRound),
           Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                isRound ? 22 : 14,
-                14,
-                isRound ? 22 : 14,
-                18,
+            child: _isListening
+                ? _buildListeningView()
+                : _pendingResult != null
+                    ? _buildUnderstoodView(isRound)
+                    : _buildIdleView(isRound),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListeningView() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Listening...',
+            style: GoogleFonts.nunito(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: AppPalette.ink,
+            ),
+          ),
+          const SizedBox(height: 18),
+          _SoundWaveWidget(amplitude: _amplitude),
+          const SizedBox(height: 14),
+          Text(
+            'Speak now',
+            style: GoogleFonts.nunito(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.black45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnderstoodView(bool isRound) {
+    final result = _pendingResult!;
+    final localAmount = CurrencyProvider.instance
+        .convertToLocal(result.convertedAmountCop)
+        .round();
+    final amountLabel =
+        '${CurrencyProvider.instance.activeCurrency} '
+        '${AppCurrencyFormatService.formatAmount(localAmount.toDouble())}';
+    // Truncate raw transcription so it fits on the small screen.
+    final rawLabel = result.rawText.length > 42
+        ? '${result.rawText.substring(0, 42)}…'
+        : result.rawText;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        isRound ? 20 : 14,
+        14,
+        isRound ? 20 : 14,
+        18,
+      ),
+      child: Column(
+        children: [
+          // Heard label
+          Text(
+            'I heard:',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: Colors.black38,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '"$rawLabel"',
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.nunito(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.black54,
+              fontStyle: FontStyle.italic,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Parsed summary card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Color.lerp(AppPalette.green, Colors.white, 0.72)!,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: AppPalette.green.withValues(alpha: 0.55),
               ),
-              child: Column(
-                children: [
-                  Text(
-                    'Say your expense:',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppPalette.ink,
-                    ),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  amountLabel,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppPalette.ink,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '"I paid [amount] for [product]"',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black54,
-                      height: 1.4,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  result.productName,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'e.g. "I paid 5 dollars for coffee"',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black38,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  GestureDetector(
-                    onTap: _isListening ? null : _record,
-                    child: Container(
-                      width: 68,
-                      height: 68,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isListening
-                            ? AppPalette.green.withValues(alpha: 0.6)
-                            : AppPalette.green,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Action buttons
+          Row(
+            children: [
+              // Re-record
+              Expanded(
+                child: SizedBox(
+                  height: 42,
+                  child: OutlinedButton(
+                    onPressed: _record,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppPalette.ink,
+                      side: const BorderSide(color: AppPalette.green),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      child: _isListening
-                          ? const Center(
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: AppPalette.ink,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.mic_rounded,
-                              color: AppPalette.ink,
-                              size: 32,
-                            ),
                     ),
+                    child: const Icon(Icons.mic_rounded, size: 20),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _isListening ? 'Listening...' : 'Tap to record',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.nunito(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black45,
-                    ),
-                  ),
-                ],
+                ),
               ),
+              const SizedBox(width: 8),
+              // Confirm
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 42,
+                  child: ElevatedButton(
+                    onPressed: _confirmResult,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppPalette.green,
+                      foregroundColor: AppPalette.ink,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      'Looks good',
+                      style: GoogleFonts.nunito(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdleView(bool isRound) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        isRound ? 22 : 14,
+        14,
+        isRound ? 22 : 14,
+        18,
+      ),
+      child: Column(
+        children: [
+          Text(
+            'Say your expense:',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppPalette.ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '"I paid [amount] for [product]"',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'e.g. "I paid 5 dollars for coffee"',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.black38,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: _record,
+            child: Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppPalette.green,
+              ),
+              child: const Icon(
+                Icons.mic_rounded,
+                color: AppPalette.ink,
+                size: 32,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Tap to record',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.black45,
             ),
           ),
         ],
@@ -1024,8 +1235,12 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.parseResult.productName);
+    // convertedAmountCop is in COP — convert to active display currency.
     _amountDigits = widget.parseResult.convertedAmountCop > 0
-        ? widget.parseResult.convertedAmountCop.round().toString()
+        ? CurrencyProvider.instance
+            .convertToLocal(widget.parseResult.convertedAmountCop)
+            .round()
+            .toString()
         : '';
     _selectedCategory = _categoryFromName(widget.parseResult.productName);
   }
@@ -1077,7 +1292,11 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
       setState(() {
         _nameController.text = result.productName;
         if (result.convertedAmountCop > 0) {
-          _amountDigits = result.convertedAmountCop.round().toString();
+          // convertedAmountCop is in COP — convert to active display currency.
+          _amountDigits = CurrencyProvider.instance
+              .convertToLocal(result.convertedAmountCop)
+              .round()
+              .toString();
         }
         _selectedCategory = _categoryFromName(result.productName);
       });
@@ -1128,7 +1347,8 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
     final controller = context.watch<WatchExpenseController>();
     final formattedAmount = _amountDigits.isEmpty
         ? '0'
-        : AppCurrencyFormatService.formatAmount(double.parse(_amountDigits));
+        : '${CurrencyProvider.instance.activeCurrency} '
+            '${AppCurrencyFormatService.formatAmount(double.parse(_amountDigits))}';
     final isRound = widget.shape == WearShape.round;
 
     return Scaffold(
@@ -1272,7 +1492,11 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.expense.name.trim());
-    _amountDigits = widget.expense.amount.round().toString();
+    // expense.amount is in COP — convert to active display currency.
+    _amountDigits = CurrencyProvider.instance
+        .convertToLocal(widget.expense.amount)
+        .round()
+        .toString();
     _selectedCategory = _categoryFromExpense(widget.expense);
   }
 
@@ -1286,8 +1510,14 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
     final label = expense.detailLabels.isEmpty
         ? (expense.primaryCategory ?? '')
         : expense.detailLabels.first;
+    // Pass 1: exact label match (most specific — avoids false matches from
+    // primaryCategory overlap, e.g. 'Food' matching before 'Groceries').
+    final byLabel =
+        watchQuickCategories.where((c) => c.label == label).firstOrNull;
+    if (byLabel != null) return byLabel;
+    // Pass 2: fall back to primaryCategory match.
     return watchQuickCategories.firstWhere(
-      (c) => c.label == label || c.primaryCategory == expense.primaryCategory,
+      (c) => c.primaryCategory == expense.primaryCategory,
       orElse: () => watchQuickCategories.first,
     );
   }
@@ -1312,7 +1542,11 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
         setState(() {
           _nameController.text = result.productName;
           if (result.convertedAmountCop > 0) {
-            _amountDigits = result.convertedAmountCop.round().toString();
+            // convertedAmountCop is in COP — convert to active display currency.
+            _amountDigits = CurrencyProvider.instance
+                .convertToLocal(result.convertedAmountCop)
+                .round()
+                .toString();
           }
         });
       }
@@ -1352,7 +1586,8 @@ class _WatchEditScreenState extends State<_WatchEditScreen> {
     final controller = context.watch<WatchExpenseController>();
     final formattedAmount = _amountDigits.isEmpty
         ? '0'
-        : AppCurrencyFormatService.formatAmount(double.parse(_amountDigits));
+        : '${CurrencyProvider.instance.activeCurrency} '
+            '${AppCurrencyFormatService.formatAmount(double.parse(_amountDigits))}';
     final isRound = widget.shape == WearShape.round;
 
     return Scaffold(
@@ -1772,3 +2007,87 @@ const List<WatchQuickCategory> watchQuickCategories = <WatchQuickCategory>[
   WatchQuickCategory(label: 'Impulse', shortLabel: 'Impulse', primaryCategory: 'Other', assetPath: 'web/icons/Impulse.svg'),
   WatchQuickCategory(label: 'Emergency', shortLabel: 'Emergency', primaryCategory: 'Other', assetPath: 'web/icons/Emergency.svg'),
 ];
+
+// ─── Sound wave widget ────────────────────────────────────────────────────────
+
+/// Animated equaliser bars driven by real-time RMS amplitude.
+///
+/// [amplitude] is a normalized [0.0 – 1.0] value from the Android
+/// SpeechRecognizer (via [VoicePipelineService.rmsStream]).  When the mic
+/// is silent, [amplitude] ≈ 0 and all bars collapse to [_minHeight].
+/// When voice is detected, bars rise proportionally with staggered sin
+/// phases — matching the WhatsApp-style waveform on the phone app.
+class _SoundWaveWidget extends StatefulWidget {
+  const _SoundWaveWidget({required this.amplitude});
+
+  /// Normalized RMS amplitude [0.0 – 1.0].  Bars are flat when 0.
+  final double amplitude;
+
+  static const int barCount = 7;
+
+  @override
+  State<_SoundWaveWidget> createState() => _SoundWaveWidgetState();
+}
+
+class _SoundWaveWidgetState extends State<_SoundWaveWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _waveController;
+
+  static const double _minHeight = 5.0;
+  static const double _maxHeight = 36.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _waveController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const barWidth = 5.0;
+    const gap = 4.0;
+
+    return SizedBox(
+      height: _maxHeight,
+      child: AnimatedBuilder(
+        animation: _waveController,
+        builder: (context, child) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(_SoundWaveWidget.barCount, (i) {
+              // Staggered sin phase per bar — same formula as phone waveform.
+              final phase = i / _SoundWaveWidget.barCount * math.pi;
+              final sinVal =
+                  (math.sin(phase + _waveController.value * 2 * math.pi) + 1) /
+                  2; // [0.0, 1.0]
+              final barHeight = _minHeight +
+                  sinVal * widget.amplitude * (_maxHeight - _minHeight);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: gap / 2),
+                child: Container(
+                  width: barWidth,
+                  height: barHeight,
+                  decoration: BoxDecoration(
+                    color: AppPalette.green,
+                    borderRadius: BorderRadius.circular(barWidth / 2),
+                  ),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+}
+

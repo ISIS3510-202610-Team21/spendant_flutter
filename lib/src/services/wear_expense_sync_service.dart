@@ -32,6 +32,9 @@ class WearExpenseSyncService {
   ValueListenable<Box<ExpenseModel>>? _expensesListenable;
   bool _isApplyingRemoteChanges = false;
   bool _isInitialized = false;
+  // Serial queue — ensures concurrent _handleWearEvent calls never interleave,
+  // eliminating duplicate insertions and race conditions on both phone and watch.
+  Future<void> _eventProcessingChain = Future<void>.value();
   int? _lastSyncedUserId;
   List<ExpenseCategoryTotal> _storedMonthlyCategories =
       const <ExpenseCategoryTotal>[];
@@ -85,7 +88,7 @@ class WearExpenseSyncService {
     _expensesListenable = LocalStorageService.expensesListenable;
     _expensesListenable!.addListener(_handleLocalExpensesChanged);
     _eventsSubscription =
-        WearDataLayerService.instance.events.listen(_handleWearEvent);
+        WearDataLayerService.instance.events.listen(_enqueueWearEvent);
     _isInitialized = true;
     debugPrint('[WearSync] initialized OK — scheduling first push');
     _scheduleRecentExpensesSync();
@@ -97,7 +100,7 @@ class WearExpenseSyncService {
         .getExistingJsonData(_recentExpensesPath);
     debugPrint('[WearSync] existing data items found: ${existing.length}');
     for (final event in existing) {
-      await _handleWearEvent(event);
+      _enqueueWearEvent(event);
     }
 
     unawaited(requestRecentExpenses());
@@ -194,6 +197,17 @@ class WearExpenseSyncService {
       },
     );
     debugPrint('[WearSync] putJsonData done');
+  }
+
+  /// Enqueues [event] onto the serial processing chain so that concurrent
+  /// Wear Data Layer callbacks (stream + existing-items replay) never interleave
+  /// inside [_handleWearEvent] and cause duplicate insertions.
+  void _enqueueWearEvent(WearDataLayerEvent event) {
+    _eventProcessingChain = _eventProcessingChain
+        .then((_) => _handleWearEvent(event))
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[WearSync] _handleWearEvent error: $error\n$stackTrace');
+        });
   }
 
   Future<void> _handleWearEvent(WearDataLayerEvent event) async {

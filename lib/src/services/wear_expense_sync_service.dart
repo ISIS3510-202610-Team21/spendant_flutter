@@ -278,7 +278,7 @@ class WearExpenseSyncService {
             .where(
               (e) =>
                   e.value.userId == payloadUserId &&
-                  e.value.source != 'WEAR_QUICK_ADD',
+                  !_isWearCreated(e.value.source),
             )
             .map((e) => e.key)
             .toList();
@@ -308,8 +308,7 @@ class WearExpenseSyncService {
           final incomingExpense = _expenseFromMap(normalized);
           if (incomingExpense == null) continue;
           // Only accept watch-created expenses; skip phone-originated ones.
-          if (_isPhoneSide &&
-              incomingExpense.source != 'WEAR_QUICK_ADD') {
+          if (_isPhoneSide && !_isWearCreated(incomingExpense.source)) {
             continue;
           }
           if (_hasEquivalentExpense(incomingExpense)) continue;
@@ -456,6 +455,13 @@ class WearExpenseSyncService {
 
     return expense;
   }
+
+  /// Returns true for any expense created on the watch (voice or manual).
+  /// Used by sync filters to distinguish watch-originated vs phone-originated.
+  static bool _isWearCreated(String source) =>
+      source == 'WEAR_QUICK_ADD' ||
+      source == 'WEAR_VOICE' ||
+      source == 'WEAR_MANUAL';
 
   String _expenseFingerprint(ExpenseModel expense) {
     final normalizedLabel = expense.detailLabels.isEmpty

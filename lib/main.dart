@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'src/services/app_analytics_service.dart';
 import 'src/services/app_notification_service.dart';
 import 'src/services/auth_memory_store.dart';
 import 'src/services/background_task_service.dart';
@@ -31,6 +32,18 @@ Future<void> main() async {
   // offline availability and eliminate any latency on first paint.
   GoogleFonts.config.allowRuntimeFetching = false;
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  FlutterError.onError = (details) {
+    AppAnalyticsService.instance.logModuleCrash(
+      details.library ?? 'flutter',
+      details.exceptionAsString(),
+    );
+  };
+  WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    AppAnalyticsService.instance.logModuleCrash('platform', error.toString());
+    return false;
+  };
+
   unawaited(BackgroundTaskService.initialize());
   runApp(const _BootstrapApp());
 }

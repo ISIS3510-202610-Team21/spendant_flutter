@@ -19,53 +19,371 @@ class AppAnalyticsService {
 
   final ExpenseAnalyticsRepository _repository;
 
-  // Lazily initialized — avoids blocking app startup.
   static Mixpanel? _mixpanel;
 
   // ---------------------------------------------------------------------------
-  // Public API
+  // Init — optional eager init from main.dart
   // ---------------------------------------------------------------------------
 
-  Future<void> logModuleCrash(String moduleName, dynamic error) async {
-    if (!_isAnalyticsPlatformSupported) return;
+  void init(Mixpanel mp) => _mixpanel = mp;
 
-    try {
+  // ---------------------------------------------------------------------------
+  // Private — fire-and-forget track
+  // ---------------------------------------------------------------------------
+
+  void _track(String event, Map<String, dynamic> props) {
+    unawaited(Future(() async {
       final mp = await _resolveMixpanel();
       if (mp == null) return;
+      mp.track(event, properties: props);
+    }));
+  }
 
-      final errorMessage = error.toString();
-      mp.track('module_crash', properties: <String, dynamic>{
-        'module_name': moduleName,
-        'error_message': errorMessage.length > 100
-            ? errorMessage.substring(0, 100)
-            : errorMessage,
+  // ---------------------------------------------------------------------------
+  // BQ1 — Module crash
+  // ---------------------------------------------------------------------------
+
+  void logModuleCrash(String moduleName, dynamic error) {
+    if (!_isAnalyticsPlatformSupported) return;
+    final msg = error.toString();
+    _track('module_crash', {
+      'module_name': moduleName,
+      'error_message': msg.length > 100 ? msg.substring(0, 100) : msg,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // BQ2 — Days since last expense
+  // ---------------------------------------------------------------------------
+
+  void logDaysSinceLastExpense(int userId, int days) =>
+      _track('days_since_expense', {
+        'user_id': userId,
+        'days': days,
+        'is_inactive': days >= 3,
       });
+
+  // ---------------------------------------------------------------------------
+  // BQ3 — OCR edit rate (called separately after OCR flow, not from logAllBQs)
+  // ---------------------------------------------------------------------------
+
+  void logOcrEditRate(int userId, int fieldsPopulated, int fieldsEdited) =>
+      _track('ocr_edit_rate', {
+        'user_id': userId,
+        'fields_populated': fieldsPopulated,
+        'fields_edited': fieldsEdited,
+        'edit_rate': fieldsPopulated > 0 ? fieldsEdited / fieldsPopulated : 0.0,
+      });
+
+  // ---------------------------------------------------------------------------
+  // BQ4 — Most active hour
+  // ---------------------------------------------------------------------------
+
+  void logMostActiveHour(int userId, int hour) =>
+      _track('active_hour', {
+        'user_id': userId,
+        'hour': hour,
+        'session': _sessionForHour(hour),
+      });
+
+  // ---------------------------------------------------------------------------
+  // BQ5 — Small recurring expenses
+  // ---------------------------------------------------------------------------
+
+  void logSmallRecurringExpenses(int userId, int count, double totalAmount) =>
+      _track('small_recurring_expenses', {
+        'user_id': userId,
+        'count': count,
+        'total_amount': totalAmount,
+      });
+
+  // ---------------------------------------------------------------------------
+  // BQ6 — Registration methods breakdown
+  // ---------------------------------------------------------------------------
+
+  void logExpenseRegistrationMethods(
+    int userId,
+    int manualCount,
+    int ocrCount,
+    int googlePayCount, {
+    int wearVoiceCount = 0,
+    int wearManualCount = 0,
+  }) {
+    final leastUsed = <String, int>{
+      'manual': manualCount,
+      'ocr': ocrCount,
+      'google_pay': googlePayCount,
+      'wear_voice': wearVoiceCount,
+      'wear_manual': wearManualCount,
+    }.entries.reduce((a, b) => a.value <= b.value ? a : b).key;
+    _track('registration_methods', {
+      'user_id': userId,
+      'manual_count': manualCount,
+      'ocr_count': ocrCount,
+      'google_pay_count': googlePayCount,
+      'wear_voice_count': wearVoiceCount,
+      'wear_manual_count': wearManualCount,
+      'least_used_method': leastUsed,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // BQ7 — Savings goal progress
+  // ---------------------------------------------------------------------------
+
+  void logSavingsGoalProgress(
+    int userId,
+    double achievedPercent,
+    int goalsCount,
+  ) =>
+      _track('savings_goal_progress', {
+        'user_id': userId,
+        'achieved_percent': achievedPercent,
+        'active_goals_count': goalsCount,
+        'is_on_track': achievedPercent >= 50.0,
+      });
+
+  // ---------------------------------------------------------------------------
+  // BQ8 — Budget consumption at month midpoint
+  // ---------------------------------------------------------------------------
+
+  void logBudgetMidpointConsumption(
+    int userId,
+    double consumedPercent,
+    bool evaluatedAtMidpoint,
+  ) =>
+      _track('budget_midpoint_consumption', {
+        'user_id': userId,
+        'consumed_percent': consumedPercent,
+        'evaluated_at_midpoint': evaluatedAtMidpoint,
+        'is_overspending': consumedPercent > 50.0 && evaluatedAtMidpoint,
+      });
+
+  // ---------------------------------------------------------------------------
+  // BQ9 — Category highest spending growth vs previous month
+  // ---------------------------------------------------------------------------
+
+  void logCategoryHighestGrowth(
+    int userId,
+    String categoryName,
+    double currentAmount,
+    double previousAmount,
+    double growthPercent,
+  ) =>
+      _track('category_highest_growth', {
+        'user_id': userId,
+        'category_name': categoryName,
+        'current_amount': currentAmount,
+        'previous_amount': previousAmount,
+        'growth_percent': growthPercent,
+      });
+
+  // ---------------------------------------------------------------------------
+  // Orchestrator — call on app resume + after each expense saved
+  // ---------------------------------------------------------------------------
+
+  Future<void> logAllBQs(int userId) async {
+    if (userId < 0 || !_isAnalyticsPlatformSupported) return;
+    try {
+      final expenses = _repository.getCompletedExpensesForUser(userId);
+      if (expenses.isEmpty) return;
+
+      await Future.wait([
+        _logBQ2(userId, expenses),
+        _logBQ4(userId, expenses),
+        _logBQ5(userId, expenses),
+        _logBQ6(userId, expenses),
+        _logBQ7(userId),
+        _logBQ8(userId, expenses),
+        _logBQ9(userId, expenses),
+      ]);
     } catch (_) {
       // Analytics is best-effort — must never interrupt app flow.
     }
   }
 
-  Future<void> logAllBusinessQuestions({required int userId}) async {
-    if (userId < 0 || !_isAnalyticsPlatformSupported) return;
+  // Backwards-compat alias — home_screen.dart calls this.
+  Future<void> logAllBusinessQuestions({required int userId}) =>
+      logAllBQs(userId);
 
-    try {
-      final expenses = _repository.getCompletedExpensesForUser(userId);
-      if (expenses.isEmpty) return;
+  // ---------------------------------------------------------------------------
+  // Private — BQ2 data computation
+  // ---------------------------------------------------------------------------
 
-      final mp = await _resolveMixpanel();
-      if (mp == null) return;
+  Future<void> _logBQ2(int userId, List<ExpenseModel> expenses) async {
+    final last = expenses
+        .map(ExpenseMomentService.expenseMoment)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
+    logDaysSinceLastExpense(userId, DateTime.now().difference(last).inDays);
+  }
 
-      await _logDaysSinceLastExpense(mp, expenses);
-      await _logUncategorizedExpenseRate(mp, expenses);
-      await _logMostActiveHour(mp, expenses);
-      await _logSmallRecurringExpenses(mp, expenses);
-      await _logExpenseRegistrationMethods(mp, expenses);
-      await _logMonthlyGoalProgress(mp, userId);
-      await _logMonthlyBudgetConsumption(mp, userId, expenses);
-      await _logHighestGrowthCategory(mp, expenses);
-    } catch (_) {
-      // Analytics is best-effort — must never interrupt app flow.
+  // ---------------------------------------------------------------------------
+  // Private — BQ4 data computation
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ4(int userId, List<ExpenseModel> expenses) async {
+    final hourCounts = <int, int>{};
+    for (final e in expenses) {
+      final hour = ExpenseMomentService.expenseMoment(e).hour;
+      hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
     }
+    if (hourCounts.isEmpty) return;
+    final mostActive =
+        hourCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    logMostActiveHour(userId, mostActive);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — BQ5 data computation
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ5(int userId, List<ExpenseModel> expenses) async {
+    final now = DateTime.now();
+    final threeMonthsAgo = _addMonths(now, -3);
+    final smallRecurring = expenses
+        .where((e) => e.isRecurring)
+        .where((e) {
+          final m = ExpenseMomentService.expenseMoment(e);
+          return !m.isBefore(threeMonthsAgo) &&
+              !m.isAfter(now) &&
+              e.amount < _smallRecurringExpenseThreshold;
+        })
+        .toList(growable: false);
+    if (smallRecurring.isEmpty) return;
+    final total = smallRecurring.fold<double>(0, (s, e) => s + e.amount);
+    logSmallRecurringExpenses(userId, smallRecurring.length, total);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — BQ6 data computation
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ6(int userId, List<ExpenseModel> expenses) async {
+    final manualCount = expenses.where((e) => e.source == 'MANUAL').length;
+    final ocrCount = expenses.where((e) => e.source == 'OCR').length;
+    final googlePayCount =
+        expenses.where((e) => e.source == 'GOOGLE_PAY').length;
+    final wearVoiceCount =
+        expenses.where((e) => e.source == 'WEAR_VOICE').length;
+    final wearManualCount =
+        expenses.where((e) => e.source == 'WEAR_MANUAL').length;
+    if (manualCount + ocrCount + googlePayCount +
+            wearVoiceCount + wearManualCount ==
+        0) return;
+    logExpenseRegistrationMethods(
+      userId,
+      manualCount,
+      ocrCount,
+      googlePayCount,
+      wearVoiceCount: wearVoiceCount,
+      wearManualCount: wearManualCount,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — BQ7 data computation (savings goals → avg achieved %)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ7(int userId) async {
+    final goals = LocalStorageService.goalBox.values
+        .where((g) => g.userId == userId)
+        .toList();
+    if (goals.isEmpty) return;
+
+    final summary = DailyBudgetService.buildSummaryForUser(userId);
+    double totalPct = 0;
+    int validGoals = 0;
+
+    for (final goal in goals) {
+      final state = summary.stateFor(goal);
+      if (state == null || goal.targetAmount <= 0) continue;
+      totalPct +=
+          ((state.currentAmount / goal.targetAmount) * 100).clamp(0.0, 100.0);
+      validGoals++;
+    }
+
+    if (validGoals == 0) return;
+    logSavingsGoalProgress(userId, totalPct / validGoals, validGoals);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — BQ8 data computation (budget midpoint)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ8(int userId, List<ExpenseModel> allExpenses) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    final monthExpenses = allExpenses.where((e) {
+      final m = ExpenseMomentService.expenseMoment(e);
+      return !m.isBefore(start) && !m.isAfter(now);
+    }).toList();
+    if (monthExpenses.isEmpty) return;
+
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final summary = DailyBudgetService.buildSummaryForUser(userId);
+    final monthlyIncome = summary.internalDailyBudget * daysInMonth;
+    if (monthlyIncome <= 0) return;
+
+    final consumed = monthExpenses.fold<double>(0, (s, e) => s + e.amount);
+    final consumedPct = (consumed / monthlyIncome * 100).clamp(0.0, 200.0);
+    final evaluatedAtMidpoint = now.day >= (daysInMonth ~/ 2);
+
+    logBudgetMidpointConsumption(userId, consumedPct, evaluatedAtMidpoint);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — BQ9 data computation (highest category growth)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _logBQ9(int userId, List<ExpenseModel> allExpenses) async {
+    final now = DateTime.now();
+    final thisStart = DateTime(now.year, now.month, 1);
+    final lastStart = DateTime(now.year, now.month - 1, 1);
+    final lastEnd = DateTime(now.year, now.month - 1, now.day, 23, 59, 59);
+
+    Map<String, double> sumByCategory(
+      List<ExpenseModel> expenses,
+      DateTime from,
+      DateTime to,
+    ) {
+      final totals = <String, double>{};
+      for (final e in expenses) {
+        final m = ExpenseMomentService.expenseMoment(e);
+        if (m.isBefore(from) || m.isAfter(to)) continue;
+        final cat = e.primaryCategory ?? 'Other';
+        totals[cat] = (totals[cat] ?? 0) + e.amount;
+      }
+      return totals;
+    }
+
+    final thisPeriod = sumByCategory(allExpenses, thisStart, now);
+    final lastPeriod = sumByCategory(allExpenses, lastStart, lastEnd);
+    if (thisPeriod.isEmpty) return;
+
+    String? topCategory;
+    double topGrowthPct = double.negativeInfinity;
+
+    for (final entry in thisPeriod.entries) {
+      final prev = lastPeriod[entry.key] ?? 0;
+      final growth = prev > 0
+          ? ((entry.value - prev) / prev) * 100
+          : entry.value > 0
+          ? 100.0
+          : 0.0;
+      if (growth > topGrowthPct) {
+        topGrowthPct = growth;
+        topCategory = entry.key;
+      }
+    }
+
+    if (topCategory == null) return;
+    logCategoryHighestGrowth(
+      userId,
+      topCategory,
+      thisPeriod[topCategory]!,
+      lastPeriod[topCategory] ?? 0,
+      topGrowthPct,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -85,7 +403,7 @@ class AppAnalyticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Private — Mixpanel singleton resolution
+  // Private — Mixpanel singleton resolution (lazy init fallback)
   // ---------------------------------------------------------------------------
 
   static Future<Mixpanel?> _resolveMixpanel() async {
@@ -102,121 +420,7 @@ class AppAnalyticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Private — individual event loggers
-  // ---------------------------------------------------------------------------
-
-  Future<void> _logDaysSinceLastExpense(
-    Mixpanel mp,
-    List<ExpenseModel> expenses,
-  ) async {
-    final lastExpenseMoment = expenses
-        .map(ExpenseMomentService.expenseMoment)
-        .reduce((left, right) => left.isAfter(right) ? left : right);
-    final daysSinceLastExpense =
-        DateTime.now().difference(lastExpenseMoment).inDays;
-
-    mp.track('days_since_last_expense', properties: <String, dynamic>{
-      'days': daysSinceLastExpense,
-      'is_inactive': daysSinceLastExpense >= 3,
-    });
-  }
-
-  Future<void> _logUncategorizedExpenseRate(
-    Mixpanel mp,
-    List<ExpenseModel> expenses,
-  ) async {
-    final uncategorizedCount =
-        expenses.where((e) => e.isPendingCategory).length;
-    final totalCount = expenses.length;
-    if (totalCount == 0) return;
-
-    final percentage = ((uncategorizedCount / totalCount) * 100).truncate();
-    mp.track('uncategorized_expense_rate', properties: <String, dynamic>{
-      'uncategorized_count': uncategorizedCount,
-      'total_count': totalCount,
-      'percentage': percentage,
-    });
-  }
-
-  Future<void> _logMostActiveHour(
-    Mixpanel mp,
-    List<ExpenseModel> expenses,
-  ) async {
-    final hourCounts = <int, int>{};
-    for (final expense in expenses) {
-      final hour = ExpenseMomentService.expenseMoment(expense).hour;
-      hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
-    }
-    if (hourCounts.isEmpty) return;
-
-    final mostActiveHour = hourCounts.entries
-        .reduce((left, right) => left.value >= right.value ? left : right)
-        .key;
-
-    mp.track('most_active_hour', properties: <String, dynamic>{
-      'hour': mostActiveHour,
-      'session': _sessionForHour(mostActiveHour),
-    });
-  }
-
-  Future<void> _logSmallRecurringExpenses(
-    Mixpanel mp,
-    List<ExpenseModel> expenses,
-  ) async {
-    final now = DateTime.now();
-    final threeMonthsAgo = _addMonths(now, -3);
-    final smallRecurring = expenses
-        .where((e) => e.isRecurring)
-        .where((e) {
-          final moment = ExpenseMomentService.expenseMoment(e);
-          return !moment.isBefore(threeMonthsAgo) &&
-              !moment.isAfter(now) &&
-              e.amount < _smallRecurringExpenseThreshold;
-        })
-        .toList(growable: false);
-
-    if (smallRecurring.isEmpty) return;
-
-    final totalAmount = smallRecurring.fold<double>(
-      0,
-      (sum, e) => sum + e.amount,
-    );
-
-    mp.track('small_recurring_expenses', properties: <String, dynamic>{
-      'count': smallRecurring.length,
-      'total_amount': totalAmount.round(),
-    });
-  }
-
-  Future<void> _logExpenseRegistrationMethods(
-    Mixpanel mp,
-    List<ExpenseModel> expenses,
-  ) async {
-    final manualCount = expenses.where((e) => e.source == 'MANUAL').length;
-    final ocrCount = expenses.where((e) => e.source == 'OCR').length;
-    final googlePayCount =
-        expenses.where((e) => e.source == 'GOOGLE_PAY').length;
-
-    if (manualCount + ocrCount + googlePayCount == 0) return;
-
-    final leastUsedMethod = <String, int>{
-      'manual': manualCount,
-      'ocr': ocrCount,
-      'google_pay': googlePayCount,
-    }.entries
-        .reduce((left, right) => left.value <= right.value ? left : right)
-        .key;
-
-    mp.track('expense_registration_methods', properties: <String, dynamic>{
-      'manual_count': manualCount,
-      'ocr_count': ocrCount,
-      'google_pay_count': googlePayCount,
-      'least_used_method': leastUsedMethod,
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
+  // Private — helpers
   // ---------------------------------------------------------------------------
 
   String _sessionForHour(int hour) {
@@ -227,152 +431,20 @@ class AppAnalyticsService {
   }
 
   DateTime _addMonths(DateTime value, int monthsToAdd) {
-    final totalMonths =
-        (value.year * 12) + value.month - 1 + monthsToAdd;
+    final totalMonths = (value.year * 12) + value.month - 1 + monthsToAdd;
     final year = totalMonths ~/ 12;
-    final normalizedMonth = (totalMonths % 12) + 1;
-    final lastDayOfMonth = DateTime(year, normalizedMonth + 1, 0).day;
-    final day = value.day > lastDayOfMonth ? lastDayOfMonth : value.day;
+    final month = (totalMonths % 12) + 1;
+    final lastDay = DateTime(year, month + 1, 0).day;
+    final day = value.day > lastDay ? lastDay : value.day;
     return DateTime(
-      year, normalizedMonth, day,
-      value.hour, value.minute, value.second,
-      value.millisecond, value.microsecond,
+      year,
+      month,
+      day,
+      value.hour,
+      value.minute,
+      value.second,
+      value.millisecond,
+      value.microsecond,
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // BQ6 — Monthly savings goal progress vs expected pace
-  // ---------------------------------------------------------------------------
-
-  Future<void> _logMonthlyGoalProgress(Mixpanel mp, int userId) async {
-    final goals = LocalStorageService.goalBox.values
-        .where((g) => g.userId == userId)
-        .toList();
-    if (goals.isEmpty) return;
-
-    final now        = DateTime.now();
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-    final dayOfMonth  = now.day;
-    final summary     = DailyBudgetService.buildSummaryForUser(userId);
-
-    for (final goal in goals) {
-      final state = summary.stateFor(goal);
-      if (state == null || goal.targetAmount <= 0) continue;
-
-      final actualPct   = ((state.currentAmount / goal.targetAmount) * 100).clamp(0.0, 100.0);
-      final expectedPct = ((dayOfMonth / daysInMonth) * 100);
-      final delta       = actualPct - expectedPct;
-
-      mp.track('monthly_goal_progress', properties: <String, dynamic>{
-        'goal_name':          goal.name,
-        'target_amount_cop':  goal.targetAmount.round(),
-        'current_amount_cop': state.currentAmount.round(),
-        'actual_pct':         actualPct.truncate(),
-        'expected_pct':       expectedPct.truncate(),
-        'delta_pct':          delta.truncate(),  // positive = ahead, negative = behind
-        'day_of_month':       dayOfMonth,
-        'status':             delta >= 0 ? 'on_track' : 'behind',
-      });
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // BQ7 — Monthly budget consumed vs midpoint threshold
-  // ---------------------------------------------------------------------------
-
-  Future<void> _logMonthlyBudgetConsumption(
-    Mixpanel mp,
-    int userId,
-    List<ExpenseModel> allExpenses,
-  ) async {
-    final now   = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-
-    final monthExpenses = allExpenses.where((e) {
-      final moment = ExpenseMomentService.expenseMoment(e);
-      return !moment.isBefore(start) && !moment.isAfter(now);
-    }).toList();
-
-    if (monthExpenses.isEmpty) return;
-
-    final dayOfMonth  = now.day;
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-
-    final summary = DailyBudgetService.buildSummaryForUser(userId);
-    // Monthly budget ≈ dailyBudget × days-in-month (incomes are daily-normalized)
-    final monthlyIncome = summary.internalDailyBudget * daysInMonth;
-    if (monthlyIncome <= 0) return;
-
-    final consumed = monthExpenses.fold<double>(0, (sum, e) => sum + e.amount);
-    final consumedPct = ((consumed / monthlyIncome) * 100).clamp(0.0, 200.0);
-    final monthProgress = (dayOfMonth / daysInMonth * 100).truncate();
-
-    mp.track('monthly_budget_midpoint_consumption', properties: <String, dynamic>{
-      'consumed_cop':    consumed.round(),
-      'budget_cop':      monthlyIncome.round(),
-      'consumed_pct':    consumedPct.truncate(),
-      'day_of_month':    dayOfMonth,
-      'month_progress_pct': monthProgress,
-      // Flag when > 60% budget used with < 50% month elapsed
-      'overpace_alert':  consumedPct > 60 && monthProgress < 50,
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // BQ8 — Highest category growth vs same period last month
-  // ---------------------------------------------------------------------------
-
-  Future<void> _logHighestGrowthCategory(
-    Mixpanel mp,
-    List<ExpenseModel> allExpenses,
-  ) async {
-    final now      = DateTime.now();
-    final thisStart = DateTime(now.year, now.month, 1);
-    final lastStart = DateTime(now.year, now.month - 1, 1);
-    final lastEnd   = DateTime(now.year, now.month - 1, now.day, 23, 59, 59);
-
-    Map<String, double> sumByCategory(
-      List<ExpenseModel> expenses,
-      DateTime from,
-      DateTime to,
-    ) {
-      final totals = <String, double>{};
-      for (final e in expenses) {
-        final m = ExpenseMomentService.expenseMoment(e);
-        if (m.isBefore(from) || m.isAfter(to)) continue;
-        final cat = e.primaryCategory ?? 'Other';
-        totals[cat] = (totals[cat] ?? 0) + e.amount;
-      }
-      return totals;
-    }
-
-    final thisPeriod = sumByCategory(allExpenses, thisStart, now);
-    final lastPeriod = sumByCategory(allExpenses, lastStart, lastEnd);
-
-    if (thisPeriod.isEmpty) return;
-
-    String? topCategory;
-    double topGrowthPct = double.negativeInfinity;
-
-    for (final entry in thisPeriod.entries) {
-      final prev   = lastPeriod[entry.key] ?? 0;
-      final growth = prev > 0
-          ? ((entry.value - prev) / prev) * 100
-          : entry.value > 0 ? 100.0 : 0.0;
-      if (growth > topGrowthPct) {
-        topGrowthPct = growth;
-        topCategory  = entry.key;
-      }
-    }
-
-    if (topCategory == null) return;
-
-    mp.track('highest_growth_category', properties: <String, dynamic>{
-      'category':          topCategory,
-      'current_amount_cop': thisPeriod[topCategory]!.round(),
-      'previous_amount_cop': (lastPeriod[topCategory] ?? 0).round(),
-      'growth_pct':        topGrowthPct.truncate(),
-      'is_new_category':   !(lastPeriod.containsKey(topCategory)),
-    });
   }
 }

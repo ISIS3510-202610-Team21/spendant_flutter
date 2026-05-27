@@ -131,6 +131,7 @@ class WatchExpenseController extends ChangeNotifier {
     required String name,
     required WatchQuickCategory category,
     required String rawAmount,
+    required bool isVoice,
   }) async {
     final resolvedUserId = currentUserId;
     final normalizedAmount = rawAmount.replaceAll(RegExp(r'[^0-9]'), '');
@@ -148,7 +149,7 @@ class WatchExpenseController extends ChangeNotifier {
       ..amount = amount
       ..date = now
       ..time = _timeFormatter.format(now)
-      ..source = 'WEAR_QUICK_ADD'
+      ..source = isVoice ? 'WEAR_VOICE' : 'WEAR_MANUAL'
       ..createdAt = now
       ..primaryCategory = category.primaryCategory
       ..detailLabels = <String>[category.label];
@@ -1324,6 +1325,7 @@ class _WatchVoiceConfirmScreenState extends State<_WatchVoiceConfirmScreen> {
       name: _nameController.text.trim(),
       category: _selectedCategory,
       rawAmount: _amountDigits,
+      isVoice: true,
     );
     if (mounted) Navigator.of(context).pop();
   }

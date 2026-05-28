@@ -162,14 +162,20 @@ class MainActivity : FlutterFragmentActivity() {
     // These arrive as GenericMotionEvent with SOURCE_ROTARY_ENCODER and
     // ACTION_SCROLL.  Negating AXIS_SCROLL converts the raw axis value to an
     // intuitive direction: positive delta = scroll down, negative = scroll up.
-    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+    //
+    // Override dispatchGenericMotionEvent (NOT onGenericMotionEvent) so we
+    // intercept the event BEFORE the view hierarchy.  FlutterFragmentActivity
+    // routes generic motion events to FlutterView first; if FlutterView returns
+    // true the activity's onGenericMotionEvent is never called.  By overriding
+    // dispatchGenericMotionEvent we guarantee receipt on all Wear OS devices.
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_SCROLL &&
             event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
             val delta = -event.getAxisValue(MotionEvent.AXIS_SCROLL)
             rotaryEventSink?.success(delta.toDouble())
             return true
         }
-        return super.onGenericMotionEvent(event)
+        return super.dispatchGenericMotionEvent(event)
     }
 
     companion object {

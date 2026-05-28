@@ -63,6 +63,10 @@
 # Connectivity Plus
 -keep class dev.fluttercommunity.plus.connectivity.** { *; }
 
+# Wear plugin compatibility shims.
+-dontwarn com.google.android.wearable.compat.WearableActivityController
+-dontwarn com.google.android.wearable.compat.WearableActivityController$AmbientCallback
+
 # Keep Kotlin metadata
 -keepattributes *Annotation*
 -keepattributes Signature

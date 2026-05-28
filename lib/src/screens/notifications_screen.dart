@@ -258,7 +258,7 @@ class _NotificationsHeader extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 19,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -342,7 +342,7 @@ class _NotificationCard extends StatelessWidget {
                       item.title,
                       style: GoogleFonts.nunito(
                         fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: AppPalette.ink,
                       ),
                     ),
@@ -369,7 +369,7 @@ class _NotificationCard extends StatelessWidget {
                       NotificationFeedService.formatAmount(item.amount!),
                       style: GoogleFonts.nunito(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: AppPalette.ink,
                       ),
                     ),
@@ -441,7 +441,7 @@ class _NotificationDetailDialog extends StatelessWidget {
               notification.detailTitle,
               style: GoogleFonts.nunito(
                 fontSize: 18,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
                 height: 1.2,
               ),
@@ -471,7 +471,7 @@ class _NotificationDetailDialog extends StatelessWidget {
                 NotificationFeedService.formatAmount(notification.amount!),
                 style: GoogleFonts.nunito(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -544,7 +544,7 @@ class _EmptyNotificationsState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 20,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),

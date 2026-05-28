@@ -62,7 +62,7 @@ class _SpendAntDeleteDialog extends StatelessWidget {
               title,
               style: GoogleFonts.nunito(
                 fontSize: 18,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -98,7 +98,7 @@ class _SpendAntDeleteDialog extends StatelessWidget {
                     confirmLabel,
                     style: GoogleFonts.nunito(
                       fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: AppPalette.ink,
                     ),
                   ),

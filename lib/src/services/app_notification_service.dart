@@ -90,6 +90,12 @@ abstract final class AppNotificationService {
     };
     var shouldPersistTrackedSignals = false;
 
+    // try-finally guarantees tracked-signal state is persisted even when a
+    // later service (SpendingAdvice, HabitFixer, etc.) throws.  Without this,
+    // a throw after adding a signal to [trackedSignals] but before the final
+    // setStringList call would leave prefs stale, causing the same notification
+    // (e.g. incomeDue) to re-fire on every subsequent refresh.
+    try {
     final now = DateTime.now();
     final expenses = LocalStorageService.expenseBox.values
         .where(
@@ -298,14 +304,14 @@ abstract final class AppNotificationService {
       }
     }
 
-    if (!shouldPersistTrackedSignals) {
-      return;
+    } finally {
+      if (shouldPersistTrackedSignals) {
+        await prefs.setStringList(
+          _trackedSignalIdsKey,
+          trackedSignals.toList(growable: false),
+        );
+      }
     }
-
-    await prefs.setStringList(
-      _trackedSignalIdsKey,
-      trackedSignals.toList(growable: false),
-    );
   }
 
   static Set<String> _collectSatisfiedSignalIds({required DateTime now}) {

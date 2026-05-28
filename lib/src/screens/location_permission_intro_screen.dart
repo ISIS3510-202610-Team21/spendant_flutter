@@ -133,7 +133,7 @@ class _LocationPermissionIntroScreenState
                 textAlign: TextAlign.center,
                 style: GoogleFonts.nunito(
                   fontSize: 18,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                   height: 1.2,
                 ),

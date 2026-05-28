@@ -403,9 +403,18 @@ abstract final class PdfReportService {
   }
 
   static Future<String?> _save(FinancialReport report, Uint8List bytes) async {
-    final String dir = Platform.isAndroid
-        ? '/storage/emulated/0/Download'
-        : '/tmp';
+    // Use app-specific external Documents dir — no storage permissions needed
+    // on any Android version.  Falls back to /tmp if unavailable.
+    final String dir;
+    if (Platform.isAndroid) {
+      String? resolved;
+      try {
+        resolved = await _channel.invokeMethod<String>('getDocumentsDir');
+      } catch (_) {}
+      dir = resolved ?? '/tmp';
+    } else {
+      dir = '/tmp';
+    }
     final folder = Directory(dir);
     if (!folder.existsSync()) folder.createSync(recursive: true);
     final ts = DateFormat('yyyyMMdd_HHmm').format(report.generatedAt);

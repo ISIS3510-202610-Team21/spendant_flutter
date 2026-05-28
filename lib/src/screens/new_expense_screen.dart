@@ -460,7 +460,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
               ),
               confirmButtonStyle: TextButton.styleFrom(
                 foregroundColor: AppPalette.green,
-                textStyle: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+                textStyle: GoogleFonts.nunito(fontWeight: FontWeight.w800),
               ),
               inputDecorationTheme: InputDecorationTheme(
                 filled: true,
@@ -529,7 +529,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   title,
                   style: GoogleFonts.nunito(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),
@@ -1228,7 +1228,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
         );
       }
     } catch (e) {
-      unawaited(AppAnalyticsService.instance.logModuleCrash('expenses', e));
+      AppAnalyticsService.instance.logModuleCrash('expenses', e);
       if (!mounted) {
         return;
       }
@@ -1289,7 +1289,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                   'Where does this one go?',
                   style: GoogleFonts.nunito(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),
@@ -1570,7 +1570,7 @@ class _NewExpenseScreenState extends State<NewExpenseScreen> {
                                                     ),
                                                 textStyle: GoogleFonts.nunito(
                                                   fontSize: 12,
-                                                  fontWeight: FontWeight.w900,
+                                                  fontWeight: FontWeight.w800,
                                                 ),
                                               ),
                                               child: Text(
@@ -1705,7 +1705,7 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                       textAlign: TextAlign.center,
                       style: GoogleFonts.nunito(
                         fontSize: 19,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: AppPalette.ink,
                       ),
                     ),
@@ -1749,7 +1749,7 @@ class _MockReceiptScannerScreenState extends State<_MockReceiptScannerScreen> {
                               textAlign: TextAlign.center,
                               style: GoogleFonts.nunito(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 color: Colors.black,
                               ),
                             ),
@@ -1882,7 +1882,7 @@ class _MockReceiptRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = GoogleFonts.nunito(
       fontSize: bold ? 9 : 8,
-      fontWeight: bold ? FontWeight.w900 : FontWeight.w500,
+      fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
       color: Colors.black,
     );
     return Padding(
@@ -2199,7 +2199,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
                             child: Text(
                               'OK',
                               style: GoogleFonts.nunito(
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 color: AppPalette.green,
                               ),
                             ),
@@ -2322,7 +2322,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                   'No internet connection',
                   style: GoogleFonts.nunito(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),
@@ -2345,7 +2345,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                       'OK',
                       style: GoogleFonts.nunito(
                         fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: AppPalette.ink,
                       ),
                     ),
@@ -2474,7 +2474,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             textStyle: GoogleFonts.nunito(
                               fontSize: 13,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
@@ -3072,7 +3072,7 @@ class _LocationPickerFooter extends StatelessWidget {
             ),
             child: Text(
               'Save',
-              style: GoogleFonts.nunito(fontWeight: FontWeight.w900),
+              style: GoogleFonts.nunito(fontWeight: FontWeight.w800),
             ),
           ),
         ),
@@ -3162,7 +3162,7 @@ class _LabelSelectionScreenState extends State<LabelSelectionScreen> {
                             group.label,
                             style: GoogleFonts.nunito(
                               fontSize: 16,
-                              fontWeight: FontWeight.w900,
+                              fontWeight: FontWeight.w800,
                               color: AppPalette.ink,
                             ),
                           ),
@@ -3284,7 +3284,7 @@ class _ExpenseHeader extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.nunito(
                 fontSize: 19,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: AppPalette.ink,
               ),
             ),
@@ -3448,7 +3448,7 @@ class _SublabelChip extends StatelessWidget {
                 label,
                 style: GoogleFonts.nunito(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -3489,7 +3489,7 @@ class _SelectedExpenseLabelChip extends StatelessWidget {
                 label,
                 style: GoogleFonts.nunito(
                   fontSize: 14,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: AppPalette.ink,
                 ),
               ),
@@ -3539,7 +3539,7 @@ class _MiniActionButton extends StatelessWidget {
                   label,
                   style: GoogleFonts.nunito(
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     color: AppPalette.ink,
                   ),
                 ),

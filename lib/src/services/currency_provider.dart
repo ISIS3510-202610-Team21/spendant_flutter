@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'exchange_rate_db_service.dart';
 
@@ -53,13 +54,21 @@ class CurrencyProvider extends ChangeNotifier {
   /// Whether the active currency is the base (COP) — no conversion needed.
   bool get isBaseCurrency => _activeCurrency == 'COP';
 
+  /// Currencies that are displayed as whole numbers (no decimal places).
+  static const Set<String> wholeNumberCurrencies = {'COP', 'JPY', 'CLP', 'ARS'};
+
+  /// Whether the active currency uses whole-number display (no cents).
+  bool get isWholeNumberCurrency =>
+      wholeNumberCurrencies.contains(_activeCurrency);
+
   /// Converts a raw COP amount to the currently active local currency.
   double convertToLocal(double amountInCOP) => amountInCOP * _activeRate;
 
-  /// Converts a local-currency amount back to COP.
+  /// Converts a local-currency amount back to COP, rounded UP to nearest int.
+  /// COP never uses decimals — ceiling avoids losing value precision.
   double convertToCOP(double amountInLocal) {
     if (_activeRate == 0) return 0;
-    return amountInLocal / _activeRate;
+    return (amountInLocal / _activeRate).ceilToDouble();
   }
 
   /// Formats [amountInCOP] with the active currency prefix.
@@ -73,18 +82,52 @@ class CurrencyProvider extends ChangeNotifier {
     return '$_activeCurrency ${_formatValue(converted)}';
   }
 
-  /// Selects [isoCode] as the active visual currency.
+  static const _kPrefKey = 'active_visual_currency';
+
+  /// Selects [isoCode] as the active visual currency and persists the choice.
   ///
   /// [rate] is the COP-indexed rate (1 COP = [rate] units of [isoCode]).
   void setActiveCurrency(String isoCode, double rate) {
-    if (_activeCurrency == isoCode) return;
+    if (_activeCurrency == isoCode && _activeRate == rate) return;
+    final isoChanged = _activeCurrency != isoCode;
     _activeCurrency = isoCode;
     _activeRate = rate;
+    // Keep ratesCache in sync so _convertToCop (voice parsing) finds the rate
+    // even on the watch where loadFromDb is never called.
+    _ratesCache[isoCode] = rate;
     notifyListeners();
+    // Persist ISO only when it actually changed — never blocks the UI.
+    if (isoChanged) {
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_kPrefKey, isoCode),
+      );
+    }
   }
 
-  /// Loads rates from the local SQLite cache into memory and optionally
-  /// refreshes the active currency rate when its ISO code is already known.
+  /// Restores only the persisted ISO code from SharedPreferences — no SQLite.
+  ///
+  /// Use on Wear OS where [ExchangeRateDbService] is not available.
+  /// Guarantees [activeCurrency] is correct from the very first frame so that
+  /// voice parsing uses the right [defaultCurrency] even before the first
+  /// phone→watch sync arrives.  The rate is left at its default (1.0) until
+  /// [setActiveCurrency] is called by the sync service.
+  Future<void> restoreFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedIso = prefs.getString(_kPrefKey);
+      if (savedIso != null && savedIso.isNotEmpty && savedIso != _activeCurrency) {
+        _activeCurrency = savedIso;
+        // Rate unknown until sync — keep _activeRate at 1.0 so display shows
+        // raw values rather than a wrong conversion until sync fills it in.
+        notifyListeners();
+      }
+    } catch (error) {
+      debugPrint('CurrencyProvider.restoreFromPrefs error: $error');
+    }
+  }
+
+  /// Loads rates from the local SQLite cache into memory and restores the
+  /// previously selected currency from SharedPreferences.
   ///
   /// Call this once during app startup after [ExchangeRateDbService.init].
   Future<void> loadFromDb() async {
@@ -97,12 +140,19 @@ class CurrencyProvider extends ChangeNotifier {
         };
         // Ensure COP is always present as the base.
         _ratesCache['COP'] = 1.0;
-
-        // Refresh active rate if the currency is in the newly loaded cache.
-        if (_ratesCache.containsKey(_activeCurrency)) {
-          _activeRate = _ratesCache[_activeCurrency]!;
-        }
       }
+
+      // Restore persisted currency selection from SharedPreferences.
+      final prefs = await SharedPreferences.getInstance();
+      final savedIso = prefs.getString(_kPrefKey);
+      if (savedIso != null && _ratesCache.containsKey(savedIso)) {
+        _activeCurrency = savedIso;
+        _activeRate = _ratesCache[savedIso]!;
+      } else if (_ratesCache.containsKey(_activeCurrency)) {
+        _activeRate = _ratesCache[_activeCurrency]!;
+      }
+
+      notifyListeners();
     } catch (error) {
       debugPrint('CurrencyProvider.loadFromDb error: $error');
     }
@@ -119,9 +169,7 @@ class CurrencyProvider extends ChangeNotifier {
   static final NumberFormat _decFormatter = NumberFormat('#,##0.00', 'en_US');
 
   String _formatValue(double value) {
-    // Currencies like JPY, CLP, COP use whole numbers; others use 2 decimals.
-    const wholeNumberCurrencies = {'COP', 'JPY', 'CLP', 'ARS'};
-    if (wholeNumberCurrencies.contains(_activeCurrency)) {
+    if (isWholeNumberCurrency) {
       return _intFormatter.format(value.round());
     }
     return _decFormatter.format(value);

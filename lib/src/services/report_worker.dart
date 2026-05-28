@@ -1,5 +1,6 @@
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' show DateUtils;
 import 'package:intl/intl.dart';
 
@@ -7,6 +8,7 @@ import '../models/expense_model.dart';
 import '../models/financial_report.dart';
 import '../services/auth_memory_store.dart';
 import '../services/currency_provider.dart';
+import '../services/daily_budget_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/report_cache_service.dart';
 
@@ -73,6 +75,93 @@ abstract final class ReportWorker {
     // ── BQ4: small recurring expenses in last 3 months (main thread) ─────
     final smallRecurring3m = _smallRecurringLast3Months(allUserExpenses);
 
+    // ── BQ7: savings goal progress (needs Hive goalBox — main thread) ────
+    double savingsAchievedPct = -1;
+    int savingsGoalCount = 0;
+    try {
+      final goals = LocalStorageService.goalBox.values
+          .where((g) => g.userId == userId)
+          .toList();
+      if (goals.isNotEmpty) {
+        final summary = DailyBudgetService.buildSummaryForUser(userId);
+        double totalPct = 0;
+        int validGoals = 0;
+        for (final goal in goals) {
+          final state = summary.stateFor(goal);
+          if (state == null || goal.targetAmount <= 0) continue;
+          totalPct += ((state.currentAmount / goal.targetAmount) * 100)
+              .clamp(0.0, 100.0);
+          validGoals++;
+        }
+        if (validGoals > 0) {
+          savingsAchievedPct = totalPct / validGoals;
+          savingsGoalCount = validGoals;
+        }
+      }
+    } catch (_) {}
+
+    // ── BQ8: budget midpoint consumption (needs DailyBudgetService) ──────
+    double budgetConsumedPct = -1;
+    bool budgetEvaluatedAtMidpoint = false;
+    try {
+      final now = DateTime.now();
+      final monthStart = DateTime(now.year, now.month, 1);
+      final monthExpenses = allUserExpenses
+          .where((e) => !e.date.isBefore(monthStart) && !e.date.isAfter(now))
+          .toList();
+      if (monthExpenses.isNotEmpty) {
+        final summary = DailyBudgetService.buildSummaryForUser(userId);
+        final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+        final monthlyBudget = summary.internalDailyBudget * daysInMonth;
+        if (monthlyBudget > 0) {
+          final consumed =
+              monthExpenses.fold<double>(0, (s, e) => s + e.amount);
+          budgetConsumedPct =
+              (consumed / monthlyBudget * 100).clamp(0.0, 200.0);
+          budgetEvaluatedAtMidpoint = now.day >= (daysInMonth ~/ 2);
+        }
+      }
+    } catch (_) {}
+
+    // ── BQ9: highest category spending growth vs previous month ──────────
+    // Uses all-time expenses — computed on main thread, passed as primitives.
+    // NOTE: _sumByCat is a top-level function (not a local closure) so that
+    // allUserExpenses is never hoisted into the Isolate.run closure's context.
+    // Hive HiveObjects are unsendable across isolate boundaries; a local
+    // closure capturing allUserExpenses would make Isolate.run throw.
+    String? topGrowthCategory;
+    double topGrowthCurrentCop = 0;
+    double topGrowthPreviousCop = 0;
+    double topGrowthPercent = 0;
+    try {
+      final now = DateTime.now();
+      final thisStart = DateTime(now.year, now.month, 1);
+      final lastStart = DateTime(now.year, now.month - 1, 1);
+      final lastEnd =
+          DateTime(now.year, now.month - 1, now.day, 23, 59, 59);
+
+      final thisPeriod = _sumByCat(allUserExpenses, thisStart, now);
+      final lastPeriod = _sumByCat(allUserExpenses, lastStart, lastEnd);
+      double topGrowthPct = double.negativeInfinity;
+
+      for (final entry in thisPeriod.entries) {
+        if (entry.key == 'Other') continue; // fallback label — not a real category
+        final prev = lastPeriod[entry.key] ?? 0;
+        final growth = prev > 0
+            ? ((entry.value - prev) / prev) * 100
+            : entry.value > 0
+                ? 100.0
+                : 0.0;
+        if (growth > topGrowthPct) {
+          topGrowthPct = growth;
+          topGrowthCategory = entry.key;
+          topGrowthCurrentCop = entry.value;
+          topGrowthPreviousCop = prev;
+          topGrowthPercent = growth;
+        }
+      }
+    } catch (_) {}
+
     // Serialise to primitive maps — safe across Isolate boundary.
     final rawExpenses = allExpenses
         .map(_expenseToMap)
@@ -82,21 +171,35 @@ abstract final class ReportWorker {
     final activeCurrency = CurrencyProvider.instance.activeCurrency;
 
     // ── Background Isolate: aggregate ─────────────────────────────────────
-    final report = await Isolate.run(
-      () => _aggregate(
-        rawExpenses:          rawExpenses,
-        startDate:            start,
-        endDate:              end,
-        periodLabel:          periodLabel,
-        activeRate:           activeRate,
-        activeCurrency:       activeCurrency,
-        usageCount:           usageCount,
-        daysSinceLastExpense: daysSinceLastExpense,
-        smallRecurring3m:     smallRecurring3m,
-      ),
-    );
+    FinancialReport? report;
+    try {
+      report = await Isolate.run(
+        () => _aggregate(
+          rawExpenses:               rawExpenses,
+          startDate:                 start,
+          endDate:                   end,
+          periodLabel:               periodLabel,
+          activeRate:                activeRate,
+          activeCurrency:            activeCurrency,
+          usageCount:                usageCount,
+          daysSinceLastExpense:      daysSinceLastExpense,
+          smallRecurring3m:          smallRecurring3m,
+          savingsAchievedPct:        savingsAchievedPct,
+          savingsGoalCount:          savingsGoalCount,
+          budgetConsumedPct:         budgetConsumedPct,
+          budgetEvaluatedAtMidpoint: budgetEvaluatedAtMidpoint,
+          topGrowthCategory:         topGrowthCategory,
+          topGrowthCurrentCop:       topGrowthCurrentCop,
+          topGrowthPreviousCop:      topGrowthPreviousCop,
+          topGrowthPercent:          topGrowthPercent,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('ReportWorker._aggregate failed: $e\n$st');
+      rethrow;
+    }
 
-    await ReportCacheService.store(userId, report);
+    await ReportCacheService.store(userId, report!);
     return report;
   }
 
@@ -124,6 +227,14 @@ FinancialReport _aggregate({
   required int usageCount,
   required int daysSinceLastExpense,
   required int smallRecurring3m,
+  required double savingsAchievedPct,
+  required int savingsGoalCount,
+  required double budgetConsumedPct,
+  required bool budgetEvaluatedAtMidpoint,
+  required String? topGrowthCategory,
+  required double topGrowthCurrentCop,
+  required double topGrowthPreviousCop,
+  required double topGrowthPercent,
 }) {
   double totalCop = 0;
   final dailyMap    = <String, double>{};
@@ -212,57 +323,96 @@ FinancialReport _aggregate({
     mostActiveHourLabel = '$h12:00 $suffix';
   }
 
-  // ── Spending advice: highest single expense in period ────────────────
-  String? highestExpenseNote;
-  if (top5.isNotEmpty) {
-    final top = top5.first;
-    highestExpenseNote =
-        'Highest expense: ${top.name} — $activeCurrency ${_fmtNum(top.amount)}';
-  }
-
-  // ── Spending advice: average daily spending ───────────────────────────
-  final periodDays = endDate.difference(startDate).inDays + 1;
-  final avgDaily   = periodDays > 0 ? (totalCop * activeRate) / periodDays : 0.0;
-
-  // ── Micro-expenses (< 5000 COP equivalent) in period ─────────────────
-  final microCount = rawExpenses
-      .where((e) => (e['amount'] as num).toDouble() < 5000)
-      .length;
-
   // ── Build ordered BQ insight lines ───────────────────────────────────
   final insights = <String>[];
+  try {
+    // Spending advice: highest single expense in period
+    if (top5.isNotEmpty) {
+      final top = top5.first;
+      insights.add(
+        'Highest expense: ${top.name} — $activeCurrency ${_fmtNum(top.amount)}',
+      );
+    }
 
-  // BQ1
-  if (daysSinceLastExpense >= 0) {
-    insights.add(daysSinceLastExpense == 0
-        ? 'You registered an expense today'
-        : '$daysSinceLastExpense ${daysSinceLastExpense == 1 ? 'day' : 'days'} since your last registered expense');
-  }
+    // Spending advice: average daily spending
+    final periodDays = endDate.difference(startDate).inDays + 1;
+    final avgDaily   = periodDays > 0 ? (totalCop * activeRate) / periodDays : 0.0;
 
-  // BQ2 — OCR edit rate proxy
-  if (total > 0) {
-    insights.add('$ocrPct% of expenses in this period were captured with OCR scanning ($ocrCount of $total)');
-  }
+    // Micro-expenses (< 5000 COP equivalent) in period
+    final microCount = rawExpenses
+        .where((e) => (e['amount'] as num).toDouble() < 5000)
+        .length;
 
-  // BQ3
-  if (mostActiveHourLabel != null) {
-    insights.add('Most common registration time in this period: $mostActiveHourLabel');
-  }
+    // BQ1
+    if (daysSinceLastExpense >= 0) {
+      insights.add(daysSinceLastExpense == 0
+          ? 'You registered an expense today'
+          : '$daysSinceLastExpense ${daysSinceLastExpense == 1 ? 'day' : 'days'} since your last registered expense');
+    }
 
-  // BQ4
-  if (smallRecurring3m > 0) {
-    insights.add('$smallRecurring3m small recurring ${smallRecurring3m == 1 ? 'expense' : 'expenses'} in the last 3 months');
-  }
+    // BQ2 — OCR edit rate proxy
+    if (total > 0) {
+      insights.add('$ocrPct% of expenses in this period were captured with OCR scanning ($ocrCount of $total)');
+    }
 
-  // Spending advice insights
-  if (highestExpenseNote != null) insights.add(highestExpenseNote);
+    // BQ3
+    if (mostActiveHourLabel != null) {
+      insights.add('Most common registration time in this period: $mostActiveHourLabel');
+    }
 
-  if (microCount > 0) {
-    insights.add('$microCount small purchases under $activeCurrency ${_fmtNum(5000 * activeRate)} in this period');
-  }
+    // BQ4
+    if (smallRecurring3m > 0) {
+      insights.add('$smallRecurring3m small recurring ${smallRecurring3m == 1 ? 'expense' : 'expenses'} in the last 3 months');
+    }
 
-  if (avgDaily > 0 && periodDays > 1) {
-    insights.add('Average daily spending: $activeCurrency ${_fmtNum(avgDaily)}');
+    // BQ7 — Savings goal progress
+    if (savingsAchievedPct >= 0) {
+      final pct = savingsAchievedPct.round();
+      final onTrack = savingsAchievedPct >= 50;
+      insights.add(
+        'Savings goals: $pct% achieved on average across '
+        '$savingsGoalCount active ${savingsGoalCount == 1 ? 'goal' : 'goals'} '
+        '(${onTrack ? 'on track' : 'behind target'})',
+      );
+    }
+
+    // BQ8 — Budget midpoint consumption
+    if (budgetConsumedPct >= 0) {
+      final pct = budgetConsumedPct.round();
+      if (budgetEvaluatedAtMidpoint && budgetConsumedPct > 50) {
+        insights.add(
+          'Monthly budget: $pct% consumed past the midpoint — overspending risk',
+        );
+      } else {
+        insights.add('Monthly budget: $pct% consumed so far this month');
+      }
+    }
+
+    // BQ9 — Highest category growth vs previous month
+    if (topGrowthCategory != null) {
+      if (topGrowthPreviousCop == 0) {
+        insights.add(
+          'New spending category this month: $topGrowthCategory '
+          '($activeCurrency ${_fmtNum(topGrowthCurrentCop * activeRate)})',
+        );
+      } else {
+        final pct = topGrowthPercent.round();
+        insights.add(
+          'Highest category growth: $topGrowthCategory +$pct% vs last month '
+          '($activeCurrency ${_fmtNum(topGrowthCurrentCop * activeRate)})',
+        );
+      }
+    }
+
+    if (microCount > 0) {
+      insights.add('$microCount small purchases under $activeCurrency ${_fmtNum(5000 * activeRate)} in this period');
+    }
+
+    if (avgDaily > 0 && periodDays > 1) {
+      insights.add('Average daily spending: $activeCurrency ${_fmtNum(avgDaily)}');
+    }
+  } catch (_) {
+    // Insight generation failed — return report with partial insights.
   }
 
   return FinancialReport(
@@ -289,6 +439,23 @@ Map<String, dynamic> _expenseToMap(ExpenseModel e) => {
   'source':          e.source,                    // 'MANUAL' | 'OCR' | 'GOOGLE_PAY'
   'isRecurring':     e.isRecurring,               // small recurring BQ
 };
+
+// Top-level (not a local closure!) so allUserExpenses is never captured into
+// the Isolate.run closure context.  Hive HiveObjects hold box references that
+// contain ReadWriteSync/_Future and are unsendable across isolate boundaries.
+Map<String, double> _sumByCat(
+  List<ExpenseModel> expenses,
+  DateTime from,
+  DateTime to,
+) {
+  final totals = <String, double>{};
+  for (final e in expenses) {
+    if (e.date.isBefore(from) || e.date.isAfter(to)) continue;
+    final cat = e.primaryCategory ?? 'Other';
+    totals[cat] = (totals[cat] ?? 0) + e.amount;
+  }
+  return totals;
+}
 
 // Helper: days since last expense across ALL user expenses (main thread).
 int _daysSinceLastExpense(List<ExpenseModel> allExpenses) {

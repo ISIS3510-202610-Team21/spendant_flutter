@@ -134,7 +134,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       textAlign: TextAlign.center,
                       style: GoogleFonts.nunito(
                         fontSize: 19,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: AppPalette.ink,
                       ),
                     ),

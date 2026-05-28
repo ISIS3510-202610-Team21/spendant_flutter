@@ -116,19 +116,91 @@ class _ReportSetupScreenState extends State<ReportSetupScreen> {
 
   Future<void> _generate() async {
     setState(() => _generating = true);
-    final report = await ReportWorker.generate(
-      startDate: _startDate,
-      endDate:   _endDate,
-    );
-    if (!mounted) return;
-    setState(() => _generating = false);
+    FinancialReport? report;
+    Object? generateError;
+    try {
+      report = await ReportWorker.generate(
+        startDate: _startDate,
+        endDate:   _endDate,
+      );
+    } catch (e, st) {
+      generateError = e;
+      debugPrint('ReportWorker.generate failed: $e\n$st');
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
 
-    if (report != null) {
-      // Show cached-report button immediately (same dates = this IS the cache)
-      if (mounted) setState(() => _cachedForSelection = report);
+    if (!mounted) return;
+
+    if (report == null) {
+      await _showGenerateErrorDialog(generateError);
+      return;
+    }
+
+    // Show cached-report button immediately (same dates = this IS the cache)
+    setState(() => _cachedForSelection = report);
+    if (mounted) {
       await Navigator.of(context).pushNamed(AppRoutes.report, arguments: report);
       _loadConstraintsAndRecent();
     }
+  }
+
+  Future<void> _showGenerateErrorDialog(Object? error) async {
+    final bool hasExpenses = ReportWorker.firstExpenseDate(
+          AuthMemoryStore.currentUserIdOrGuest,
+        ) !=
+        null;
+
+    final String title;
+    final String body;
+
+    if (!hasExpenses) {
+      title = 'No expenses yet';
+      body =
+          'Add your first expense before generating a report. '
+          'Once you have expenses, select a date range and try again.';
+    } else {
+      title = 'Couldn\'t generate report';
+      body =
+          'Something went wrong while building the report. '
+          'Try a different date range, or try again in a moment.';
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          style: GoogleFonts.nunito(
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+            color: AppPalette.ink,
+          ),
+        ),
+        content: Text(
+          body,
+          style: GoogleFonts.nunito(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Colors.black54,
+            height: 1.45,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: AppPalette.green,
+            ),
+            child: Text(
+              'OK',
+              style: GoogleFonts.nunito(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openReport(FinancialReport report) {

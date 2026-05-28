@@ -43,6 +43,8 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    flavorDimensions += "device"
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -63,6 +65,20 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = resolveGoogleMapsApiKey()
+    }
+
+    productFlavors {
+        create("mobile") {
+            dimension = "device"
+            applicationId = "com.example.spendant_flutter"
+            resValue("string", "app_name", "SpendAnt")
+        }
+        create("wear") {
+            dimension = "device"
+            applicationId = "com.example.spendant_flutter"
+            minSdk = 26
+            resValue("string", "app_name", "SpendAnt Watch")
+        }
     }
 
     buildTypes {
@@ -87,7 +103,14 @@ flutter {
     source = "../.."
 }
 
+tasks.configureEach {
+    if (name.startsWith("processWear") && name.endsWith("GoogleServices")) {
+        enabled = false
+    }
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.work:work-runtime:2.9.0")
+    implementation("com.google.android.gms:play-services-wearable:20.0.1")
 }

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'src/services/app_analytics_service.dart';
 import 'src/services/app_notification_service.dart';
 import 'src/services/auth_memory_store.dart';
 import 'src/services/background_task_service.dart';
@@ -23,15 +24,26 @@ import 'src/services/google_pay_expense_import_service.dart';
 import 'src/services/local_notification_service.dart';
 import 'src/services/local_storage_service.dart';
 import 'src/services/sync_log_service.dart';
+import 'src/services/wear_expense_sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Fonts are bundled in assets/fonts/ — disable network fetching to guarantee
   // offline availability and eliminate any latency on first paint.
   GoogleFonts.config.allowRuntimeFetching = false;
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  FlutterError.onError = (details) {
+    AppAnalyticsService.instance.logModuleCrash(
+      details.library ?? 'flutter',
+      details.exceptionAsString(),
+    );
+  };
+  WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    AppAnalyticsService.instance.logModuleCrash('platform', error.toString());
+    return false;
+  };
+
   unawaited(BackgroundTaskService.initialize());
   runApp(const _BootstrapApp());
 }
@@ -110,6 +122,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       await LocalNotificationService.initialize();
       await AppNotificationService.initialize();
       await GooglePayExpenseImportService.initialize();
+      await WearExpenseSyncService.instance.initialize();
       debugPrint('Notification services initialized');
     } catch (error) {
       debugPrint('Error initializing notifications: $error');

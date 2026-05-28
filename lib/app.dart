@@ -99,7 +99,9 @@ class _SpendAntAppState extends State<SpendAntApp> {
   @override
   void dispose() {
     unawaited(AppRuntimeStateService.markForeground(false));
-    ConnectivityMonitor.isOnlineListenable.removeListener(_onConnectivityRestored);
+    ConnectivityMonitor.isOnlineListenable.removeListener(
+      _onConnectivityRestored,
+    );
     ConnectivityMonitor.dispose();
     _syncTimer?.cancel();
     _contextAwareNotificationTimer?.cancel();

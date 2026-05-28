@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -287,32 +289,52 @@ class _VoiceWatchShell extends StatefulWidget {
 class _VoiceWatchShellState extends State<_VoiceWatchShell> {
   final ScrollController _scrollController = ScrollController();
 
+  // Primary rotary path: MainActivity.onGenericMotionEvent forwards
+  // SOURCE_ROTARY_ENCODER events via this EventChannel.  This is required
+  // because FlutterFragmentActivity does not automatically delegate
+  // onGenericMotionEvent to the FlutterFragment on all Wear OS devices.
+  static const EventChannel _rotaryChannel =
+      EventChannel('spendant_flutter/rotary_input');
+  StreamSubscription<dynamic>? _rotarySub;
+
+  @override
+  void initState() {
+    super.initState();
+    _rotarySub = _rotaryChannel.receiveBroadcastStream().listen((dynamic raw) {
+      if (raw is num) _scrollByRotaryDelta(raw.toDouble());
+    });
+  }
+
   @override
   void dispose() {
+    _rotarySub?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _onRotaryScroll(PointerSignalEvent signal) {
-    if (signal is! PointerScrollEvent) return;
+  void _scrollByRotaryDelta(double delta) {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
-    // Wear OS rotary encoder fires PointerScrollEvent. Use whichever axis
-    // carries the value — side-crown watches use dy, bezel watches may use dx.
-    final raw = signal.scrollDelta.dy != 0
-        ? signal.scrollDelta.dy
-        : signal.scrollDelta.dx;
-    if (raw == 0) return;
-    // Scale to a comfortable scroll distance (~70 px per notch).
-    final target = (pos.pixels + raw * 70.0)
+    // delta from Android is already direction-corrected (positive = down).
+    // Scale by 70 px per encoder notch — comfortable on a small watch screen.
+    final target = (pos.pixels + delta * 70.0)
         .clamp(pos.minScrollExtent, pos.maxScrollExtent);
-    // animateTo cooperates with the Scrollable's own physics instead of
-    // fighting it; jumpTo was cancelling the natural scroll animation.
     _scrollController.animateTo(
       target,
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
     );
+  }
+
+  // Fallback: PointerScrollEvent for emulators / devices where Flutter's own
+  // onGenericMotionEvent pipeline fires instead of the MainActivity override.
+  void _onRotaryScroll(PointerSignalEvent signal) {
+    if (signal is! PointerScrollEvent) return;
+    final raw = signal.scrollDelta.dy != 0
+        ? signal.scrollDelta.dy
+        : signal.scrollDelta.dx;
+    if (raw == 0) return;
+    _scrollByRotaryDelta(raw);
   }
 
   Color _accentColorForExpense(

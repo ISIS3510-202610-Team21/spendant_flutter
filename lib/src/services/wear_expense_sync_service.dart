@@ -23,6 +23,7 @@ class WearExpenseSyncService {
   static const String _recentExpensesPath = '/spendant/expenses/recent';
   static const String _requestRecentExpensesPath =
       '/spendant/expenses/request_recent';
+  static const String _logoutPath = '/spendant/auth/logout';
   static const int _recentExpensesLimit = 5;
   static const String _lastSyncedUserIdKey = 'wear_last_synced_user_id';
   static const String _monthlyCategoriesKey = 'wear_monthly_categories';
@@ -371,6 +372,10 @@ class WearExpenseSyncService {
           );
           final incomingExpense = _expenseFromMap(normalized);
           if (incomingExpense == null) continue;
+          // Skip if already present — a pending-edit expense may have been
+          // preserved from deletion above and the phone's payload contains the
+          // same entry, which would otherwise create a duplicate.
+          if (_hasEquivalentExpense(incomingExpense)) continue;
           await LocalStorageService.expenseBox.add(incomingExpense);
         }
 
@@ -422,22 +427,49 @@ class WearExpenseSyncService {
           if (_isPhoneSide && !_isWearCreated(incomingExpense.source)) {
             continue;
           }
-          // If the watch flagged this as an edit, delete the old expense first
-          // so we replace in-place rather than inserting a duplicate.
+          // If the watch flagged this as an edit, update the old expense
+          // in-place rather than deleting + adding.
           final replacesFingerprint = normalized['replaces'] as String?;
           if (replacesFingerprint != null) {
-            final keysToDelete = LocalStorageService.expenseBox
+            final oldEntries = LocalStorageService.expenseBox
                 .toMap()
                 .entries
                 .where((e) => _expenseFingerprint(e.value) == replacesFingerprint)
-                .map((e) => e.key)
                 .toList();
-            if (keysToDelete.isNotEmpty) {
-              await LocalStorageService.expenseBox.deleteAll(keysToDelete);
+            if (oldEntries.isNotEmpty) {
+              // Transfer the Firebase identity from the old expense to the
+              // incoming one, then PUT at the same Hive key.
+              //
+              // Why not delete + add?
+              //   CloudSyncService._mergeRemoteExpenses pulls Firestore BEFORE
+              //   uploading.  Deleting from Hive without deleting from Firebase
+              //   causes _mergeRemoteExpenses to see the document still on the
+              //   server → existingExpense == null → re-adds the old expense
+              //   (resurrection).
+              //
+              // With UPDATE in-place + isSynced=false:
+              //   _mergeRemoteExpenses finds existingExpense, sees !isSynced
+              //   → skips (local has unpublished changes).  Upload phase then
+              //   upserts the same Firebase document → proper UPDATE.
+              final primary = oldEntries.first;
+              incomingExpense
+                ..serverId = primary.value.serverId
+                ..isSynced = false;
+              // Delete any extra duplicates beyond the first.
+              if (oldEntries.length > 1) {
+                await LocalStorageService.expenseBox.deleteAll(
+                  oldEntries.skip(1).map((e) => e.key).toList(),
+                );
+              }
+              await LocalStorageService.expenseBox.put(
+                primary.key,
+                incomingExpense,
+              );
+              // Already persisted — skip the add() at the bottom.
+              continue;
             } else if (_hasEquivalentExpense(incomingExpense)) {
               // Old expense already gone and new one already present — this
               // payload was processed before (e.g. Data Layer startup replay).
-              // Skip to avoid inserting a duplicate.
               continue;
             }
           } else if (_hasEquivalentExpense(incomingExpense)) {

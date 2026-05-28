@@ -39,9 +39,17 @@ class _ReportScreenState extends State<ReportScreen> {
     if (!mounted) return;
     setState(() => _downloadingPdf = false);
 
-    if (path != null) {
-      await PdfReportService.openFile(path);
+    if (path == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not generate PDF. Try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
     }
+
+    await PdfReportService.openFile(path);
   }
 
   @override

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Grants FileProvider access to the public Downloads folder -->
+    <!-- Public Downloads folder (Android 9 and below) -->
     <external-path name="downloads" path="Download/" />
+    <!-- App-specific external Documents dir (Android 10+, no permissions needed) -->
+    <external-files-path name="external_documents" path="Documents/" />
 </paths>

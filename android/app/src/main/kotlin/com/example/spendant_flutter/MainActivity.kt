@@ -5,15 +5,21 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
 import android.net.Uri
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterFragmentActivity() {
 
     private var pendingVoiceResult: MethodChannel.Result? = null
+
+    // Sink for streaming Wear OS rotary encoder deltas to Flutter.
+    private var rotaryEventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -38,12 +44,38 @@ class MainActivity : FlutterFragmentActivity() {
             this,
         )
 
+        // Rotary encoder stream — Wear OS crown/bezel events forwarded to Flutter.
+        // Flutter's PointerScrollEvent pipeline does NOT receive these on all
+        // Wear OS devices because FlutterFragmentActivity.onGenericMotionEvent
+        // is not automatically delegated.  We forward them explicitly here.
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "spendant_flutter/rotary_input",
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                rotaryEventSink = events
+            }
+            override fun onCancel(arguments: Any?) {
+                rotaryEventSink = null
+            }
+        })
+
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "spendant_flutter/platform_config",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasGoogleMapsApiKey" -> result.success(hasGoogleMapsApiKey())
+                "getDocumentsDir" -> {
+                    try {
+                        val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS)
+                            ?: filesDir
+                        dir.mkdirs()
+                        result.success(dir.absolutePath)
+                    } catch (e: Exception) {
+                        result.error("DIR_FAILED", e.message, null)
+                    }
+                }
                 "openFile" -> {
                     val path = call.argument<String>("path")
                     if (path == null) {
@@ -124,6 +156,20 @@ class MainActivity : FlutterFragmentActivity() {
         )
         val apiKey = applicationInfo.metaData?.getString("com.google.android.geo.API_KEY")
         return !apiKey.isNullOrBlank() && !apiKey.startsWith("YOUR_")
+    }
+
+    // Forward Wear OS rotary encoder (crown / physical bezel) events to Flutter.
+    // These arrive as GenericMotionEvent with SOURCE_ROTARY_ENCODER and
+    // ACTION_SCROLL.  Negating AXIS_SCROLL converts the raw axis value to an
+    // intuitive direction: positive delta = scroll down, negative = scroll up.
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
+            val delta = -event.getAxisValue(MotionEvent.AXIS_SCROLL)
+            rotaryEventSink?.success(delta.toDouble())
+            return true
+        }
+        return super.onGenericMotionEvent(event)
     }
 
     companion object {

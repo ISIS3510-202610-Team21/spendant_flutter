@@ -12,6 +12,7 @@ import '../models/label_model.dart';
 import '../models/user_model.dart';
 import 'app_time_format_service.dart';
 import 'auth_memory_store.dart';
+import 'deleted_records_tombstone.dart';
 import 'firebase_uid_service.dart';
 import 'local_storage_service.dart';
 import 'sync_log_service.dart';
@@ -142,6 +143,16 @@ class CloudSyncService {
   }
 
   Future<bool> deleteExpenseRecord(ExpenseModel expense) async {
+    // Persist tombstone BEFORE local delete so _mergeRemoteExpenses never
+    // resurrects this document even if the Firestore delete fails.
+    final sid = expense.serverId;
+    if (sid != null && sid.trim().isNotEmpty) {
+      final userId = expense.userId;
+      await DeletedRecordsTombstone.markDeleted(
+        userId: userId,
+        serverId: sid.trim(),
+      );
+    }
     return _deleteRecord(
       entityType: SyncLogService.entityExpense,
       collectionName: 'expenses',
@@ -554,7 +565,13 @@ class CloudSyncService {
     QuerySnapshot<Map<String, dynamic>> snapshot, {
     required int localUserId,
   }) async {
+    // Load once — avoid per-document SharedPreferences round-trip.
+    final tombstone = await DeletedRecordsTombstone.deletedIds(localUserId);
+
     for (final document in snapshot.docs) {
+      // Skip documents the user intentionally deleted on this device.
+      if (tombstone.contains(document.id)) continue;
+
       try {
       final existingExpense = _findByServerId(
         LocalStorageService.expenseBox.values,

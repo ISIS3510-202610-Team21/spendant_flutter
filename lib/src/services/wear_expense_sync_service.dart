@@ -23,7 +23,6 @@ class WearExpenseSyncService {
   static const String _recentExpensesPath = '/spendant/expenses/recent';
   static const String _requestRecentExpensesPath =
       '/spendant/expenses/request_recent';
-  static const String _logoutPath = '/spendant/auth/logout';
   static const int _recentExpensesLimit = 5;
   static const String _lastSyncedUserIdKey = 'wear_last_synced_user_id';
   static const String _monthlyCategoriesKey = 'wear_monthly_categories';
@@ -279,16 +278,21 @@ class WearExpenseSyncService {
     final payloadUserId = payload['userId'];
     if (payloadUserId is! int) return;
 
+    // Read senderIsPhone BEFORE the userId mismatch guard: phone is
+    // authoritative on account switches.  If phone sends a different userId
+    // it means the user switched accounts — we must accept it.
+    final senderIsPhone = payload['senderIsPhone'] == true;
+
     final currentUserId = effectiveUserId;
-    if (currentUserId != null && payloadUserId != currentUserId) return;
+    // Only enforce userId match for watch-originated data.  Rejecting a
+    // phone-originated payload here would leave the watch permanently stuck
+    // on the old account after a login switch.
+    if (!senderIsPhone && currentUserId != null && payloadUserId != currentUserId) return;
 
     await _persistSyncedUserId(payloadUserId);
 
     final expenses = payload['expenses'];
     if (expenses is! List) return;
-
-    // senderIsPhone tells us who pushed this data item.
-    final senderIsPhone = payload['senderIsPhone'] == true;
 
     // If phone sent data, apply currency + monthly totals before touching Hive
     // so that listeners already see fresh state when Hive changes fire.
@@ -339,6 +343,23 @@ class WearExpenseSyncService {
         //       (same reason — must survive the REPLACE so we can push them).
         final payloadGeneratedAt =
             DateTime.tryParse(payload['generatedAt']?.toString() ?? '');
+
+        // Account switch: purge stale data for the previous user so the watch
+        // never leaks another user's expenses.
+        if (currentUserId != null && payloadUserId != currentUserId) {
+          final staleKeys = LocalStorageService.expenseBox
+              .toMap()
+              .entries
+              .where((e) => e.value.userId == currentUserId)
+              .map((e) => e.key)
+              .toList();
+          if (staleKeys.isNotEmpty) {
+            await LocalStorageService.expenseBox.deleteAll(staleKeys);
+          }
+          // Also clear stored categories from the old account.
+          _storedMonthlyCategories = const <ExpenseCategoryTotal>[];
+        }
+
         // Build set of fingerprints that are the *updated* side of a pending edit.
         final pendingUpdatedFps = <String>{
           for (final e in _pendingEdits.values) _expenseFingerprint(e),
